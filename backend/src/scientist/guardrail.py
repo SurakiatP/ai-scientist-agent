@@ -13,7 +13,7 @@ IN_SCOPE = re.compile(
     r"electrolyte|nano|clinical|trial|cancer|disease|drug|vaccine|medic|llm|language model|transformer|"
     r"neural|deep learning|machine learning|benchmark|pretrain|satellite|geospatial|remote sensing|"
     r"quantum|physics|material|solar|superconduct|semiconductor|engineering|"
-    r"พันธุกรรม|จีโนม|โปรตีน|เซลล์|เคมี|โมเลกุล|วัสดุ|นาโน|แบตเตอรี่|มะเร็ง|โรค|ยา|วัคซีน|การแพทย์|"
+    r"พันธุกรรม|จีโนม|โปรตีน|เซลล์|เคมี|โมเลกุล|วัสดุ|นาโน|แบตเตอรี่|มะเร็ง|โรค|วัคซีน|การแพทย์|"
     r"ปัญญาประดิษฐ์|โมเดลภาษา|โมเดล|การเรียนรู้|ดาวเทียม|ควอนตัม|ฟิสิกส์|วิศวกรรม|งานวิจัย|การรู้จำเสียง",
     re.I,
 )
