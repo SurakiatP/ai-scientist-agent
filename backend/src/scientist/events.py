@@ -7,15 +7,25 @@ from pydantic import BaseModel, Field, field_validator
 # infra/hermes/native_bridge.py keeps an identical copy (a test checks they match).
 HTTP_URL = re.compile(r"https?://(?:[^\s/?#@]+@)?[^\s/?#@]+[^\s]*", re.I)
 
+ARXIV_ID = r"(\d{4}\.\d{4,5}|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})"
+ARXIV_URL = re.compile(rf"https?://(?:www\.)?arxiv\.org/(?:abs|pdf)/{ARXIV_ID}(?:v\d+)?(?:\.pdf)?", re.I)
+
+
+def arxiv_id(url: object) -> str | None:
+    """arXiv id (no version) from an arxiv.org abs/pdf URL on exactly arxiv.org or www.arxiv.org, else None."""
+    return m.group(1) if isinstance(url, str) and (m := ARXIV_URL.fullmatch(url.strip())) else None
+
 
 def paper_key(doi: object = None, pmid: object = None, title: object = None, url: object = None) -> str | None:
-    """Identity used to dedupe papers and match a rejected paper to its corrected retry: DOI, PMID, title, url."""
+    """Identity used to dedupe papers and match a rejected paper to its corrected retry: DOI, PMID, arXiv id, title, url."""
     def text(v):
         return str(v).strip() if isinstance(v, (str, int)) and not isinstance(v, bool) and str(v).strip() else None
     if d := text(doi):
         return "doi:" + re.sub(r"^(https?://(dx\.)?doi\.org/|doi:\s*|doi\s+)", "", d.lower())
     if p := text(pmid):
         return "pmid:" + p
+    if a := arxiv_id(url):
+        return "arxiv:" + a.lower()
     if t := text(title):
         return "title:" + t.lower()
     return "url:" + u if (u := text(url)) else None

@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 
 from scientist.citations import verify_references
@@ -93,3 +95,106 @@ async def test_429_unknown():
 async def test_doi_space_prefix_dedupes_with_bare():
     refs = await run([paper(doi="10.1000/abc"), paper(doi="DOI 10.1000/abc")], lambda r: httpx.Response(200, json={}))
     assert len(refs) == 1
+
+
+def routed(**table):
+    """Handler answering by host; records every request URL."""
+    seen = []
+
+    def h(r):
+        seen.append(str(r.url))
+        t = table[r.url.host]
+        return t(r) if callable(t) else t
+    return h, seen
+
+
+async def test_crossref_404_then_handle_200_verified():
+    h, seen = routed(**{"api.crossref.org": httpx.Response(404), "doi.org": httpx.Response(200, json={})})
+    refs = await run([paper(doi="10.48550/arXiv.1706.03762")], h)
+    assert refs[0].status == "verified"
+    assert seen == ["https://api.crossref.org/works/10.48550%2FarXiv.1706.03762",
+                    "https://doi.org/api/handles/10.48550%2FarXiv.1706.03762"]
+
+
+async def test_crossref_404_then_handle_404_unverified():
+    h, _ = routed(**{"api.crossref.org": httpx.Response(404), "doi.org": httpx.Response(404)})
+    assert (await run([paper(doi="10.48550/arXiv.9999.99999")], h))[0].status == "unverified"
+
+
+async def test_crossref_404_then_handle_5xx_or_429_unknown():
+    for code in (503, 429):
+        h, _ = routed(**{"api.crossref.org": httpx.Response(404), "doi.org": httpx.Response(code)})
+        assert (await run([paper(doi="10.1000/abc")], h))[0].status == "unknown"
+
+
+async def test_crossref_200_one_request():
+    h, seen = routed(**{"api.crossref.org": httpx.Response(200, json={})})
+    assert (await run([paper(doi="10.1038/nature12373")], h))[0].status == "verified"
+    assert len(seen) == 1
+
+
+def atom(*entries):
+    return ('<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom">'
+            + "".join(f"<entry><id>{i}</id><title>{t}</title></entry>" for i, t in entries) + "</feed>")
+
+
+REAL = atom(("http://arxiv.org/abs/1706.03762v7", "Attention Is All You Need"))
+ERR = atom(("http://arxiv.org/api/errors#incorrect_id_format_for_1706", "Error"))
+
+
+async def arxiv(url, body, status=200):
+    h, seen = routed(**{"export.arxiv.org": httpx.Response(status, text=body)})
+    return (await run([paper(url=url)], h))[0].status, seen
+
+
+async def test_arxiv_real_entry_verified_exact_url():
+    status, seen = await arxiv("https://arxiv.org/abs/1706.03762v5", REAL)
+    assert status == "verified" and seen == ["https://export.arxiv.org/api/query?id_list=1706.03762"]
+    assert (await arxiv("https://www.arxiv.org/pdf/1706.03762.pdf", REAL))[0] == "verified"
+    old = atom(("http://arxiv.org/abs/hep-th/9901001v1", "T"))
+    status, seen = await arxiv("https://arxiv.org/abs/hep-th/9901001", old)
+    assert status == "verified" and seen == ["https://export.arxiv.org/api/query?id_list=hep-th%2F9901001"]
+
+
+async def test_arxiv_zero_entries_and_error_entry_unverified():
+    assert (await arxiv("https://arxiv.org/abs/1706.03762", atom()))[0] == "unverified"
+    assert (await arxiv("https://arxiv.org/abs/1706.03762", ERR))[0] == "unverified"
+
+
+async def test_arxiv_5xx_and_unparseable_unknown():
+    assert (await arxiv("https://arxiv.org/abs/1706.03762", "", 503))[0] == "unknown"
+    assert (await arxiv("https://arxiv.org/abs/1706.03762", "<feed><entry>"))[0] == "unknown"
+    assert (await arxiv("https://arxiv.org/abs/1706.03762", "not xml"))[0] == "unknown"
+
+
+async def test_non_arxiv_urls_never_fetched():
+    calls = []
+    h = lambda r: calls.append(r) or httpx.Response(200, text=REAL)
+    for u in ("https://evil.example/abs/1706.03762", "https://arxiv.org.evil.example/abs/1706.03762",
+              "https://arxiv.org@evil.example/abs/1706.03762", "https://evilarxiv.org/abs/1706.03762",
+              "https://arxiv.org/abs/1706.03762?x=1", "https://arxiv.org/abs/../1706.03762"):
+        assert (await run([paper(url=u)], h))[0].status == "unverified"
+    assert not calls
+
+
+async def test_arxiv_forms_dedupe_and_doi_wins():
+    h, seen = routed(**{"export.arxiv.org": httpx.Response(200, text=REAL)})
+    refs = await run([paper(url="https://arxiv.org/abs/1706.03762", title="a"),
+                      paper(url="https://arxiv.org/pdf/1706.03762v3", title="b"),
+                      paper(url="http://www.arxiv.org/pdf/1706.03762v1.pdf", title="c")], h)
+    assert [r.paper.title for r in refs] == ["a"] and len(seen) == 1
+
+
+async def test_concurrency_bounded():
+    live = peak = 0
+
+    async def h(r):
+        nonlocal live, peak
+        live += 1
+        peak = max(peak, live)
+        await asyncio.sleep(0.01)
+        live -= 1
+        return httpx.Response(200, json={})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(h)) as c:
+        await verify_references([paper(doi=f"10.1000/{i}") for i in range(30)], client=c)
+    assert 1 < peak <= 8

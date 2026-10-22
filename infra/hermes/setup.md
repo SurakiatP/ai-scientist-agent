@@ -143,6 +143,10 @@ Hermes home and double the cap. Startup and shutdown also remove any Docker cont
 labelled `scientist.branch=1`, which a crashed earlier run may have left behind. This
 assumes no other backend shares the Docker host.
 
+A missing or dirty Hermes checkout (`HERMES_SOURCE_PATH`, `HERMES_REVISION`) makes startup fail, so uvicorn
+exits and `/v1/health` never answers. Missing Docker does not stop startup: the app comes up and each branch
+fails at run time.
+
 ## Smoke test of `POST /v1/async/ask`
 
 ### Live run: NOT done yet (no OpenRouter key in the build environment)

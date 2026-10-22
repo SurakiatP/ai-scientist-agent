@@ -52,6 +52,9 @@ async def _sse(events: AsyncIterator[Event], ping: float) -> AsyncIterator[str]:
             nxt = None
             yield to_sse(event)
     finally:
+        # ponytail: disconnect detection relies on StreamingResponse's listen-for-disconnect, which only runs while the
+        # server's ASGI spec version is below 2.4 (uvicorn reports 2.3). Ceiling: a server on 2.4+ stops cancelling
+        # this generator; then poll `request.is_disconnected()` in the loop or pin uvicorn.
         # client gone: stop the run and wait for its cleanup (bridges killed, gate slot freed)
         with anyio.CancelScope(shield=True):
             if nxt:

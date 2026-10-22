@@ -77,7 +77,8 @@ class Stream:
         await asyncio.wait_for(self.task, 30)  # returns once the run is cleaned up
 
 
-@pytest.mark.parametrize("body", [{"question": ""}, {"question": "   "}, {"question": "x" * 2001}, {}])
+@pytest.mark.parametrize("body", [{"question": ""}, {"question": "   "}, {"question": "x" * 2001}, {},
+                                  {"question": 5}, {"question": None}, {"question": ["a"]}])
 async def test_bad_question_is_422_before_any_model_call(app, fake_complete, body):
     r = await post(app, body)
     assert r.status_code == 422
