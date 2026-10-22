@@ -55,6 +55,6 @@ async def complete(system: str, user: str, *, model: str | None = None, max_toke
         try:
             return await _call(c, s.openrouter_api_key, {**body, "model": model or s.model})
         except (httpx.HTTPError, LlmEmptyError) as e:
-            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in range(500, 600) | {429}:
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code < 500 and e.response.status_code != 429:
                 raise  # 4xx (bad key/request): fallback would fail the same way
             return await _call(c, s.openrouter_api_key, {**body, "model": s.fallback_model})
