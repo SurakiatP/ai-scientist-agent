@@ -1,6 +1,7 @@
 """Branch bridge: runs one pinned-Hermes agent for one search term, in Hermes's own Python env.
 
 stdin: one JSON request line. stdout: JSON lines, {"event": "paper", "paper": {...}} while running,
+and {"event": "rejected", "paper": {ids}, "reason": str} when report_paper refuses a call,
 then {"event": "answer", "content": str} or {"event": "failed", "code": str}. See setup.md.
 """
 import json
@@ -13,7 +14,7 @@ import uuid
 WIRE = sys.stdout
 LOCK = threading.Lock()
 ALLOWED = {"terminal", "skills_list", "skill_view", "report_paper"}
-HTTP_URL = re.compile(r"https?://[^\s/?#]+[^\s]*", re.I)  # same rule as scientist.events.Paper
+HTTP_URL = re.compile(r"https?://(?:[^\s/?#@]+@)?[^\s/?#@]+[^\s]*", re.I)  # identical to scientist.events
 PAPER_SCHEMA = {
     "name": "report_paper",
     "description": "Record one paper you retrieved and will use. Call once per paper, as soon as you have its metadata.",
@@ -78,7 +79,11 @@ def main():
 
     def report_paper(args, **_):
         paper, error = clean_paper(args)
-        if error:
+        if error:  # tell the backend too, so a paper the model never fixes is still counted
+            ids = args if isinstance(args, dict) else {}
+            emit({"event": "rejected", "reason": error, "paper": {
+                k: str(v)[:500] for k in ("doi", "pmid", "title", "url")
+                if isinstance(v := ids.get(k), (str, int)) and not isinstance(v, bool)}})
             return json.dumps({"error": f"paper not recorded: {error}. Fix the arguments and call again."})
         emit({"event": "paper", "paper": paper})
         return json.dumps({"recorded": True})

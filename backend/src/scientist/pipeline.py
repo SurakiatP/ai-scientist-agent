@@ -8,8 +8,8 @@ from pathlib import Path
 
 from scientist import llm
 from scientist.config import Settings
-from scientist.events import (BranchAnswer, Complete, Error, Event, FinalAnswer, Paper, Reference, Refused,
-                              Search, Sources, Strategy)
+from scientist.events import (BranchAnswer, Complete, Error, Event, FinalAnswer, Reference, Refused, Search,
+                              Sources, Strategy, paper_key)
 from scientist.guardrail import check_scope
 from scientist.hermes import BranchFailed, BranchRunner, InvalidPaper
 
@@ -32,14 +32,6 @@ async def _strategy(question: str, settings: Settings) -> Strategy | None:
     # scholarly APIs are searched in English; a Thai term is a model slip, drop it
     searches = [s for s in searches if s.term and not THAI.search(s.term)][:settings.max_branches]
     return Strategy(reasoning=reasoning, searches=searches) if searches else None
-
-
-def _key(p: Paper) -> str:
-    if p.doi:
-        return "doi:" + re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", p.doi.strip().lower())
-    if p.pmid:
-        return "pmid:" + p.pmid.strip()
-    return "title:" + p.title.strip().lower()
 
 
 def _data_block(references: list[Reference], answers: list[BranchAnswer]) -> str:
@@ -79,24 +71,29 @@ async def ask(question: str, runner: BranchRunner, *, settings: Settings) -> Asy
     references: dict[str, Reference] = {}
     answers: list[BranchAnswer] = []
     failed: list[str] = []
-    dropped = 0
+    rejected: set[str] = set()
+    unkeyed = 0  # rejections with no identity at all
     try:
         while (msg := await queue.get()) is not DONE:
             term, item = msg
             if isinstance(item, BranchFailed):
                 failed.append(term)
             elif isinstance(item, InvalidPaper):
-                dropped += 1
+                if item.key:
+                    rejected.add(item.key)
+                else:
+                    unkeyed += 1
             elif isinstance(item, BranchAnswer):
                 answers.append(item)  # held back so all sources events come before the answers
             else:
-                references.setdefault(_key(item), Reference(id=str(len(references) + 1), paper=item, status="unknown"))
+                references.setdefault(paper_key(item.doi, item.pmid, item.title, item.url), Reference(id=str(len(references) + 1), paper=item, status="unknown"))
                 yield Sources(term=term, papers=[item])
     finally:
         task.cancel()  # consumer gone (client disconnect): stop branches, which kills their bridges
         with suppress(asyncio.CancelledError):
             await task
 
+    dropped = len(rejected - references.keys()) + unkeyed  # a corrected retry is not a drop
     if not references and dropped:
         yield Error(message=f"{dropped} paper(s) were found but none had usable metadata (a title and an http(s) "
                             "link), so there is nothing to answer from.")

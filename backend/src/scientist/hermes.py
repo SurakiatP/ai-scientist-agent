@@ -14,7 +14,7 @@ from typing import Protocol
 from pydantic import BaseModel, ValidationError
 
 from scientist.config import Settings
-from scientist.events import BranchAnswer, Paper
+from scientist.events import BranchAnswer, Paper, paper_key
 
 ROOT = Path(__file__).resolve().parents[3]
 CACHE = Path.home() / ".cache/scientist"
@@ -33,9 +33,16 @@ class BranchFailed(BaseModel):
 
 
 class InvalidPaper(BaseModel):
-    """A paper the bridge reported with unusable metadata; counted, never silently dropped."""
+    """A paper rejected for unusable metadata; counted, never silently dropped. key: see paper_key (None = unknown)."""
     term: str
+    key: str | None
     reason: str
+
+
+def _invalid(term: str, raw: object, reason: str) -> InvalidPaper:
+    raw = raw if isinstance(raw, dict) else {}
+    key = paper_key(raw.get("doi"), raw.get("pmid"), raw.get("title"), raw.get("url"))
+    return InvalidPaper(term=term, key=key, reason=reason[:300])
 
 
 BranchItem = Paper | InvalidPaper | BranchAnswer | BranchFailed
@@ -115,7 +122,9 @@ class HermesRuntime(BranchRunner):
                             item = Paper.model_validate(msg.get("paper"))
                         except ValidationError as e:
                             err = e.errors()[0]
-                            item = InvalidPaper(term=term, reason=f"{'.'.join(map(str, err['loc'])) or 'paper'}: {err['msg']}")
+                            item = _invalid(term, msg.get("paper"), f"{'.'.join(map(str, err['loc'])) or 'paper'}: {err['msg']}")
+                    elif event == "rejected":  # bridge refused a report_paper call; the model may retry
+                        item = _invalid(term, msg.get("paper"), str(msg.get("reason") or "rejected"))
                     elif event == "answer":
                         item = BranchAnswer(term=term, content=str(msg["content"]))
                     elif event == "failed":

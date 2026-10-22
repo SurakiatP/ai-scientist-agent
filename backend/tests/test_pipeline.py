@@ -182,10 +182,37 @@ def test_to_sse_has_type():
     assert json.loads(line[6:]) == {"type": "error", "message": "boom"}
 
 
+def rejected(title, doi=None, url="javascript:alert(1)"):
+    return {"event": "rejected", "paper": {"title": title, "doi": doi, "url": url}, "reason": "url must be an http(s) link"}
+
+
+async def test_rejected_then_corrected_is_not_dropped(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    rt = runner(settings, tmp_path, {"a": [rejected("Good", "10.1/G"), paper("Good", "10.1/g"), answer("summary")]})
+    events = await run(Q, rt, settings)
+    final = next(e for e in events if isinstance(e, FinalAnswer))
+    assert len(final.references) == 1 and "left out" not in final.content
+
+
+async def test_rejected_never_corrected_only_paper_is_unusable_error(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    events = await run(Q, runner(settings, tmp_path, {"a": [rejected("Bad"), rejected("Bad"), answer("s")]}), settings)
+    assert types(events) == "strategy error"
+    assert "1 paper(s) were found but none had usable metadata" in events[-1].message
+
+
+async def test_rejected_never_corrected_with_other_papers_gets_note(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    rt = runner(settings, tmp_path, {"a": [paper("Good", "10.1/g"), rejected("Bad", "10.1/b"), answer("summary")]})
+    events = await run(Q, rt, settings)
+    final = next(e for e in events if isinstance(e, FinalAnswer))
+    assert "1 paper(s) were left out" in final.content and len(final.references) == 1
+
+
 async def test_dropped_papers_are_not_reported_as_none_found(settings, tmp_path, fake_complete):
     fake_complete["strategy"] = strategy("a")
-    bad = {"event": "paper", "paper": {"title": "Bad", "url": "javascript:alert(1)"}}
-    events = await run(Q, runner(settings, tmp_path, {"a": [bad, bad, answer("summary")]}), settings)
+    bad = [{"event": "paper", "paper": {"title": f"Bad {i}", "url": "javascript:alert(1)"}} for i in (1, 2)]
+    events = await run(Q, runner(settings, tmp_path, {"a": [*bad, answer("summary")]}), settings)
     assert types(events) == "strategy error"
     assert "No papers were found" not in events[-1].message and "2" in events[-1].message
 

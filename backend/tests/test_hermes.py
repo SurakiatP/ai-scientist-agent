@@ -8,7 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from scientist.config import Settings
-from scientist.events import BranchAnswer, Paper
+from scientist.events import HTTP_URL, BranchAnswer, Paper
 from scientist.hermes import BranchFailed, HermesRuntime, InvalidPaper
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -105,13 +105,15 @@ async def test_invalid_paper_is_reported_not_dropped(settings, tmp_path):
 
 
 @pytest.mark.parametrize("url", ["javascript:alert(1)", "data:text/html,x", " JavaScript:alert(1)", "ftp://x.org/a",
-                                 "http://", "https://x.org/a b", "java\tscript:alert(1)"])
+                                 "http://", "https://x.org/a b", "java\tscript:alert(1)", "//evil.com", "http://@/x",
+                                 "https://@evil.com"])
 def test_paper_url_must_be_http(url):
     with pytest.raises(ValidationError):
         Paper(title="t", url=url)
 
 
 def test_paper_url_http_and_https_ok():
+    assert Paper(title="t", url="https://user@x.org/a").url == "https://user@x.org/a"
     assert Paper(title="t", url=" HTTPS://doi.org/10.1/x ").url == "HTTPS://doi.org/10.1/x"
     assert Paper(title="t", url="http://x.org").url == "http://x.org"
 
@@ -133,3 +135,20 @@ def test_bridge_clean_paper():
                 {"title": "T", "url": "https://x.org", "year": "2024"}):
         paper, error = clean(bad)
         assert paper is None and error
+
+
+def test_bridge_and_backend_url_rules_match():
+    bridge = load_bridge().HTTP_URL
+    assert (bridge.pattern, bridge.flags) == (HTTP_URL.pattern, HTTP_URL.flags)
+
+
+async def test_rejected_event_becomes_invalid_paper_with_key(settings, tmp_path):
+    rt = runtime(settings, tmp_path, [
+        {"event": "rejected", "paper": {"title": "T", "doi": "HTTPS://doi.org/10.1/ABC", "url": "javascript:x"},
+         "reason": "url must be an http(s) link"},
+        {"event": "rejected", "reason": "arguments must be an object"},
+        {"event": "answer", "content": "done"}])
+    items = await collect(rt)
+    assert items[0] == InvalidPaper(term="t", key="doi:10.1/abc", reason="url must be an http(s) link")
+    assert items[1].key is None and items[1].reason
+    assert isinstance(items[2], BranchAnswer)

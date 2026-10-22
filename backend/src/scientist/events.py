@@ -3,8 +3,22 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-# http(s) only, with a host and no whitespace: the frontend renders url as a link
-HTTP_URL = re.compile(r"https?://[^\s/?#]+[^\s]*", re.I)
+# http(s) only, a real host (optional userinfo@ before it), no whitespace: the frontend renders url as a link.
+# infra/hermes/native_bridge.py keeps an identical copy (a test checks they match).
+HTTP_URL = re.compile(r"https?://(?:[^\s/?#@]+@)?[^\s/?#@]+[^\s]*", re.I)
+
+
+def paper_key(doi: object = None, pmid: object = None, title: object = None, url: object = None) -> str | None:
+    """Identity used to dedupe papers and match a rejected paper to its corrected retry: DOI, PMID, title, url."""
+    def text(v):
+        return str(v).strip() if isinstance(v, (str, int)) and not isinstance(v, bool) and str(v).strip() else None
+    if d := text(doi):
+        return "doi:" + re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", d.lower())
+    if p := text(pmid):
+        return "pmid:" + p
+    if t := text(title):
+        return "title:" + t.lower()
+    return "url:" + u if (u := text(url)) else None
 
 
 class Paper(BaseModel):

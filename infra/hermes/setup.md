@@ -61,8 +61,10 @@ loaded it.
   loop, and the handler writes `{"event":"paper","paper":{...}}` to stdout straight away.
   The handler validates first (`clean_paper`: title, an http(s) url, typed optional
   fields, and an int pmid becomes a string). A bad call returns an error to the model,
-  so the model can fix it and retry. The backend validates again: a line that still
-  fails becomes `InvalidPaper`, which the pipeline counts and reports.
+  so the model can fix it and retry. It also emits `{"event":"rejected","paper":{doi,pmid,title,url},"reason"}`.
+  The backend turns that line, and any paper line that still fails validation, into an
+  `InvalidPaper` keyed like the dedupe (DOI, then PMID, then title, then url). A key that
+  is later accepted does not count. The pipeline reports the keys that were never accepted.
 - `AIAgent(tool_start_callback=..., tool_complete_callback=(call_id, name, args, result))`
   also exposes every tool call and its result. The bridge does not forward them: raw
   tool output is untrusted third-party text.
@@ -90,7 +92,7 @@ response. Each call reaches the backend as soon as it is made.
 ## Wire protocol (`native_bridge.py`)
 
 stdin, one line: `{"term","instructions","system","model","api_key","base_url","max_iterations","max_tokens"}`.
-stdout, JSON lines: `{"event":"paper","paper":{...}}` (zero or more), then exactly one of
+stdout, JSON lines: `{"event":"paper","paper":{...}}` and `{"event":"rejected",...}` (zero or more), then exactly one of
 `{"event":"answer","content":str}` or `{"event":"failed","code":str}`. Then the process exits.
 SIGTERM stops the agent and removes the branch's container. If the process exits
 without a terminal line, the backend turns that into `BranchFailed`.
