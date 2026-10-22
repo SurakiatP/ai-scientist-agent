@@ -16,13 +16,39 @@ def arxiv_id(url: object) -> str | None:
     return m.group(1) if isinstance(url, str) and (m := ARXIV_URL.fullmatch(url.strip())) else None
 
 
+DOI = re.compile(r"10\.\d{4,9}/\S+")
+PMID = re.compile(r"[1-9]\d{0,8}")
+
+
+def normalize_doi(v: object) -> str | None:
+    """Bare lowercase DOI (doi.org / "doi:" / "DOI " prefix, whitespace and trailing punctuation removed), or None
+    if it is not DOI-shaped: models write "N/A", "none", "-" for a missing DOI. Dot segments are rejected too: the URL
+    layer would collapse them, so a lookup would ask about another DOI."""
+    if not isinstance(v, str):
+        return None
+    d = re.sub(r"^(https?://(dx\.)?doi\.org/|doi:\s*|doi\s+)", "", v.strip(), flags=re.I).strip()
+    if {".", ".."} & set(d.split("/")):
+        return None
+    d = d.rstrip(".,;:").lower()  # DOIs are case-insensitive
+    return d if DOI.fullmatch(d) else None
+
+
+def normalize_pmid(v: object) -> str | None:
+    """PMID digits (an int or a "PMID: 123" string accepted), or None if it is not PMID-shaped."""
+    if isinstance(v, bool) or not isinstance(v, (str, int)):
+        return None
+    p = re.sub(r"^pmid:?\s*", "", str(v).strip(), flags=re.I)
+    return p if PMID.fullmatch(p) else None
+
+
 def paper_key(doi: object = None, pmid: object = None, title: object = None, url: object = None) -> str | None:
-    """Identity used to dedupe papers and match a rejected paper to its corrected retry: DOI, PMID, arXiv id, title, url."""
+    """Identity used to dedupe papers and match a rejected paper to its corrected retry: DOI, PMID, arXiv id, title, url.
+    Placeholder identifiers ("N/A") are skipped, so they never merge two different papers."""
     def text(v):
         return str(v).strip() if isinstance(v, (str, int)) and not isinstance(v, bool) and str(v).strip() else None
-    if d := text(doi):
-        return "doi:" + re.sub(r"^(https?://(dx\.)?doi\.org/|doi:\s*|doi\s+)", "", d.lower())
-    if p := text(pmid):
+    if d := normalize_doi(doi):
+        return "doi:" + d
+    if p := normalize_pmid(pmid):
         return "pmid:" + p
     if a := arxiv_id(url):
         return "arxiv:" + a.lower()
@@ -44,10 +70,15 @@ class Paper(BaseModel):
     def _authors(cls, v):
         return [] if v is None else v
 
+    @field_validator("doi", mode="before")
+    @classmethod
+    def _doi(cls, v):
+        return v if normalize_doi(v) else None  # valid DOIs kept as written; placeholders ("N/A", "none") -> None
+
     @field_validator("pmid", mode="before")
     @classmethod
     def _pmid(cls, v):
-        return str(v) if isinstance(v, int) and not isinstance(v, bool) else v
+        return normalize_pmid(v)  # digits only; placeholders become None
 
     @field_validator("url", mode="before")
     @classmethod
@@ -86,6 +117,7 @@ class Strategy(BaseModel):
 
 
 class Sources(BaseModel):
+    """One event per paper, as a branch reports it."""
     type: Literal["sources"] = "sources"
     term: str
     papers: list[Paper]

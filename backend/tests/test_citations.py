@@ -1,7 +1,9 @@
 import asyncio
 
 import httpx
+import pytest
 
+from scientist import citations
 from scientist.citations import verify_references
 from scientist.events import Paper
 
@@ -14,9 +16,9 @@ def client(handler):
     return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
 
-async def run(papers, handler):
+async def run(papers, handler, **kw):
     async with client(handler) as c:
-        return await verify_references(papers, client=c)
+        return await verify_references(papers, client=c, **kw)
 
 
 async def test_doi_200_verified():
@@ -112,8 +114,8 @@ async def test_crossref_404_then_handle_200_verified():
     h, seen = routed(**{"api.crossref.org": httpx.Response(404), "doi.org": httpx.Response(200, json={"responseCode": 1, "handle": "x"})})
     refs = await run([paper(doi="10.48550/arXiv.1706.03762")], h)
     assert refs[0].status == "verified"
-    assert seen == ["https://api.crossref.org/works/10.48550%2FarXiv.1706.03762",
-                    "https://doi.org/api/handles/10.48550%2FarXiv.1706.03762"]
+    assert seen == ["https://api.crossref.org/works/10.48550%2Farxiv.1706.03762",
+                    "https://doi.org/api/handles/10.48550%2Farxiv.1706.03762"]
 
 
 async def test_crossref_404_then_handle_404_unverified():
@@ -149,11 +151,11 @@ async def arxiv(url, body, status=200):
 
 async def test_arxiv_real_entry_verified_exact_url():
     status, seen = await arxiv("https://arxiv.org/abs/1706.03762v5", REAL)
-    assert status == "verified" and seen == ["https://export.arxiv.org/api/query?id_list=1706.03762"]
+    assert status == "verified" and seen == ["https://export.arxiv.org/api/query?id_list=1706.03762&max_results=1"]
     assert (await arxiv("https://www.arxiv.org/pdf/1706.03762.pdf", REAL))[0] == "verified"
     old = atom(("http://arxiv.org/abs/hep-th/9901001v1", "T"))
     status, seen = await arxiv("https://arxiv.org/abs/hep-th/9901001", old)
-    assert status == "verified" and seen == ["https://export.arxiv.org/api/query?id_list=hep-th%2F9901001"]
+    assert status == "verified" and seen == ["https://export.arxiv.org/api/query?id_list=hep-th%2F9901001&max_results=1"]
 
 
 async def test_arxiv_zero_entries_and_error_entry_unverified():
@@ -219,3 +221,119 @@ async def test_arxiv_id_strict_ascii_and_case():
 
 async def test_arxiv_oversize_response_unknown():
     assert (await arxiv("https://arxiv.org/abs/1706.03762", REAL + " " * 1_000_001))[0] == "unknown"
+
+
+@pytest.mark.parametrize("placeholder", ["N/A", "none", "unknown", "-", "null", "", "  "])
+async def test_placeholder_doi_falls_through_to_pmid(placeholder):
+    h, seen = routed(**{"eutils.ncbi.nlm.nih.gov": httpx.Response(200, json={"result": {"123": {"uid": "123"}}})})
+    refs = await run([paper(doi=placeholder, pmid="PMID: 123")], h)
+    assert refs[0].status == "verified" and refs[0].paper.doi is None and refs[0].paper.pmid == "123"
+    assert len(seen) == 1 and "eutils" in seen[0]
+
+
+@pytest.mark.parametrize("placeholder", ["N/A", "none", "unknown", "-", "null", "", "PMID: n/a", "12x"])
+def test_placeholder_identifiers_become_none(placeholder):
+    p = paper(doi=placeholder, pmid=placeholder)
+    assert (p.doi, p.pmid) == (None, None)
+
+
+def test_valid_identifiers_round_trip_unchanged():
+    p = paper(doi="https://doi.org/10.1038/Nature12373", pmid="123", authors=["A"], year=2024)
+    assert Paper.model_validate_json(p.model_dump_json()) == p
+    assert (p.doi, p.pmid) == ("https://doi.org/10.1038/Nature12373", "123")
+    assert paper(pmid=123).pmid == "123" and paper(pmid="PMID: 456").pmid == "456"
+
+
+async def test_placeholder_dois_do_not_merge_papers():
+    refs = await run([paper(doi="N/A", title="A"), paper(doi="N/A", title="B")], lambda r: httpx.Response(200))
+    assert [r.paper.title for r in refs] == ["A", "B"]
+
+
+async def test_per_host_concurrency_caps():
+    live: dict = {}
+    peak: dict = {}
+
+    async def h(r):
+        host = r.url.host
+        live[host] = live.get(host, 0) + 1
+        peak[host] = max(peak.get(host, 0), live[host])
+        await asyncio.sleep(0.01)
+        live[host] -= 1
+        if host == "export.arxiv.org":
+            return httpx.Response(200, text=atom())
+        if host == "eutils.ncbi.nlm.nih.gov":
+            pmid = r.url.params["id"]
+            return httpx.Response(200, json={"result": {pmid: {"uid": pmid}}})
+        return httpx.Response(404 if host == "api.crossref.org" else 200, json={"responseCode": 1})
+    papers = ([paper(doi=f"10.1000/{i}") for i in range(12)] + [paper(pmid=str(100 + i)) for i in range(12)]
+              + [paper(url=f"https://arxiv.org/abs/2401.{i:05d}") for i in range(5)])
+    async with httpx.AsyncClient(transport=httpx.MockTransport(h)) as c:
+        # two runs at once share the caps
+        await asyncio.gather(verify_references(papers, client=c), verify_references(papers, client=c))
+    assert peak == {"api.crossref.org": 2, "doi.org": 2, "eutils.ncbi.nlm.nih.gov": 3, "export.arxiv.org": 1}
+
+
+async def test_arxiv_ids_batched_in_one_request():
+    feed = atom(("http://arxiv.org/abs/1706.03762v7", "A"), ("http://arxiv.org/abs/hep-th/9901001v1", "B"))
+    h, seen = routed(**{"export.arxiv.org": httpx.Response(200, text=feed)})
+    refs = await run([paper(url="https://arxiv.org/abs/1706.03762"), paper(url="https://arxiv.org/abs/hep-th/9901001"),
+                      paper(url="https://arxiv.org/abs/2401.00001")], h)
+    assert seen == ["https://export.arxiv.org/api/query?id_list=1706.03762%2Chep-th%2F9901001%2C2401.00001&max_results=3"]
+    assert [r.status for r in refs] == ["verified", "verified", "unverified"]
+
+
+async def test_arxiv_batch_failure_is_unknown_for_each():
+    h, _ = routed(**{"export.arxiv.org": httpx.Response(503)})
+    refs = await run([paper(url="https://arxiv.org/abs/1706.03762"), paper(url="https://arxiv.org/abs/2401.00001")], h)
+    assert [r.status for r in refs] == ["unknown", "unknown"]
+
+
+async def test_arxiv_batch_error_entry_is_unknown_not_unverified():
+    h, _ = routed(**{"export.arxiv.org": httpx.Response(200, text=ERR)})
+    refs = await run([paper(url="https://arxiv.org/abs/1706.03762"), paper(url="https://arxiv.org/abs/2401.00001")], h)
+    assert [r.status for r in refs] == ["unknown", "unknown"]
+
+
+async def test_user_agent_contact_email():
+    uas = []
+
+    def h(r):
+        uas.append(r.headers["user-agent"])
+        if r.url.host == "export.arxiv.org":
+            return httpx.Response(200, text=REAL)
+        return httpx.Response(200, json={"result": {"123": {"uid": "123"}}})
+    ps = [paper(doi="10.1000/a"), paper(pmid="123"), paper(url="https://arxiv.org/abs/1706.03762")]
+    await run(ps, h, contact_email="me@example.org")
+    assert len(uas) == 3 and all(ua.endswith("; mailto:me@example.org)") for ua in uas)
+    uas.clear()
+    await run(ps, h)
+    assert len(uas) == 3 and all("mailto" not in ua for ua in uas)
+
+
+async def test_retry_after_retries_once_with_capped_wait():
+    for code in (429, 503):
+        waits, answers = [], [httpx.Response(code, headers={"Retry-After": "30"}), httpx.Response(200, json={})]
+
+        async def sleep(s):
+            waits.append(s)
+        refs = await run([paper(doi="10.1000/a")], lambda r: answers.pop(0), sleep=sleep)
+        assert refs[0].status == "verified" and waits == [citations.RETRY_AFTER_CAP] and not answers
+
+
+async def test_retry_after_only_once_then_unknown():
+    calls, waits = [], []
+
+    async def sleep(s):
+        waits.append(s)
+    h = lambda r: calls.append(r) or httpx.Response(429, headers={"Retry-After": "1"})
+    assert (await run([paper(doi="10.1000/a")], h, sleep=sleep))[0].status == "unknown"
+    assert len(calls) == 2 and waits == [1.0]
+
+
+async def test_no_retry_without_retry_after():
+    calls = []
+
+    async def sleep(s):
+        raise AssertionError("must not wait")
+    h = lambda r: calls.append(r) or httpx.Response(503)
+    assert (await run([paper(doi="10.1000/a")], h, sleep=sleep))[0].status == "unknown" and len(calls) == 1

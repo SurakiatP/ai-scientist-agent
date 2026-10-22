@@ -144,12 +144,12 @@ def test_bridge_and_backend_url_rules_match():
 
 async def test_rejected_event_becomes_invalid_paper_with_key(settings, tmp_path):
     rt = runtime(settings, tmp_path, [
-        {"event": "rejected", "paper": {"title": "T", "doi": "HTTPS://doi.org/10.1/ABC", "url": "javascript:x"},
+        {"event": "rejected", "paper": {"title": "T", "doi": "HTTPS://doi.org/10.1000/ABC", "url": "javascript:x"},
          "reason": "url must be an http(s) link"},
         {"event": "rejected", "reason": "arguments must be an object"},
         {"event": "answer", "content": "done"}])
     items = await collect(rt)
-    assert items[0] == InvalidPaper(term="t", key="doi:10.1/abc", reason="url must be an http(s) link")
+    assert items[0] == InvalidPaper(term="t", key="doi:10.1000/abc", reason="url must be an http(s) link")
     assert items[1].key is None and items[1].reason
     assert isinstance(items[2], BranchAnswer)
 
