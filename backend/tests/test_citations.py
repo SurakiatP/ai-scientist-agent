@@ -109,7 +109,7 @@ def routed(**table):
 
 
 async def test_crossref_404_then_handle_200_verified():
-    h, seen = routed(**{"api.crossref.org": httpx.Response(404), "doi.org": httpx.Response(200, json={})})
+    h, seen = routed(**{"api.crossref.org": httpx.Response(404), "doi.org": httpx.Response(200, json={"responseCode": 1, "handle": "x"})})
     refs = await run([paper(doi="10.48550/arXiv.1706.03762")], h)
     assert refs[0].status == "verified"
     assert seen == ["https://api.crossref.org/works/10.48550%2FarXiv.1706.03762",
@@ -198,3 +198,24 @@ async def test_concurrency_bounded():
     async with httpx.AsyncClient(transport=httpx.MockTransport(h)) as c:
         await verify_references([paper(doi=f"10.1000/{i}") for i in range(30)], client=c)
     assert 1 < peak <= 8
+
+
+async def test_handle_200_bad_body_unknown():
+    for resp in (httpx.Response(200, text="<html>oops"), httpx.Response(200, json={}),
+                 httpx.Response(200, json={"responseCode": 100}), httpx.Response(200, json=[1])):
+        h, _ = routed(**{"api.crossref.org": httpx.Response(404), "doi.org": resp})
+        assert (await run([paper(doi="10.1000/abc")], h))[0].status == "unknown"
+
+
+async def test_arxiv_id_strict_ascii_and_case():
+    calls = []
+    h = lambda r: calls.append(r) or httpx.Response(200, text=REAL)
+    for u in ("https://arxiv.org/abs/\u0661\u0667\u0660\u0666.\u0660\u0663\u0667\u0666\u0662",
+              "https://arxiv.org/abs/1706.03762v\u0661", "https://arxiv.org/abs/HEP-TH/9901001"):
+        assert (await run([paper(url=u)], h))[0].status == "unverified"
+    assert not calls
+    assert (await arxiv("https://arxiv.org/abs/math.GT/0309136", atom(("http://arxiv.org/abs/math.GT/0309136v2", "T"))))[0] == "verified"
+
+
+async def test_arxiv_oversize_response_unknown():
+    assert (await arxiv("https://arxiv.org/abs/1706.03762", REAL + " " * 1_000_001))[0] == "unknown"

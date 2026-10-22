@@ -25,11 +25,16 @@ async def _status(paper: Paper, client: httpx.AsyncClient) -> str:
             r = await client.get(f"https://api.crossref.org/works/{enc}", headers=HEADERS, timeout=10)
             if r.status_code == 404:  # not Crossref's: arXiv and Zenodo DOIs are DataCite. Ask the DOI handle system.
                 r = await client.get(f"https://doi.org/api/handles/{enc}", headers=HEADERS, timeout=10)
+            if r.status_code == 200 and r.url.host == "doi.org":  # handle API success marker: responseCode 1
+                body = r.json()
+                return "verified" if isinstance(body, dict) and body.get("responseCode") == 1 else "unknown"
             return "verified" if r.status_code == 200 else "unverified" if r.status_code == 404 else "unknown"
         pmid = str(paper.pmid or "").strip()
         if not pmid and (aid := arxiv_id(paper.url)):
             r = await client.get("https://export.arxiv.org/api/query", params={"id_list": aid}, headers=HEADERS, timeout=10)
             if r.status_code != 200:
+                return "unknown"
+            if len(r.content) > 1_000_000:
                 return "unknown"
             real = [e for e in ET.fromstring(r.text).iter(f"{ATOM}entry")
                     if "/api/errors" not in (e.findtext(f"{ATOM}id") or "")]

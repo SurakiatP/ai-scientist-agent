@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field, field_validator
 # infra/hermes/native_bridge.py keeps an identical copy (a test checks they match).
 HTTP_URL = re.compile(r"https?://(?:[^\s/?#@]+@)?[^\s/?#@]+[^\s]*", re.I)
 
-ARXIV_ID = r"(\d{4}\.\d{4,5}|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})"
-ARXIV_URL = re.compile(rf"https?://(?:www\.)?arxiv\.org/(?:abs|pdf)/{ARXIV_ID}(?:v\d+)?(?:\.pdf)?", re.I)
+ARXIV_ID = r"([0-9]{4}\.[0-9]{4,5}|[a-z\-]+(?:\.[A-Z]{2})?/[0-9]{7})"  # ASCII digits only; \d would match Unicode
+ARXIV_URL = re.compile(rf"(?i:https?://(?:www\.)?arxiv\.org)/(?:abs|pdf)/{ARXIV_ID}(?:v[0-9]+)?(?:\.pdf)?")
 
 
 def arxiv_id(url: object) -> str | None:
