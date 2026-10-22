@@ -13,7 +13,7 @@ def paper_key(doi: object = None, pmid: object = None, title: object = None, url
     def text(v):
         return str(v).strip() if isinstance(v, (str, int)) and not isinstance(v, bool) and str(v).strip() else None
     if d := text(doi):
-        return "doi:" + re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", d.lower())
+        return "doi:" + re.sub(r"^(https?://(dx\.)?doi\.org/|doi:\s*|doi\s+)", "", d.lower())
     if p := text(pmid):
         return "pmid:" + p
     if t := text(title):

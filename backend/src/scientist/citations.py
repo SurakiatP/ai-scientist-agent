@@ -15,10 +15,10 @@ HEADERS = {"User-Agent": "ai-scientist-dem/0.1 (citation check)"}
 async def _status(paper: Paper, client: httpx.AsyncClient) -> str:
     try:
         if paper.doi and paper.doi.strip():
-            doi = re.sub(r"^(https?://(dx\.)?doi\.org/|doi:)", "", paper.doi.strip(), flags=re.I)
-            if not DOI.fullmatch(doi):
+            doi = re.sub(r"^(https?://(dx\.)?doi\.org/|doi:\s*|doi\s+)", "", paper.doi.strip(), flags=re.I)
+            if not DOI.fullmatch(doi) or {".", ".."} & set(doi.split("/")):  # dot segments would be collapsed by the URL layer
                 return "unverified"
-            r = await client.get(f"https://api.crossref.org/works/{quote(doi, safe='/')}", headers=HEADERS, timeout=10)
+            r = await client.get(f"https://api.crossref.org/works/{quote(doi, safe='')}", headers=HEADERS, timeout=10)
             return "verified" if r.status_code == 200 else "unverified" if r.status_code == 404 else "unknown"
         pmid = str(paper.pmid or "").strip()
         if not PMID.fullmatch(pmid):
@@ -36,7 +36,10 @@ async def _status(paper: Paper, client: httpx.AsyncClient) -> str:
 
 
 async def verify_references(papers: list[Paper], *, client: httpx.AsyncClient) -> list[Reference]:
-    unique = list({paper_key(p.doi, p.pmid, p.title, p.url): p for p in reversed(papers)}.values())[::-1]
+    first: dict = {}
+    for p in papers:
+        first.setdefault(paper_key(p.doi, p.pmid, p.title, p.url), p)
+    unique = list(first.values())
     sem = asyncio.Semaphore(8)
 
     async def one(p: Paper) -> str:

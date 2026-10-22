@@ -60,3 +60,36 @@ async def test_pmid():
     assert (await run([paper(pmid="999")], gone))[0].status == "unverified"
     assert (await run([paper(pmid="12x")], ok))[0].status == "unverified"
     assert (await run([paper(pmid="123")], lambda r: httpx.Response(500)))[0].status == "unknown"
+
+
+async def test_dot_segment_dois_rejected_without_request():
+    calls = []
+    h = lambda r: calls.append(r) or httpx.Response(200, json={})
+    for d in ("10.1000/x/../../something", "10.1000/x/../..", "10.1000/x/./y"):
+        assert (await run([paper(doi=d)], h))[0].status == "unverified"
+    assert not calls
+
+
+async def test_doi_encoded_in_path():
+    paths = []
+
+    def h(r):
+        paths.append(r.url.raw_path.decode())
+        return httpx.Response(200, json={})
+    await run([paper(doi="10.1000/x?mailto=a@b"), paper(doi="10.1000/y#frag"), paper(doi="10.1000/a/b")], h)
+    assert sorted(paths) == sorted(["/works/10.1000%2Fx%3Fmailto%3Da%40b", "/works/10.1000%2Fy%23frag", "/works/10.1000%2Fa%2Fb"])
+
+
+async def test_dedupe_keeps_first_position_and_data():
+    a, b = paper(doi="10.1000/a", title="first"), paper(doi="10.1000/b")
+    refs = await run([a, b, paper(doi="10.1000/A", title="dup")], lambda r: httpx.Response(200, json={}))
+    assert [r.paper.title for r in refs] == ["first", "T"] and [r.id for r in refs] == ["1", "2"]
+
+
+async def test_429_unknown():
+    assert (await run([paper(doi="10.1000/abc")], lambda r: httpx.Response(429)))[0].status == "unknown"
+
+
+async def test_doi_space_prefix_dedupes_with_bare():
+    refs = await run([paper(doi="10.1000/abc"), paper(doi="DOI 10.1000/abc")], lambda r: httpx.Response(200, json={}))
+    assert len(refs) == 1
