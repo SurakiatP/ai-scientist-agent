@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Alert, Box, Button, Container, IconButton, Paper, Stack, TextField, Typography } from "@mui/material";
 import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
-import { useHistoryStore } from "@/lib/history";
+import { newId, useHistoryStore } from "@/lib/history";
 import { streamAsk, type Reference } from "@/lib/sse";
 import { MAX_QUESTION, strings } from "@/lib/strings";
 import { AnswerView } from "@/components/AnswerView";
@@ -48,9 +48,11 @@ export default function AskPage() {
       } else if (e.type === "complete") {
         terminal = true;
         if (final) { // only a finished run is stored; never refused/error/aborted
-          const id = crypto.randomUUID();
-          add({ id, question: question.trim(), answer: final.content, references: final.references, createdAt: Date.now() });
-          setItemId(id);
+          try {
+            const id = newId();
+            add({ id, question: question.trim(), answer: final.content, references: final.references, createdAt: Date.now() });
+            setItemId(id);
+          } catch {} // history is best-effort; it must never break a run
         }
       }
       else if (e.type === "final_answer") { terminal = true; final = { content: e.content, references: e.references }; setAnswer(final); }

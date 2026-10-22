@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Container, IconButton, Paper, Stack, Tab, Tabs, Typography } from "@mui/material";
+import { Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Container, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, IconButton, Paper, Stack, Tab, Tabs, Typography } from "@mui/material";
 import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
 import BookmarkIcon from "@mui/icons-material/Bookmark";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
@@ -14,6 +14,7 @@ const t = strings.th;
 export default function SavedPage() {
   const hydrated = useHydrated();
   const { items, toggleSaved, remove, clear } = useHistoryStore();
+  const [confirming, setConfirming] = useState(false);
   const [tab, setTab] = useState<"saved" | "history">("saved");
   const [open, setOpen] = useState<string | false>(false); // one open at a time: reference anchors (#ref-N) stay unique
   const shown = hydrated ? (tab === "saved" ? items.filter((i) => i.savedAt) : items) : [];
@@ -31,7 +32,7 @@ export default function SavedPage() {
             <Tab value="history" label={t.tabHistory} />
           </Tabs>
           {hydrated && items.length > 0 && (
-            <Button color="inherit" onClick={() => { if (window.confirm(t.confirmClear)) clear(); }}>{t.clearAll}</Button>
+            <Button color="inherit" onClick={() => setConfirming(true)}>{t.clearAll}</Button>
           )}
         </Stack>
         {hydrated && shown.length === 0 && <Alert severity="info">{tab === "saved" ? t.emptySaved : t.emptyHistory}</Alert>}
@@ -57,6 +58,14 @@ export default function SavedPage() {
           ))}
         </Stack>
       </Stack>
+      <Dialog open={confirming} onClose={() => setConfirming(false)} aria-labelledby="clear-title" aria-describedby="clear-desc">
+        <DialogTitle id="clear-title">{t.confirmClearTitle}</DialogTitle>
+        <DialogContent><DialogContentText id="clear-desc">{t.confirmClear}</DialogContentText></DialogContent>
+        <DialogActions>
+          <Button autoFocus onClick={() => setConfirming(false)}>{t.cancel}</Button>
+          <Button color="error" onClick={() => { clear(); setConfirming(false); }}>{t.confirm}</Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 }

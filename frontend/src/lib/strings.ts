@@ -49,6 +49,9 @@ export const strings = {
     emptyHistory: "ยังไม่มีประวัติ ลองถามคำถามแรกได้เลย",
     removeItem: "ลบรายการนี้",
     clearAll: "ล้างทั้งหมด",
+    cancel: "ยกเลิก",
+    confirm: "ยืนยัน",
+    confirmClearTitle: "ล้างทั้งหมด?",
     confirmClear: "ลบประวัติและที่บันทึกไว้ทั้งหมดในเบราว์เซอร์นี้ใช่หรือไม่",
   },
   en: {
@@ -99,6 +102,9 @@ export const strings = {
     emptyHistory: "No history yet. Ask your first question.",
     removeItem: "Delete this item",
     clearAll: "Clear all",
+    cancel: "Cancel",
+    confirm: "Confirm",
+    confirmClearTitle: "Clear everything?",
     confirmClear: "Delete all history and saved answers in this browser?",
   },
 } as const;
