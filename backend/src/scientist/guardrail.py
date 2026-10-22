@@ -20,9 +20,9 @@ IN_SCOPE = re.compile(
     re.I,
 )
 OUT_OF_SCOPE = re.compile(
-    r"\b(homework|essay|recipe|joke|election|stocks?|lottery|horoscope|react|javascript|css|"
+    r"\b(homework|essay|recipe|joke|lottery|horoscope|javascript|react (code|component|app|hook)s?|css (class|style|layout)s?|"
     r"python script|js bug|ignore (all |previous )?instructions|write (me )?(some |a )?(code|script))\b|"
-    r"การบ้าน|เรียงความ|เขียนโค้ด|ร้านอาหาร|สูตรอาหาร|หวย|หุ้น|เรื่องตลก|ดวง",
+    r"การบ้าน|เรียงความ|เขียนโค้ด|ร้านอาหาร|สูตรอาหาร|หวย|เรื่องตลก",
     re.I,
 )
 

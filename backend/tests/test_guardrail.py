@@ -92,11 +92,24 @@ async def test_weak_single_word_hits_reach_model(q, settings):
     assert len(ask.calls) == 1 and v.in_scope  # rules did not decide; model answer is respected
 
 
-@pytest.mark.parametrize("q", ["ช่วยเขียนเรียงความเรื่องวัคซีนให้หน่อย", "ดูดวงด้วยฟิสิกส์ควอนตัมให้หน่อย"])
+@pytest.mark.parametrize("q", ["ช่วยเขียนเรียงความเรื่องวัคซีนให้หน่อย", "ดูดวงวันนี้ด้วยการเรียนรู้ของเครื่อง"])
 async def test_science_word_in_offtopic_request_goes_to_model(q, settings):
     ask = make_ask('{"in_scope": false, "reason": "no"}')
     assert not (await check_scope(q, settings=settings, ask=ask)).in_scope
     assert len(ask.calls) == 1
+
+
+AMBIGUOUS = ["How do cells react to hypoxia?", "How do metals react with acid?",
+             "How do plants react to drought?", "Fish stocks in the Gulf of Thailand",
+             "Does CSS in fMRI studies matter", "Effect of election stress on cortisol",
+             "ดวงอาทิตย์ปล่อยรังสีอย่างไร", "ดวงดาวเกิดขึ้นได้อย่างไร", "ผลกระทบของหุ้นส่วนต่อการวิจัย"]
+
+
+@pytest.mark.parametrize("q", AMBIGUOUS)
+async def test_ambiguous_words_not_refused_by_rules(q, settings):
+    ask = make_ask('{"in_scope": true, "reason": "ok"}')
+    v = await check_scope(q, settings=settings, ask=ask)
+    assert v.in_scope and len(ask.calls) == 1
 
 
 @pytest.mark.skipif(os.getenv("LIVE") != "1", reason="set LIVE=1 to hit the real model")
