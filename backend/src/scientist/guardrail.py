@@ -8,18 +8,20 @@ from scientist import llm
 from scientist.config import Settings, get_settings
 
 # ponytail: keyword rules are a cheap first pass; anything unmatched goes to the small model.
+# Only strong, distinctive terms let the rules accept alone. Weak/ambiguous words
+# (cell, gene, dna, rna, transformer, trial, model, Thai "การเรียนรู้"...) go to the model.
 IN_SCOPE = re.compile(
-    r"crispr|genom|protein|enzym|cell|gene|dna|rna|chemi|molecul|polymer|perovskite|battery|batteries|"
-    r"electrolyte|nano|clinical|trial|cancer|disease|drug|vaccine|medic|llm|language model|transformer|"
-    r"neural|deep learning|machine learning|benchmark|pretrain|satellite|geospatial|remote sensing|"
-    r"quantum|physics|material|solar|superconduct|semiconductor|engineering|"
-    r"พันธุกรรม|จีโนม|โปรตีน|เซลล์|เคมี|โมเลกุล|วัสดุ|นาโน|แบตเตอรี่|มะเร็ง|โรค|วัคซีน|การแพทย์|"
-    r"ปัญญาประดิษฐ์|โมเดลภาษา|โมเดล|การเรียนรู้|ดาวเทียม|ควอนตัม|ฟิสิกส์|วิศวกรรม|งานวิจัย|การรู้จำเสียง",
+    r"\b(crispr|genomes?|genomics?|proteins?|enzymes?|perovskites?|electrolytes?|llms?|"
+    r"language models?|deep learning|machine learning|neural networks?|continual pretraining|"
+    r"clinical trials?|remote sensing|geospatial|quantum|superconduct\w*|semiconductors?|"
+    r"nanomaterials?|nanoparticles?|polymers?|vaccines?|oncology|cancer)\b|"
+    r"พันธุกรรม|จีโนม|โปรตีน|เคมี|โมเลกุล|นาโน|แบตเตอรี่|มะเร็ง|วัคซีน|การแพทย์|"
+    r"ปัญญาประดิษฐ์|โมเดลภาษา|ดาวเทียม|ควอนตัม|ฟิสิกส์|การรู้จำเสียง",
     re.I,
 )
 OUT_OF_SCOPE = re.compile(
-    r"homework|essay|recipe|joke|election|stocks?\b|lottery|horoscope|ignore (all |previous )?instructions|"
-    r"write (me )?(some |a )?(react|code|script)|react code|"
+    r"\b(homework|essay|recipe|joke|election|stocks?|lottery|horoscope|react|javascript|css|"
+    r"python script|js bug|ignore (all |previous )?instructions|write (me )?(some |a )?(code|script))\b|"
     r"การบ้าน|เรียงความ|เขียนโค้ด|ร้านอาหาร|สูตรอาหาร|หวย|หุ้น|เรื่องตลก|ดวง",
     re.I,
 )

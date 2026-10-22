@@ -74,6 +74,31 @@ async def test_model_failure_fails_closed(reply, settings):
     assert not v.in_scope and "could not be completed" in v.reason
 
 
+NEG = [c["q"] for c in CASES if not c["in_scope"]]
+
+
+@pytest.mark.parametrize("q", NEG)
+async def test_negatives_not_accepted_by_rules_alone(q, settings):
+    # a model that always errors must never turn an off-topic question into in_scope
+    v = await check_scope(q, settings=settings, ask=make_ask(RuntimeError("down")))
+    assert not v.in_scope
+
+
+@pytest.mark.parametrize("q", ["How does DNA methylation work?", "What does the cell membrane do?",
+                               "What is a good general name for my cat?", "Help me write my internal email"])
+async def test_weak_single_word_hits_reach_model(q, settings):
+    ask = make_ask('{"in_scope": true, "reason": "ok"}')
+    v = await check_scope(q, settings=settings, ask=ask)
+    assert len(ask.calls) == 1 and v.in_scope  # rules did not decide; model answer is respected
+
+
+@pytest.mark.parametrize("q", ["ช่วยเขียนเรียงความเรื่องวัคซีนให้หน่อย", "ดูดวงด้วยฟิสิกส์ควอนตัมให้หน่อย"])
+async def test_science_word_in_offtopic_request_goes_to_model(q, settings):
+    ask = make_ask('{"in_scope": false, "reason": "no"}')
+    assert not (await check_scope(q, settings=settings, ask=ask)).in_scope
+    assert len(ask.calls) == 1
+
+
 @pytest.mark.skipif(os.getenv("LIVE") != "1", reason="set LIVE=1 to hit the real model")
 async def test_live_model():
     v = await check_scope("How do tardigrades survive desiccation?", settings=guardrail.get_settings())
