@@ -3,7 +3,7 @@ export type Lang = "th" | "en";
 export const strings = {
   th: {
     title: "ถามคำถามวิจัย",
-    subtitle: "ค้นงานวิจัย เปรียบเทียบวิธี และสรุปพร้อมอ้างอิงที่ตรวจสอบแล้ว",
+    subtitle: "ค้นงานวิจัย เปรียบเทียบวิธี และสรุปพร้อมอ้างอิงที่ตรวจว่าเลขอ้างอิงมีอยู่จริง",
     placeholder: "เช่น เปรียบเทียบวิธี RAG กับ fine-tuning สำหรับการตอบคำถามทางการแพทย์",
     ask: "ถาม",
     stop: "หยุด",
@@ -23,7 +23,7 @@ export const strings = {
     refused: "คำถามนี้อยู่นอกขอบเขตของระบบ",
     refusedHelp: "ระบบนี้ตอบเฉพาะคำถามเชิงวิจัยทางวิทยาศาสตร์ ลองปรับคำถามแล้วถามใหม่",
     error: "เกิดข้อผิดพลาด",
-    verified: "ตรวจสอบแล้ว",
+    verified: "พบเลขอ้างอิงนี้จริง",
     unconfirmed: "ยังยืนยันไม่ได้",
     unconfirmedText: "ยังยืนยันไม่ได้ว่ามีงานนี้จริง",
     noId: "ไม่มีเลขอ้างอิง",
@@ -56,7 +56,7 @@ export const strings = {
   },
   en: {
     title: "Ask a research question",
-    subtitle: "Search papers, compare methods, and get an answer with checked references",
+    subtitle: "Search papers, compare methods, and get an answer whose reference identifiers are checked to exist",
     placeholder: "e.g. Compare RAG and fine-tuning for medical question answering",
     ask: "Ask",
     stop: "Stop",
@@ -76,7 +76,7 @@ export const strings = {
     refused: "This question is outside this tool's scope",
     refusedHelp: "This tool only answers scientific research questions. Try rephrasing and ask again.",
     error: "Something went wrong",
-    verified: "Verified",
+    verified: "Identifier exists",
     unconfirmed: "Unconfirmed",
     unconfirmedText: "Could not confirm this reference exists",
     noId: "No identifier",
@@ -133,7 +133,7 @@ export const landing = {
     method: [
       "คุณถามคำถามวิจัยเป็นภาษาไทยหรืออังกฤษ",
       "เอเจนต์วางแผนคำค้นได้สูงสุด 5 คำ คุณเห็นแผนนี้ทันทีที่สร้างเสร็จ",
-      "แต่ละคำค้นค้นจาก arXiv, OpenAlex, Crossref, PubMed, Semantic Scholar และแหล่งวิชาการอื่น งานที่พบทยอยแสดงขึ้นมา",
+      "แต่ละคำค้นสามารถค้นจาก arXiv, OpenAlex, Crossref, PubMed, Semantic Scholar หรือแหล่งวิชาการอื่น โดยเอเจนต์เลือกแหล่งเอง งานที่พบทยอยแสดงขึ้นมา",
       "เอเจนต์เขียนคำตอบเชิงเปรียบเทียบโดยถูกสั่งให้ใช้เฉพาะงานที่ค้นเจอ จากนั้นอ้างอิงแต่ละรายการถูกตรวจกับ Crossref, PubMed หรือ arXiv รายการที่ยืนยันไม่ได้จะมีป้ายเตือน",
     ],
     limitsTitle: "ขอบเขตและข้อจำกัด",
@@ -156,7 +156,7 @@ export const landing = {
     method: [
       "You ask a research question in Thai or English.",
       "The agent plans up to five searches. You see the plan as soon as it exists.",
-      "Each search queries arXiv, OpenAlex, Crossref, PubMed, Semantic Scholar and other scholarly sources. Papers appear as they are found.",
+      "Each search can query arXiv, OpenAlex, Crossref, PubMed, Semantic Scholar or other scholarly sources; the agent picks them. Papers appear as they are found.",
       "The agent writes a comparative answer, instructed to use only those papers. Each reference is then checked against Crossref, PubMed or arXiv; any that cannot be confirmed carry a warning.",
     ],
     limitsTitle: "Scope and limits",

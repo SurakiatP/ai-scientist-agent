@@ -15,7 +15,7 @@ Researchers on teams like those at NECTEC (Thailand's national electronics and c
 
 ## Product Purpose
 
-A researcher asks a scientific-research question in Thai or English and watches an agent plan up to 5 searches, query scholarly sources (arXiv, OpenAlex, Crossref, PubMed, Semantic Scholar and others), and stream back a comparative answer. Success: an answer whose cited references were each checked against Crossref (DOI), PubMed (PMID) or arXiv, with any that cannot be confirmed (`unverified`) or checked (`unknown`) flagged, not hidden. The agent is instructed to write only from retrieved papers; that is a prompt instruction, not a guarantee.
+A researcher asks a scientific-research question in Thai or English and watches an agent plan up to 5 searches, query scholarly sources it picks (arXiv, OpenAlex, Crossref, PubMed, Semantic Scholar or others), and stream back a comparative answer. Success: an answer whose cited references were each checked against Crossref (DOI), PubMed (PMID) or arXiv, with any that cannot be confirmed (`unverified`) or checked (`unknown`) flagged, not hidden. The agent is instructed to write only from retrieved papers; that is a prompt instruction, not a guarantee.
 
 ## Positioning
 

@@ -107,3 +107,8 @@ Landing page, then the app: a chat-style research workspace with a live progress
 - The concurrency numbers (caps, queue length) after measuring real cost per question.
 - Thai query handling: translate to English search terms before searching, answer language follows the question.
 - Component choices and visual design within the constraints above.
+
+## Changes during build
+
+- Citation check is still existence only, but also covers arXiv ids (arXiv API) and DataCite DOIs (doi.org handle API), not only DOI/PMID. A passing reference is labelled "identifier exists", not "verified", since the paper's content is never checked.
+- If papers were found but no branch finished its summary, the run ends with the checked reference list and a plain note instead of a synthesised answer (no comparison is written from titles alone).

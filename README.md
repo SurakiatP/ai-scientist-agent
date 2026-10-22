@@ -35,7 +35,7 @@ Needs `uv`, Node >= 20 with npm, and a running Docker.
 |---|---|---|
 | `OPENROUTER_API_KEY` | none, required (non-empty) | OpenRouter key |
 | `MODEL` | none, required | main model (`.env.example`: `openai/gpt-6-luna`) |
-| `FALLBACK_MODEL` | none, required | model used for the scope check and as fallback (`.env.example`: `openai/gpt-6-luna`) |
+| `FALLBACK_MODEL` | none, required | model used for the scope check and as fallback (`.env.example`: `openai/gpt-6-luna`). Equal to `MODEL` there, so a failed call is retried on the same model: worst case one run holds a slot about 13 minutes (240 s per call with fallback, plus the 315 s branch deadline) |
 | `MAX_BRANCHES` | 5 | search branches per question |
 | `MAX_CONCURRENT_RUNS` | 4 | simultaneous questions; extra ones queue (per process) |
 | `BRANCH_TOKEN_CAP` | 4000 | `max_tokens` per model call in a branch |
@@ -46,6 +46,11 @@ Needs `uv`, Node >= 20 with npm, and a running Docker.
 | `ENABLED_SKILLS` | `[]` | JSON list of skills copied into Hermes (`.env.example`: `["paper-lookup"]`) |
 | `CORS_ORIGINS` | `["http://localhost:3000"]` | JSON list of allowed browser origins |
 | `SSE_PING_SECONDS` | 15 | heartbeat interval while a run waits |
+| `MAX_PAPERS_PER_BRANCH` | 30 | papers a branch may report; extra ones are ignored and counted in the final note |
+| `GUARDRAIL_MAX_TOKENS` | 256 | `max_tokens` for the scope-check call (reasoning models spend part of it thinking; too small comes back blank) |
+| `STRATEGY_MAX_TOKENS` | 1500 | `max_tokens` for the search-plan call |
+| `SYNTHESIS_MAX_TOKENS` | 4000 | `max_tokens` for the final-answer call |
+| `CONTACT_EMAIL` | empty | sent as `mailto:` in the citation-check User-Agent (Crossref/NCBI ask for one); empty: no `mailto` |
 
 ## Run
 
@@ -84,9 +89,9 @@ Events (`backend/src/scientist/events.py`), in typical order:
 | `refused` | `reason` (off-topic; no agent is started) |
 | `waiting` | `position` (queued behind `MAX_CONCURRENT_RUNS`) |
 | `strategy` | `reasoning`, `searches[{term, instructions}]` |
-| `sources` | `term`, `papers[{title, authors, year, doi, pmid, url}]` (one per branch, as it finishes) |
+| `sources` | `term`, `papers[{title, authors, year, doi, pmid, url}]` (one event per paper, as a branch reports it) |
 | `answer` | `term`, `content` (per-branch summary) |
-| `final_answer` | `content`, `references[{id, paper, status}]`; `status` is `verified`, `unverified` or `unknown` |
+| `final_answer` | `content`, `references[{id, paper, status}]`; `status` is `verified` (identifier exists), `unverified` (not found, or no identifier) or `unknown` (lookup did not answer). If papers were found but no branch finished its summary, `content` says so and lists the references without a synthesised answer |
 | `complete` | none |
 | `error` | `message` |
 
@@ -103,16 +108,21 @@ answers stay in the browser (localStorage). The app binds to localhost and has n
 - Only `paper-lookup` is enabled by default: it needs just the standard library, which the sandbox image has.
   The other skills need extra packages or keys.
 - No per-IP rate limit; the app is meant for localhost only.
-- `unknown` on a reference means the lookup service did not answer (Crossref or doi.org rate limit, 5xx or
-  timeout), not that the paper is fake. A made-up DOI is `unverified` when the service answers and `unknown`
+- The guardrail's model call runs before the run gate, so it is not rate limited. Acceptable while the app is
+  localhost only; revisit before any public exposure.
+- `unknown` on a reference means the lookup service did not answer (rate limit, 5xx or timeout), not that the
+  paper is fake. Lookups are capped per host (Crossref and doi.org 2, NCBI 3, arXiv 1 at a time, shared by all
+  runs), all arXiv ids of a run go in one request, and a 429/503 with `Retry-After` is retried once (wait capped
+  at 5 s). A made-up DOI is `unverified` when the service answers and `unknown`
   when it does not, so `unknown` will appear occasionally.
-- Not verified: a live OpenRouter run with `openai/gpt-6-luna`, and its prompt-cache behaviour.
+- Not verified: a live OpenRouter run with `openai/gpt-6-luna`, and its prompt-cache behaviour. Each model call
+  logs `model`, `prompt_tokens`, `completion_tokens` and `cached_tokens` at INFO, so the first live run shows it.
   Everything was run against a local scripted fake model.
 
 ## Verification status
 
 Run here: `scripts/dev.sh` start, health checks and stop (no stray listeners, processes or labelled containers);
-the empty-key and port-in-use refusals; `uv run pytest` (176 passed, 2 skipped); `npm test`, `npm run lint`,
+the empty-key and port-in-use refusals; `uv run pytest` (210 passed, 2 skipped); `npm test`, `npm run lint`,
 `npm run build`; an end-to-end run in Chrome (English, Thai, off-topic questions, save and reload) against a
 local fake model with the real backend, pinned Hermes and Docker.
 

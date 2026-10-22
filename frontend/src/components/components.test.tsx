@@ -29,6 +29,12 @@ describe("ReferenceList", () => {
     expect(screen.getByText(/No identifier \(DOI/)).toBeInTheDocument();
     expect(screen.getByText(/Could not check/)).toBeInTheDocument();
   });
+  it("labels verified as identifier existence only, not content verification", () => {
+    render(<ReferenceList t={strings.en} references={[ref("1", "verified", { doi: "10.1000/x" })]} />);
+    expect(screen.getByText("✓ Identifier exists")).toBeInTheDocument();
+    expect(strings.th.verified).toBe("พบเลขอ้างอิงนี้จริง");
+    expect(screen.queryByText(/verified/i)).toBeNull();
+  });
   it("words unverified by whether an identifier exists", () => {
     render(<ReferenceList t={strings.en} references={[ref("1", "unverified", { doi: "10.1000/x" })]} />);
     expect(screen.getByText("Could not confirm this reference exists")).toBeInTheDocument();
