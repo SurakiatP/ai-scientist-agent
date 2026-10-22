@@ -110,4 +110,60 @@ export const strings = {
 } as const;
 
 export type Strings = Record<keyof (typeof strings)["th"], string>;
+
+// Landing page: shown in Thai with an English twin side by side, so both languages live here.
+export const landing = {
+  th: {
+    skip: "ข้ามไปยังเนื้อหา",
+    title: "ถามคำถามวิจัย แล้วดูทุกขั้นตอนของคำตอบ",
+    lead: "เอเจนต์วางแผนค้นหาได้สูงสุด 5 คำค้น ค้นจากแหล่งวิชาการ แล้วเขียนคำตอบเชิงเปรียบเทียบจากงานวิจัยที่ค้นเจอเท่านั้น ทุก DOI และ PMID ที่อ้างถึงถูกตรวจว่ามีอยู่จริงก่อนแสดงให้คุณเห็น",
+    cta: "ถามคำถามวิจัย",
+    figCaption: "รูปที่ 1 ตัวอย่างจำลองของการทำงานหนึ่งรอบ: คำถาม แผนการค้นหา งานวิจัยที่พบ และคำตอบเชิงเปรียบเทียบพร้อมอ้างอิงที่ตรวจแล้ว",
+    stages: ["คำถาม", "แผนการค้นหา", "งานวิจัยที่พบ", "คำตอบพร้อมอ้างอิง"],
+    figQuestion: ["เปรียบเทียบ RAG กับ fine-tuning", "สำหรับการตอบคำถาม", "ทางการแพทย์"],
+    figAsk: "ถาม",
+    // Synthetic example data for Figure 1 (search terms and source names stay in English, as researchers type them).
+    figQueries: ["RAG medical QA", "fine-tuning clinical QA", "RAG vs fine-tuning", "PubMedQA retrieval", "domain-adapted LLM"],
+    figSources: ["arXiv", "PubMed", "OpenAlex", "Crossref", "S2"],
+    figColumns: ["RAG", "Fine-tuning"],
+    figChecked: "ตรวจแล้วว่ามีอยู่จริง",
+    methodTitle: "วิธีการ",
+    method: [
+      "คุณถามคำถามวิจัยเป็นภาษาไทยหรืออังกฤษ",
+      "เอเจนต์วางแผนคำค้นได้สูงสุด 5 คำ คุณเห็นแผนนี้ทันทีที่สร้างเสร็จ",
+      "แต่ละคำค้นค้นจาก arXiv, OpenAlex, Crossref, PubMed, Semantic Scholar และแหล่งวิชาการอื่น งานที่พบทยอยแสดงขึ้นมา",
+      "คำตอบเชิงเปรียบเทียบเขียนจากงานที่ค้นเจอ และตรวจ DOI กับ PMID ทุกรายการก่อนแสดง",
+    ],
+    limitsTitle: "ขอบเขตและข้อจำกัด",
+    limits: [
+      "การตรวจอ้างอิงยืนยันเพียงว่า DOI หรือ PMID นั้นมีอยู่จริง ไม่ได้ยืนยันว่างานนั้นสนับสนุนข้อความที่อ้างถึง ควรอ่านต้นฉบับก่อนนำไปใช้",
+      "คำตอบมาจากงานวิจัยที่ค้นเจอในรอบนั้นเท่านั้น ไม่ได้มาจากความจำของโมเดล",
+      "ตอบเฉพาะคำถามวิจัยทางวิทยาศาสตร์ คำถามอื่นจะได้รับคำปฏิเสธอย่างสุภาพ",
+      "ไม่ต้องเข้าสู่ระบบ ประวัติและคำตอบที่บันทึกไว้อยู่ในเบราว์เซอร์นี้เท่านั้น",
+    ],
+    footer: "สร้างขึ้นสำหรับทีมวิจัยด้านปัญญาประดิษฐ์และภาษา อุปกรณ์และเซนเซอร์ และ IoT",
+  },
+  en: {
+    title: "Ask a research question. See every step of the answer.",
+    lead: "An agent plans up to five searches across scholarly sources, then writes a comparative answer from the papers it found, and nothing else. Every cited DOI and PMID is checked to exist before you see it.",
+    cta: "Ask a research question",
+    figCaption: "Figure 1. An illustrative, synthetic run: the question, the search plan, papers found, and a comparative answer with checked references.",
+    stages: ["Question", "Search plan", "Papers found", "Cited answer"],
+    methodTitle: "Method",
+    method: [
+      "You ask a research question in Thai or English.",
+      "The agent plans up to five searches. You see the plan as soon as it exists.",
+      "Each search queries arXiv, OpenAlex, Crossref, PubMed, Semantic Scholar and other scholarly sources. Papers appear as they are found.",
+      "A comparative answer is written from those papers, and every DOI and PMID is checked before it is shown.",
+    ],
+    limitsTitle: "Scope and limits",
+    limits: [
+      "The reference check confirms a DOI or PMID exists. It does not confirm the paper supports the sentence citing it; read the source before you rely on it.",
+      "Answers come only from the papers retrieved in that run, not from the model's memory.",
+      "Only scientific research questions are answered. Other questions are politely declined.",
+      "No login. History and saved answers stay in this browser only.",
+    ],
+    footer: "Built for research teams working on AI and language, devices and sensors, and IoT.",
+  },
+} as const;
 export const MAX_QUESTION = 2000;
