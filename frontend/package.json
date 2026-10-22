@@ -13,13 +13,15 @@
     "@emotion/cache": "^11.14.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^9.5.0",
     "@mui/material": "^9.5.0",
     "@mui/material-nextjs": "^9.5.0",
     "next": "16.4.2",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",

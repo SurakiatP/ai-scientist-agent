@@ -1,6 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Alert, Box, Button, Container, Paper, Stack, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Container, IconButton, Paper, Stack, TextField, Typography } from "@mui/material";
+import BookmarkBorderIcon from "@mui/icons-material/BookmarkBorder";
+import BookmarkIcon from "@mui/icons-material/Bookmark";
+import { useHistoryStore } from "@/lib/history";
 import { streamAsk, type Reference } from "@/lib/sse";
 import { MAX_QUESTION, strings } from "@/lib/strings";
 import { AnswerView } from "@/components/AnswerView";
@@ -18,6 +21,10 @@ export default function AskPage() {
   const [refused, setRefused] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stopped, setStopped] = useState(false);
+  const [itemId, setItemId] = useState<string | null>(null);
+  const add = useHistoryStore((s) => s.add);
+  const toggleSaved = useHistoryStore((s) => s.toggleSaved);
+  const isSaved = useHistoryStore((s) => !!s.items.find((i) => i.id === itemId)?.savedAt);
   const ac = useRef<AbortController | null>(null);
   useEffect(() => () => ac.current?.abort(), []);
 
@@ -29,16 +36,24 @@ export default function AskPage() {
     const c = new AbortController();
     ac.current = c;
     setRunning(true); setStarted(true); setStopped(false);
-    setProgress(emptyProgress); setAnswer(null); setRefused(null); setError(null);
+    setProgress(emptyProgress); setAnswer(null); setRefused(null); setError(null); setItemId(null);
     let terminal = false;
+    let final: { content: string; references: Reference[] } | null = null;
     for await (const e of streamAsk(question.trim(), c.signal)) {
       if (e.type === "refused") { terminal = true; setRefused(e.reason); }
       else if (e.type === "error") {
         terminal = true;
         const m = e.code === "network" ? t.network : e.code === "malformed" ? t.malformed : e.code === "http" ? `${t.requestFailed}${e.message ? `: ${e.message}` : ""}` : e.message;
         setError(m);
-      } else if (e.type === "complete") terminal = true;
-      else if (e.type === "final_answer") { terminal = true; setAnswer({ content: e.content, references: e.references }); }
+      } else if (e.type === "complete") {
+        terminal = true;
+        if (final) { // only a finished run is stored; never refused/error/aborted
+          const id = crypto.randomUUID();
+          add({ id, question: question.trim(), answer: final.content, references: final.references, createdAt: Date.now() });
+          setItemId(id);
+        }
+      }
+      else if (e.type === "final_answer") { terminal = true; final = { content: e.content, references: e.references }; setAnswer(final); }
       setProgress((p) => reduce(p, e));
     }
     if (c.signal.aborted) setStopped(true);
@@ -82,7 +97,14 @@ export default function AskPage() {
         {answer && (
           <>
             <Paper sx={{ p: { xs: 2.5, md: 4 } }}>
-              <Typography variant="h6" component="h2" sx={{ mb: 2 }}>{t.answer}</Typography>
+              <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+                <Typography variant="h6" component="h2">{t.answer}</Typography>
+                {itemId && (
+                  <IconButton aria-label={isSaved ? t.unsave : t.save} aria-pressed={isSaved} color={isSaved ? "primary" : "default"} onClick={() => toggleSaved(itemId)}>
+                    {isSaved ? <BookmarkIcon /> : <BookmarkBorderIcon />}
+                  </IconButton>
+                )}
+              </Stack>
               <AnswerView content={answer.content} references={answer.references} />
             </Paper>
             {answer.references.length > 0 && (
