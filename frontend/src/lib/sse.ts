@@ -19,7 +19,7 @@ export type AskEvent =
   | { type: "answer"; term: string; content: string }
   | { type: "final_answer"; content: string; references: Reference[] }
   | { type: "complete" }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; code?: "malformed" | "network" | "http" }; // code set by streamAsk itself; backend errors have none
 
 function parse(block: string): AskEvent | null {
   const data = block
@@ -32,8 +32,10 @@ function parse(block: string): AskEvent | null {
     const ev = JSON.parse(data);
     if (ev && typeof ev.type === "string") return ev as AskEvent;
   } catch {}
-  return { type: "error", message: "Malformed event from server" };
+  return { type: "error", message: "", code: "malformed" };
 }
+
+const clean = (m: string) => m.replace(/^Value error, /, "");
 
 export async function* streamAsk(question: string, signal: AbortSignal): AsyncGenerator<AskEvent> {
   let res: Response;
@@ -44,42 +46,45 @@ export async function* streamAsk(question: string, signal: AbortSignal): AsyncGe
       body: JSON.stringify({ question }),
       signal,
     });
-  } catch (e) {
-    if (signal.aborted) return;
-    yield { type: "error", message: e instanceof Error ? e.message : "Network error" };
+  } catch {
+    if (!signal.aborted) yield { type: "error", message: "", code: "network" };
     return;
   }
   if (!res.ok || !res.body) {
-    let message = `Request failed (${res.status})`;
+    let message = "";
     try {
       const body = await res.json();
-      if (typeof body?.detail === "string") message = body.detail;
-      else if (Array.isArray(body?.detail) && body.detail[0]?.msg) message = String(body.detail[0].msg);
+      if (typeof body?.detail === "string") message = clean(body.detail);
+      else if (Array.isArray(body?.detail) && body.detail[0]?.msg) message = clean(String(body.detail[0].msg));
     } catch {}
-    yield { type: "error", message };
+    yield { type: "error", message, code: "http" };
     return;
   }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
+  let pendingCR = ""; // a trailing "\r" may be the first half of "\r\n" split across chunks
   try {
     for (;;) {
       if (signal.aborted) return;
       const { done, value } = await reader.read();
       if (done) break;
-      buf += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+      let raw = pendingCR + decoder.decode(value, { stream: true });
+      pendingCR = raw.endsWith("\r") ? "\r" : "";
+      raw = raw.slice(0, raw.length - pendingCR.length);
+      buf += raw.replace(/\r\n?/g, "\n");
       let i: number;
       while ((i = buf.indexOf("\n\n")) >= 0) {
         const ev = parse(buf.slice(0, i));
         buf = buf.slice(i + 2);
+        if (signal.aborted) return;
         if (ev) yield ev;
       }
     }
-    const ev = parse(buf);
-    if (ev) yield ev;
-  } catch (e) {
-    if (signal.aborted) return;
-    yield { type: "error", message: e instanceof Error ? e.message : "Stream error" };
+    const ev = parse(buf + (pendingCR ? "\n" : ""));
+    if (ev && !signal.aborted) yield ev;
+  } catch {
+    if (!signal.aborted) yield { type: "error", message: "", code: "network" };
   } finally {
     reader.cancel().catch(() => {});
   }

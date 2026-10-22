@@ -56,7 +56,7 @@ describe("streamAsk", () => {
   });
   it("yields an error with the detail on a non-200 response", async () => {
     mockFetch([], { status: 422, json: { detail: [{ msg: "too long" }] } });
-    expect(await collect()).toEqual([{ type: "error", message: "too long" }]);
+    expect(await collect()).toEqual([{ type: "error", message: "too long", code: "http" }]);
   });
   it("stops when aborted", async () => {
     const ac = new AbortController();
@@ -66,6 +66,17 @@ describe("streamAsk", () => {
       out.push(e);
       ac.abort();
     }
+    expect(out).toEqual([{ type: "waiting", position: 1 }]);
+  });
+  it("normalises \\r\\n and lone \\r split across chunks", async () => {
+    mockFetch(['data: {"type":"waiting","position":1}\r', '\n\r', '\ndata: {"type":"complete"}\r\r']);
+    expect(await collect()).toEqual([{ type: "waiting", position: 1 }, { type: "complete" }]);
+  });
+  it("does not yield buffered events after abort, and no error on abort", async () => {
+    const ac = new AbortController();
+    mockFetch(['data: {"type":"waiting","position":1}\n\ndata: {"type":"waiting","position":2}\n\ndata: {"type":"complete"}\n\n']);
+    const out: AskEvent[] = [];
+    for await (const e of streamAsk("q", ac.signal)) { out.push(e); ac.abort(); }
     expect(out).toEqual([{ type: "waiting", position: 1 }]);
   });
 });

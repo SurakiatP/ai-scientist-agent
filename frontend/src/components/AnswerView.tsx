@@ -4,10 +4,16 @@ import remarkGfm from "remark-gfm";
 import { Box } from "@mui/material";
 
 // "[1]" / "[2][3]" -> link to #ref-N so a click jumps to (and :target highlights) the reference.
-const cite = (s: string) => s.replace(/\[(\d{1,3})\](?!\()/g, "[[$1]](#ref-$1)");
+// Only ids that exist in the reference list; never inside inline or fenced code.
+export function cite(s: string, ids: Set<string>) {
+  return s
+    .split(/(```[\s\S]*?```|`[^`\n]*`)/)
+    .map((part, i) => (i % 2 ? part : part.replace(/\[(\d{1,3})\](?!\()/g, (m, n) => (ids.has(n) ? `[[${n}]](#ref-${n})` : m))))
+    .join("");
+}
 const safeUrl = (u: string) => (/^#ref-\d+$/.test(u) || /^https?:\/\//i.test(u) ? defaultUrlTransform(u) : "");
 
-export function AnswerView({ content }: { content: string }) {
+export function AnswerView({ content, references = [] }: { content: string; references?: { id: string }[] }) {
   return (
     <Box
       sx={{
@@ -25,6 +31,8 @@ export function AnswerView({ content }: { content: string }) {
         urlTransform={safeUrl}
         skipHtml
         components={{
+          // images would let injected paper text exfiltrate data via a GET; show the alt text only
+          img: ({ alt }) => <span>{alt}</span>,
           a: ({ href, children }) =>
             href?.startsWith("#") ? (
               <a href={href}>{children}</a>
@@ -35,7 +43,7 @@ export function AnswerView({ content }: { content: string }) {
             ),
         }}
       >
-        {cite(content)}
+        {cite(content, new Set(references.map((r) => r.id)))}
       </Markdown>
     </Box>
   );
