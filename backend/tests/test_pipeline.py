@@ -4,11 +4,13 @@ import re
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 from scientist import llm
 from scientist.config import Settings
-from scientist.events import Error, FinalAnswer, Refused, Strategy, to_sse
+from scientist.events import Error, FinalAnswer, Refused, Strategy, Waiting, to_sse
+from scientist.gate import RunGate
 from scientist.hermes import HermesRuntime
 from scientist.pipeline import ask
 
@@ -32,22 +34,6 @@ def settings():
                     hermes_source_path=".", hermes_revision="x")
 
 
-@pytest.fixture
-def fake_complete(monkeypatch):
-    """Recording fake for llm.complete: JSON-mode calls get the strategy, the rest the synthesis."""
-    state = {"strategy": None, "synthesis": "Comparative answer [1].", "calls": []}
-
-    async def complete(system, user, *, model=None, max_tokens, json_mode=False, settings=None):
-        state["calls"].append({"system": system, "user": user, "json_mode": json_mode})
-        reply = state["strategy"] if json_mode else state["synthesis"]
-        if isinstance(reply, Exception):
-            raise reply
-        return llm.LlmResult(text=reply, prompt_tokens=1, completion_tokens=1, cached_tokens=0)
-
-    monkeypatch.setattr(llm, "complete", complete)
-    return state
-
-
 def strategy(*terms):
     return json.dumps({"reasoning": "plan", "searches": [{"term": t, "instructions": f"extract {t}"} for t in terms]})
 
@@ -58,8 +44,22 @@ def runner(settings, tmp_path, script):
     return HermesRuntime(settings, command=[sys.executable, FAKE, str(path)])
 
 
-async def run(question, rt, settings):
-    return [e async for e in ask(question, rt, settings=settings)]
+def crossref(status=200):
+    """Citation-check client: every DOI/PMID lookup answers with `status`."""
+    def handle(request):
+        if "eutils" in request.url.host:
+            pmid = request.url.params["id"]
+            return httpx.Response(status, json={"result": {pmid: {"uid": pmid}}})
+        return httpx.Response(status)
+    return httpx.AsyncClient(transport=httpx.MockTransport(handle))
+
+
+def start(question, rt, settings, client=None, gate=None):
+    return ask(question, rt, settings=settings, client=client or crossref(), gate=gate or RunGate(4))
+
+
+async def run(question, rt, settings, client=None):
+    return [e async for e in start(question, rt, settings, client)]
 
 
 def types(events):
@@ -69,8 +69,8 @@ def types(events):
 async def test_event_order(settings, tmp_path, fake_complete):
     fake_complete["strategy"] = strategy("base editing", "prime editing")
     rt = runner(settings, tmp_path, {
-        "base editing": [paper("BE4", "10.1/be4"), paper("ABE8", "10.1/abe8"), answer("BE4 and ABE8 [..]")],
-        "prime editing": [paper("PE3", "10.1/pe3"), answer("PE3 works")],
+        "base editing": [paper("BE4", "10.1000/be4"), paper("ABE8", "10.1000/abe8"), answer("BE4 and ABE8 [..]")],
+        "prime editing": [paper("PE3", "10.1000/pe3"), answer("PE3 works")],
     })
     events = await run(Q, rt, settings)
     assert re.fullmatch(r"strategy( sources)+( answer)+ final_answer complete", types(events)), types(events)
@@ -78,7 +78,8 @@ async def test_event_order(settings, tmp_path, fake_complete):
     assert sum(len(e.papers) for e in events if e.type == "sources") == 3
     final = next(e for e in events if isinstance(e, FinalAnswer))
     assert final.content.startswith("Comparative answer")
-    assert len(final.references) == 3 and all(r.status == "unknown" for r in final.references)
+    assert len(final.references) == 3 and all(r.status == "verified" for r in final.references)
+    assert "Warning" not in final.content
 
 
 async def test_strategy_truncated_and_blank_terms_dropped(settings, tmp_path, fake_complete):
@@ -162,12 +163,13 @@ async def test_paper_text_injection_is_data(settings, tmp_path, fake_complete):
 async def test_closing_stream_mid_run_kills_bridges(settings, tmp_path, fake_complete):
     fake_complete["strategy"] = strategy("a", "b")
     rt = runner(settings, tmp_path, {"*": [paper("P", "10.1/p"), {"sleep": 30}]})
-    stream = ask(Q, rt, settings=settings)
+    gate = RunGate(1)
+    stream = start(Q, rt, settings, gate=gate)
     assert (await anext(stream)).type == "strategy"
     assert (await anext(stream)).type == "sources"
     assert rt.procs
     await asyncio.wait_for(stream.aclose(), timeout=20)
-    assert not rt.procs
+    assert not rt.procs and gate.free == 1
 
 
 async def test_off_topic_is_refused_without_branches(settings, tmp_path, fake_complete):
@@ -224,3 +226,44 @@ async def test_dropped_papers_are_mentioned_in_final_answer(settings, tmp_path, 
     events = await run(Q, rt, settings)
     final = next(e for e in events if isinstance(e, FinalAnswer))
     assert "1 paper" in final.content and len(final.references) == 1
+
+
+async def test_unverified_reference_is_flagged_in_answer_and_prompt(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    rt = runner(settings, tmp_path, {"a": [paper("Real", "10.1000/real"), paper("Made up", "10.1000/fake"), answer("s")]})
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda r: httpx.Response(404 if "fake" in str(r.url) else 200)))
+    final = next(e for e in await run(Q, rt, settings, client) if isinstance(e, FinalAnswer))
+    assert [(r.id, r.status) for r in final.references] == [("1", "verified"), ("2", "unverified")]
+    assert "Warning: reference(s) [2] could not be confirmed" in final.content
+    data = json.loads(re.split(r"<data>|</data>", fake_complete["calls"][-1]["user"])[1])
+    assert [r["status"] for r in data["references"]] == ["verified", "unverified"]
+
+
+async def test_lookup_outage_is_unknown_not_unverified(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    rt = runner(settings, tmp_path, {"a": [paper("P", "10.1000/p"), answer("s")]})
+    final = next(e for e in await run(Q, rt, settings, crossref(503)) if isinstance(e, FinalAnswer))
+    assert final.references[0].status == "unknown"
+    assert "[1] could not be checked" in final.content and "Warning" not in final.content
+
+
+async def test_full_gate_queues_until_a_slot_frees(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    rt = runner(settings, tmp_path, {"a": [paper("P", "10.1/p"), answer("s")]})
+    gate = RunGate(1)
+    await anext(gate.acquire(), None)  # someone else holds the only slot
+    stream = start(Q, rt, settings, gate=gate)
+    assert await anext(stream) == Waiting(position=1)
+    rest = asyncio.create_task(anext(stream))
+    gate.release()
+    assert (await asyncio.wait_for(rest, 10)).type == "strategy"
+    assert types([e async for e in stream]).endswith("final_answer complete")
+    assert gate.free == 1
+
+
+async def test_refusal_takes_no_slot(settings, tmp_path, fake_complete):
+    gate = RunGate(1)
+    await anext(gate.acquire(), None)
+    events = [e async for e in start("Give me a recipe for pad thai", runner(settings, tmp_path, {}), settings, gate=gate)]
+    assert types(events) == "refused" and gate.queue == []

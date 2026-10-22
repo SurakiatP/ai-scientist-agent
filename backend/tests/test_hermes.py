@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from scientist.config import Settings
 from scientist.events import HTTP_URL, BranchAnswer, Paper
-from scientist.hermes import BranchFailed, HermesRuntime, InvalidPaper
+from scientist.hermes import BranchFailed, HermesRuntime, InvalidPaper, sweep_containers
 
 ROOT = Path(__file__).resolve().parents[2]
 FAKE = str(Path(__file__).parent / "fake_bridge.py")
@@ -152,3 +152,18 @@ async def test_rejected_event_becomes_invalid_paper_with_key(settings, tmp_path)
     assert items[0] == InvalidPaper(term="t", key="doi:10.1/abc", reason="url must be an http(s) link")
     assert items[1].key is None and items[1].reason
     assert isinstance(items[2], BranchAnswer)
+
+
+def test_sweep_removes_only_labelled_containers(tmp_path, monkeypatch):
+    log = tmp_path / "docker.log"
+    docker = tmp_path / "docker"
+    docker.write_text(f'#!/bin/sh\necho "$@" >> {log}\n[ "$1" = ps ] && printf "c1\\nc2\\n"\nexit 0\n')
+    docker.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    sweep_containers()
+    assert log.read_text().splitlines() == ["ps -aq --filter label=scientist.branch=1", "rm -f c1 c2"]
+
+
+def test_sweep_without_docker_is_a_no_op(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path))
+    sweep_containers()

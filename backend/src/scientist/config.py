@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     hermes_revision: str
     enabled_skills: list[str] = []
     cors_origins: list[str] = ["http://localhost:3000"]
+    sse_ping_seconds: float = 15  # comment line while a run waits, so proxies keep the stream open
 
 
 @lru_cache

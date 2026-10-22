@@ -3,13 +3,17 @@ import asyncio
 import json
 import re
 from collections.abc import AsyncIterator
-from contextlib import suppress
+from contextlib import aclosing, suppress
 from pathlib import Path
 
+import httpx
+
 from scientist import llm
+from scientist.citations import verify_references
 from scientist.config import Settings
 from scientist.events import (BranchAnswer, Complete, Error, Event, FinalAnswer, Reference, Refused, Search,
-                              Sources, Strategy, paper_key)
+                              Sources, Strategy, Waiting, paper_key)
+from scientist.gate import RunGate
 from scientist.guardrail import check_scope
 from scientist.hermes import BranchFailed, BranchRunner, InvalidPaper
 
@@ -35,17 +39,36 @@ async def _strategy(question: str, settings: Settings) -> Strategy | None:
 
 
 def _data_block(references: list[Reference], answers: list[BranchAnswer]) -> str:
-    data = {"references": [{"id": r.id, **r.paper.model_dump()} for r in references],
+    data = {"references": [{"id": r.id, "status": r.status, **r.paper.model_dump()} for r in references],
             "findings": [{"search": a.term, "summary": a.content} for a in answers]}
     # JSON keeps the text a string; escaping "<" stops it from closing the block early
     return "<data>\n" + json.dumps(data, ensure_ascii=False, indent=1).replace("<", "\\u003c") + "\n</data>"
 
 
-async def ask(question: str, runner: BranchRunner, *, settings: Settings) -> AsyncIterator[Event]:
+def _ids(refs: list[Reference], status: str) -> str:
+    return "".join(f"[{r.id}]" for r in refs if r.status == status)
+
+
+async def ask(question: str, runner: BranchRunner, *, settings: Settings, client: httpx.AsyncClient,
+              gate: RunGate) -> AsyncIterator[Event]:
+    """Scope check, then, holding a gate slot: strategy, branches, citation check (via client), synthesis."""
     verdict = await check_scope(question, settings=settings)
     if not verdict.in_scope:
-        yield Refused(reason=verdict.reason)
+        yield Refused(reason=verdict.reason)  # refusals never queue or take a slot
         return
+    async with aclosing(gate.acquire()) as waits:
+        async for position in waits:
+            yield Waiting(position=position)
+    try:
+        # aclosing: when our consumer goes away, _run's cleanup (killing the bridges) runs now, not at GC
+        async with aclosing(_run(question, runner, settings, client)) as events:
+            async for e in events:
+                yield e
+    finally:
+        gate.release()
+
+
+async def _run(question: str, runner: BranchRunner, settings: Settings, client: httpx.AsyncClient) -> AsyncIterator[Event]:
     plan = await _strategy(question, settings)
     if plan is None:
         yield Error(message="Could not plan a search for this question. Please rephrase it and try again.")
@@ -104,10 +127,16 @@ async def ask(question: str, runner: BranchRunner, *, settings: Settings) -> Asy
     for a in answers:
         yield a
 
+    refs = await verify_references([r.paper for r in references.values()], client=client)  # same keys, same order
     note = "".join(f'\n\nNote: the search for "{t}" failed, so this answer does not cover it.' for t in failed)
     if dropped:
         note += f"\n\nNote: {dropped} paper(s) were left out because their metadata was invalid."
-    user = (_data_block(list(references.values()), answers)
+    if ids := _ids(refs, "unverified"):
+        note += (f"\n\nWarning: reference(s) {ids} could not be confirmed to exist (no DOI or PubMed ID that "
+                 "resolves in Crossref or PubMed). Treat claims that cite only them as unconfirmed.")
+    if ids := _ids(refs, "unknown"):
+        note += f"\n\nNote: reference(s) {ids} could not be checked (the lookup service did not answer)."
+    user = (_data_block(refs, answers)
             + "".join(f'\nThe search for "{t}" failed and returned no findings.' for t in failed)
             + f"\n\nQuestion:\n{question}")
     try:
@@ -115,5 +144,5 @@ async def ask(question: str, runner: BranchRunner, *, settings: Settings) -> Asy
     except Exception:
         yield Error(message="Could not write the answer. Please try again.")
         return
-    yield FinalAnswer(content=r.text.strip() + note, references=list(references.values()))
+    yield FinalAnswer(content=r.text.strip() + note, references=refs)
     yield Complete()
