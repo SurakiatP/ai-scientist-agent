@@ -34,3 +34,9 @@ async def test_health_route_returns_ok():
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app()), base_url="http://t") as c:
         r = await c.get("/v1/health")
     assert r.json() == {"status": "ok"}
+
+
+def test_empty_api_key_rejected(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "")
+    with pytest.raises(Exception):
+        get_settings()

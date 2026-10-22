@@ -1,0 +1,55 @@
+import httpx
+from pydantic import BaseModel
+
+from scientist.config import Settings, get_settings
+
+URL = "https://openrouter.ai/api/v1/chat/completions"
+_transport: httpx.AsyncBaseTransport | None = None  # tests inject a MockTransport
+
+
+class LlmEmptyError(Exception):
+    pass
+
+
+class LlmResult(BaseModel):
+    text: str
+    prompt_tokens: int
+    completion_tokens: int
+    cached_tokens: int
+
+
+async def _call(client: httpx.AsyncClient, key: str, body: dict) -> LlmResult:
+    r = await client.post(URL, json=body, headers={"Authorization": f"Bearer {key}"})
+    r.raise_for_status()
+    d = r.json()
+    u = d.get("usage") or {}
+    text = (d["choices"][0]["message"].get("content") or "")
+    if not text.strip():
+        raise LlmEmptyError("blank completion")
+    return LlmResult(
+        text=text,
+        prompt_tokens=u.get("prompt_tokens", 0),
+        completion_tokens=u.get("completion_tokens", 0),
+        cached_tokens=(u.get("prompt_tokens_details") or {}).get("cached_tokens") or 0,
+    )
+
+
+async def complete(system: str, user: str, *, model: str | None = None, max_tokens: int,
+                   json_mode: bool = False, settings: Settings | None = None) -> LlmResult:
+    s = settings or get_settings()
+    body = {
+        "max_tokens": max_tokens,
+        "messages": [
+            # shared prefix first, marked cacheable
+            {"role": "system", "content": [
+                {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]},
+            {"role": "user", "content": user},
+        ],
+    }
+    if json_mode:
+        body["response_format"] = {"type": "json_object"}
+    async with httpx.AsyncClient(transport=_transport, timeout=120) as c:
+        try:
+            return await _call(c, s.openrouter_api_key, {**body, "model": model or s.model})
+        except (httpx.HTTPError, LlmEmptyError):
+            return await _call(c, s.openrouter_api_key, {**body, "model": s.fallback_model})
