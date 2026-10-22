@@ -1,3 +1,5 @@
+import logging
+
 import httpx
 from pydantic import BaseModel
 
@@ -5,6 +7,7 @@ from scientist.config import Settings, get_settings
 
 URL = "https://openrouter.ai/api/v1/chat/completions"
 _transport: httpx.AsyncBaseTransport | None = None  # tests inject a MockTransport
+log = logging.getLogger(__name__)
 
 
 class LlmEmptyError(Exception):
@@ -29,12 +32,16 @@ async def _call(client: httpx.AsyncClient, key: str, body: dict) -> LlmResult:
         raise LlmEmptyError(f"malformed response: {e!r}") from e
     if not text.strip():
         raise LlmEmptyError("blank completion")
-    return LlmResult(
+    result = LlmResult(
         text=text,
-        prompt_tokens=u.get("prompt_tokens", 0),
-        completion_tokens=u.get("completion_tokens", 0),
+        prompt_tokens=u.get("prompt_tokens") or 0,
+        completion_tokens=u.get("completion_tokens") or 0,
         cached_tokens=(u.get("prompt_tokens_details") or {}).get("cached_tokens") or 0,
     )
+    # usage only (never the key or prompt text): shows on a live run whether prompt caching works
+    log.info("llm call model=%s prompt_tokens=%d completion_tokens=%d cached_tokens=%d", body["model"],
+             result.prompt_tokens, result.completion_tokens, result.cached_tokens)
+    return result
 
 
 async def complete(system: str, user: str, *, model: str | None = None, max_tokens: int,

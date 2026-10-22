@@ -57,7 +57,7 @@ async def check_scope(question: str, *, settings: Settings, ask: Ask | None = No
         return _no("Not a scientific research question.")
 
     async def default_ask(system: str, user: str) -> str:
-        r = await llm.complete(system, user, model=settings.fallback_model, max_tokens=60,
+        r = await llm.complete(system, user, model=settings.fallback_model, max_tokens=settings.guardrail_max_tokens,
                                json_mode=True, settings=settings)
         return r.text
 

@@ -85,6 +85,18 @@ async def test_401_does_not_fall_back(monkeypatch):
     assert len(calls) == 1
 
 
+async def test_usage_logged_without_prompt_or_key(monkeypatch, caplog):
+    patch(monkeypatch, lambda req: httpx.Response(200, json=ok("answer text")))
+    with caplog.at_level("INFO", logger="scientist.llm"):
+        await llm.complete("SECRET SYSTEM", "SECRET USER", max_tokens=5,
+                           settings=S.model_copy(update={"openrouter_api_key": "sk-KEYVALUE"}))
+    [rec] = [r for r in caplog.records if r.name == "scientist.llm"]
+    msg = rec.getMessage()
+    assert "model=primary" in msg and "prompt_tokens=10" in msg and "completion_tokens=2" in msg
+    assert "cached_tokens=7" in msg
+    assert "SECRET" not in caplog.text and "answer text" not in caplog.text and "KEYVALUE" not in caplog.text
+
+
 @pytest.mark.skipif(os.getenv("LIVE") != "1", reason="live")
 async def test_live_cache():
     s = Settings()

@@ -40,3 +40,9 @@ def test_empty_api_key_rejected(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "")
     with pytest.raises(Exception):
         get_settings()
+
+
+def test_token_budget_cap_and_contact_defaults():
+    s = get_settings()
+    assert (s.guardrail_max_tokens, s.strategy_max_tokens, s.synthesis_max_tokens) == (256, 1500, 4000)
+    assert s.max_papers_per_branch == 30 and s.contact_email == ""

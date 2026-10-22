@@ -9,7 +9,7 @@ def fake_complete(monkeypatch):
     state = {"strategy": None, "synthesis": "Comparative answer [1].", "calls": []}
 
     async def complete(system, user, *, model=None, max_tokens, json_mode=False, settings=None):
-        state["calls"].append({"system": system, "user": user, "json_mode": json_mode})
+        state["calls"].append({"system": system, "user": user, "json_mode": json_mode, "max_tokens": max_tokens})
         reply = state["strategy"] if json_mode else state["synthesis"]
         if isinstance(reply, Exception):
             raise reply

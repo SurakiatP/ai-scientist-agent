@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     enabled_skills: list[str] = []
     cors_origins: list[str] = ["http://localhost:3000"]
     sse_ping_seconds: float = 15  # comment line while a run waits, so proxies keep the stream open
+    max_papers_per_branch: int = 30  # papers past this per branch are ignored (counted in the final note)
+    # max_tokens per call; reasoning models spend part of it thinking, so small values come back blank
+    guardrail_max_tokens: int = 256
+    strategy_max_tokens: int = 1500
+    synthesis_max_tokens: int = 4000
+    contact_email: str = ""  # sent as mailto in the citation-check User-Agent (Crossref/NCBI polite pool)
 
 
 @lru_cache

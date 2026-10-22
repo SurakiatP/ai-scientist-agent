@@ -118,3 +118,16 @@ async def test_live_model():
     assert v.in_scope
     v = await check_scope("What is a good name for my cat?", settings=guardrail.get_settings())
     assert not v.in_scope
+
+
+async def test_model_call_uses_guardrail_budget(settings, monkeypatch):
+    seen = []
+
+    async def complete(system, user, *, model=None, max_tokens, json_mode=False, settings=None):
+        seen.append((model, max_tokens))
+        return guardrail.llm.LlmResult(text='{"in_scope": true, "reason": "ok"}', prompt_tokens=1,
+                                       completion_tokens=1, cached_tokens=0)
+    monkeypatch.setattr(guardrail.llm, "complete", complete)
+    s = settings.model_copy(update={"guardrail_max_tokens": 321})
+    assert (await check_scope("How do tardigrades survive?", settings=s)).in_scope
+    assert seen == [(s.fallback_model, 321)]

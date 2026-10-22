@@ -125,10 +125,68 @@ async def test_failing_branch_does_not_stop_others(settings, tmp_path, fake_comp
     assert '"bad"' in fake_complete["calls"][-1]["user"]
 
 
-async def test_all_branches_failing_is_error(settings, tmp_path, fake_complete):
+async def test_all_branches_failing_without_papers_is_error(settings, tmp_path, fake_complete):
     fake_complete["strategy"] = strategy("x", "y")
     events = await run(Q, runner(settings, tmp_path, {"*": [{"die": True}]}), settings)
-    assert types(events) == "strategy error"
+    assert types(events) == "strategy error" and "No papers were found" in events[-1].message
+
+
+async def test_papers_but_every_branch_failed_lists_references_without_synthesis(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("x", "y")
+    rt = runner(settings, tmp_path, {"x": [paper("P", "10.1000/p"), {"die": True}],
+                                     "y": [paper("Q", pmid="123"), {"die": True}]})
+    events = await run(Q, rt, settings)
+    assert types(events) == "strategy sources sources final_answer complete"
+    final = events[-2]
+    assert final.content.startswith("Found 2 paper(s), but the search did not finish summarising them.")
+    assert '"x" failed' in final.content and '"y" failed' in final.content
+    assert sorted(r.paper.title for r in final.references) == ["P", "Q"]
+    assert all(r.status == "verified" for r in final.references)
+    assert [c["json_mode"] for c in fake_complete["calls"]] == [True]  # strategy only: no synthesis call
+
+
+async def test_token_budgets_reach_complete(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    s = settings.model_copy(update={"strategy_max_tokens": 111, "synthesis_max_tokens": 222})
+    await run(Q, runner(s, tmp_path, {"a": [paper("P", "10.1/p"), answer("ok")]}), s)
+    assert [c["max_tokens"] for c in fake_complete["calls"]] == [111, 222]
+
+
+async def test_papers_past_branch_cap_are_ignored_and_counted(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a", "b")
+    s = settings.model_copy(update={"max_papers_per_branch": 2})
+    rt = runner(s, tmp_path, {"a": [paper(f"A{i}", f"10.1000/a{i}") for i in range(4)] + [answer("a")],
+                              "b": [paper("B0", "10.1000/b0"), answer("b")]})
+    events = await run(Q, rt, s)
+    assert sum(e.type == "sources" for e in events) == 3
+    final = next(e for e in events if isinstance(e, FinalAnswer))
+    assert sorted(r.paper.title for r in final.references) == ["A0", "A1", "B0"]
+    assert "2 paper(s) were left out because a search reported more than 2" in final.content
+
+
+async def test_no_cap_note_under_cap(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    final = next(e for e in await run(Q, runner(settings, tmp_path, {"a": [paper("P", "10.1/p"), answer("s")]}), settings)
+                 if isinstance(e, FinalAnswer))
+    assert "left out" not in final.content
+
+
+async def test_unverified_with_and_without_identifier_warned_separately(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    rt = runner(settings, tmp_path, {"a": [paper("Fake", "10.1000/fake"), paper("No id"), answer("s")]})
+    client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(404)))
+    final = next(e for e in await run(Q, rt, settings, client) if isinstance(e, FinalAnswer))
+    assert [r.status for r in final.references] == ["unverified", "unverified"]
+    assert ("Warning: reference(s) [1] could not be confirmed to exist (the DOI, PubMed ID or arXiv ID was not "
+            "found in Crossref, doi.org, PubMed or arXiv)") in final.content
+    assert "Warning: reference(s) [2] have no DOI, PubMed ID or arXiv ID" in final.content
+
+
+async def test_placeholder_dois_are_two_papers(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    rt = runner(settings, tmp_path, {"a": [paper("One", "N/A"), paper("Two", "N/A"), answer("s")]})
+    final = next(e for e in await run(Q, rt, settings) if isinstance(e, FinalAnswer))
+    assert [(r.paper.title, r.paper.doi) for r in final.references] == [("One", None), ("Two", None)]
 
 
 async def test_duplicate_doi_across_branches_is_one_reference(settings, tmp_path, fake_complete):
