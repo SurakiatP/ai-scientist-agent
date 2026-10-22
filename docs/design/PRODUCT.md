@@ -15,7 +15,7 @@ Researchers on teams like those at NECTEC (Thailand's national electronics and c
 
 ## Product Purpose
 
-A researcher asks a scientific-research question in Thai or English and watches an agent plan up to 5 searches, query scholarly sources (arXiv, OpenAlex, Crossref, PubMed, Semantic Scholar and others), and stream back a comparative answer. Success: an answer whose every cited DOI/PMID was checked to exist, built only from retrieved papers.
+A researcher asks a scientific-research question in Thai or English and watches an agent plan up to 5 searches, query scholarly sources (arXiv, OpenAlex, Crossref, PubMed, Semantic Scholar and others), and stream back a comparative answer. Success: an answer whose cited references were each checked against Crossref (DOI), PubMed (PMID) or arXiv, with any that cannot be confirmed (`unverified`) or checked (`unknown`) flagged, not hidden. The agent is instructed to write only from retrieved papers; that is a prompt instruction, not a guarantee.
 
 ## Positioning
 
@@ -23,12 +23,12 @@ The work is visible: the plan, the searches and the papers found appear live, an
 
 ## Operating Context
 
-Runs on localhost for now (later inside the organisation's network). No login. History and saved answers stay in the researcher's own browser, per device.
+Runs on localhost for now (later inside the organisation's network). No login. History and saved answers stay in the researcher's own browser, per device. The question itself is sent to the backend and the model provider (OpenRouter), and derived search terms go to scholarly APIs.
 
 ## Capabilities and Constraints
 
 - Answers only scientific-research questions; others get a polite refusal.
-- Answers only from retrieved papers, never from model memory.
+- The agent is instructed to answer only from retrieved papers (a prompt instruction; the model can still err).
 - Up to 5 planned searches per question.
 - Must work offline on localhost: no external fonts, images or CDNs at runtime.
 - Thai is the default UI language; English strings exist.

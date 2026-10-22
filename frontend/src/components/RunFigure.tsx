@@ -1,6 +1,8 @@
 "use client";
-import { useEffect, useRef } from "react";
-import { Box } from "@mui/material";
+import { useEffect, useRef, useState } from "react";
+import { Box, Button } from "@mui/material";
+import PauseIcon from "@mui/icons-material/Pause";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import { gsap } from "gsap";
 import { landing } from "@/lib/strings";
 
@@ -68,93 +70,131 @@ function build(tl: gsap.core.Timeline) {
     .set({}, {}, DUR);
 }
 
+type Anim = { tl: gsap.core.Timeline; duration: number; seek(t: number): void; play(from?: number): void; pause(): void };
+
 export function RunFigure() {
   const root = useRef<HTMLDivElement>(null);
+  const userPaused = useRef(false);
+  const sync = useRef<() => void>(() => {});
+  const [paused, setPaused] = useState(false);
+  const [still, setStill] = useState(false); // reduced motion: no timeline, so no pause control either
 
   useEffect(() => {
     const el = root.current;
     if (!el) return;
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    const dev = process.env.NODE_ENV !== "production";
+    const w = window as unknown as { anim?: Anim };
     let onScreen = true;
     let tl: gsap.core.Timeline | undefined;
-    const ctx = gsap.context(() => {
-      tl = gsap.timeline({ paused: true, repeat: -1 });
-      build(tl);
-      tl.time(FINAL); // start on the finished frame the server rendered: no flash
-    }, el);
-    const sync = () => {
-      if (!tl) return;
-      if (reduce?.matches) { tl.pause(); tl.time(FINAL); return; } // static final frame, timeline never starts
-      if (onScreen && !document.hidden) tl.play();
-      else tl.pause();
+    let ctx: gsap.Context | undefined;
+
+    const stop = (revert: boolean) => {
+      if (revert) ctx?.revert();
+      else tl?.time(FINAL); // leave the finished frame on screen
+      tl?.kill();
+      tl = ctx = undefined;
+      if (dev) delete w.anim;
     };
+    sync.current = () => {
+      if (reduce?.matches) { // static final frame; a timeline is never built
+        if (tl) stop(false);
+        setStill(true);
+        return;
+      }
+      setStill(false);
+      if (!tl) {
+        const t = gsap.timeline({ paused: true, repeat: -1 });
+        ctx = gsap.context(() => { build(t); t.time(FINAL); }, el); // start on the finished frame the server rendered: no flash
+        tl = t;
+        // motion2code page contract, for checking the loop seam and seek determinism from the console in dev
+        if (dev) w.anim = { tl: t, duration: DUR, seek: (s) => { t.pause(); t.time(s); }, play: (f = 0) => t.play(f), pause: () => t.pause() };
+      }
+      if (onScreen && !document.hidden && !userPaused.current) tl?.play();
+      else tl?.pause();
+    };
+    const run = () => sync.current();
     const io = typeof IntersectionObserver === "undefined" ? null
-      : new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); });
+      : new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; run(); });
     io?.observe(el);
-    document.addEventListener("visibilitychange", sync);
-    reduce?.addEventListener?.("change", sync);
-    sync();
-    // motion2code page contract, used to check the loop seam and seek determinism from the browser console
-    const w = window as unknown as { anim?: object };
-    w.anim = {
-      tl, duration: DUR,
-      seek: (t: number) => { tl?.pause(); tl?.time(t); },
-      play: (from = 0) => tl?.play(from),
-      pause: () => tl?.pause(),
-    };
+    document.addEventListener("visibilitychange", run);
+    reduce?.addEventListener?.("change", run);
+    run();
     return () => {
       io?.disconnect();
-      document.removeEventListener("visibilitychange", sync);
-      reduce?.removeEventListener?.("change", sync);
-      ctx.revert();
-      delete w.anim;
+      document.removeEventListener("visibilitychange", run);
+      reduce?.removeEventListener?.("change", run);
+      stop(true);
     };
   }, []);
 
+  const togglePause = () => {
+    userPaused.current = !userPaused.current;
+    setPaused(userPaused.current);
+    sync.current(); // pausing holds the current frame; play resumes from it
+  };
+
   return (
-    <Box
-      ref={root}
-      aria-hidden="true"
-      sx={(theme) => {
-        const p = (theme.vars ?? theme).palette;
-        return {
-          display: "grid",
-          gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", md: "repeat(4, 1fr)" },
-          gap: { xs: 3, md: 3 },
-          "& svg": { display: "block", width: "100%", height: "auto", overflow: "visible", maxWidth: { xs: 320, sm: "none" } },
-          "& .ink": { fill: p.text.primary },
-          "& .ink2": { fill: p.text.secondary },
-          "& .accent": { fill: p.primary.main },
-          "& .on-accent": { fill: p.primary.contrastText },
-          "& .tint": { fill: p.primary.light },
-          "& .ok": { fill: p.success.main },
-          "& .tick": { stroke: p.background.paper, strokeWidth: 2, fill: "none", strokeLinecap: "round", strokeLinejoin: "round" },
-          "& .rule": { stroke: p.divider, fill: "none" },
-          "& .field": { fill: p.background.default, stroke: p.divider },
-          "& .bar": { fill: p.text.secondary, fillOpacity: 0.3 },
-          "& text": { fontSize: 12 },
-        };
-      }}
-    >
-      {th.stages.map((label, i) => (
-        <Box key={label}>
-          <Box sx={{ display: "flex", alignItems: "baseline", gap: 1, flexWrap: "wrap" }}>
-            <Box component="span" sx={{ color: "text.secondary", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{i + 1}</Box>
-            <Box component="span" lang="th" sx={{ fontWeight: 600 }}>{label}</Box>
-            <Box component="span" lang="en" sx={{ color: "text.secondary", fontSize: "0.8125rem" }}>{en.stages[i]}</Box>
+    <>
+      <Box
+        ref={root}
+        aria-hidden="true"
+        sx={(theme) => {
+          const p = (theme.vars ?? theme).palette;
+          return {
+            display: "grid",
+            gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr", md: "repeat(4, 1fr)" },
+            gap: { xs: 3, md: 3 },
+            "& svg": { display: "block", width: "100%", height: "auto", overflow: "visible", maxWidth: { xs: 320, sm: "none" } },
+            "& .ink": { fill: p.text.primary },
+            "& .ink2": { fill: p.text.secondary },
+            "& .accent": { fill: p.primary.main },
+            "& .on-accent": { fill: p.primary.contrastText },
+            "& .tint": { fill: p.primary.light },
+            "& .ok": { fill: p.success.main },
+            "& .warn": { fill: "none", stroke: p.warning.main, strokeWidth: 2 },
+            "& .warn-mark": { stroke: p.warning.main, strokeWidth: 2, strokeLinecap: "round", fill: "none" },
+            "& .tick": { stroke: p.background.paper, strokeWidth: 2, fill: "none", strokeLinecap: "round", strokeLinejoin: "round" },
+            "& .rule": { stroke: p.divider, fill: "none" },
+            "& .field": { fill: p.background.default, stroke: p.divider },
+            "& .bar": { fill: p.text.secondary, fillOpacity: 0.3 },
+            "& text": { fontSize: 12 },
+          };
+        }}
+      >
+        {th.stages.map((label, i) => (
+          <Box key={label}>
+            <Box sx={{ display: "flex", alignItems: "baseline", gap: 1, flexWrap: "wrap" }}>
+              <Box component="span" sx={{ color: "text.secondary", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{i + 1}</Box>
+              <Box component="span" lang="th" sx={{ fontWeight: 600 }}>{label}</Box>
+              <Box component="span" lang="en" sx={{ color: "text.secondary", fontSize: "0.8125rem" }}>{en.stages[i]}</Box>
+            </Box>
+            {/* the "now" bar: lit while this stage runs */}
+            <Box sx={{ height: 3, bgcolor: "divider", borderRadius: 2, overflow: "hidden", mt: 1, mb: 2 }}>
+              <Box className={`m-now m-now-${i}`} sx={{ height: 1, bgcolor: "primary.main", transformOrigin: "0 50%" }} />
+            </Box>
+            {STAGES[i]}
           </Box>
-          {/* the "now" bar: lit while this stage runs */}
-          <Box sx={{ height: 3, bgcolor: "divider", borderRadius: 2, overflow: "hidden", mt: 1, mb: 2 }}>
-            <Box className={`m-now m-now-${i}`} sx={{ height: 1, bgcolor: "primary.main", transformOrigin: "0 50%" }} />
-          </Box>
-          {STAGES[i]}
-        </Box>
-      ))}
-    </Box>
+        ))}
+      </Box>
+      {!still && (
+        <Button
+          variant="text" color="inherit" aria-pressed={paused} onClick={togglePause}
+          startIcon={paused ? <PlayArrowIcon /> : <PauseIcon />}
+          sx={{
+            mt: 2, minHeight: 44, px: 1.5, borderRadius: 1, color: "text.secondary", fontWeight: 500,
+            "&:focus-visible": { outline: "3px solid", outlineColor: "primary.main", outlineOffset: 2 },
+          }}
+        >
+          <span lang="th">{th.pause}</span>
+          <Box component="span" lang="en" sx={{ ml: 0.75 }}>/ {en.pause}</Box>
+        </Button>
+      )}
+    </>
   );
 }
 
-const VB = "0 0 240 176";
+const VB = "0 0 240 192";
 
 const question = (
   <svg viewBox={VB} key="q">
@@ -209,6 +249,10 @@ const papers = (
 
 const COLS = [[96, 80, 60], [100, 72, 84]];
 const REFS = [150, 132, 142];
+const FLAGGED = 2; // synthetic: reference [3] could not be confirmed, so the figure never implies everything verifies
+// verified: filled check; flagged: outlined ring with "!" (differs by shape, not only colour)
+const okMark = (<><circle className="ok" r={8} /><path className="tick" d="M-3.6 0 L-1 2.7 L3.6 -2.7" /></>);
+const warnMark = (<><circle className="warn" r={7} /><path className="warn-mark" d="M0 -3.4 L0 0.8 M0 3.4 L0 3.5" /></>);
 const answer = (
   <svg viewBox={VB} key="a">
     <g className="m-layer">
@@ -229,16 +273,14 @@ const answer = (
             <text className="ink2" x={0} y={88 + i * 24} style={{ fontSize: 10 }}>[{i + 1}]</text>
             <rect className="bar" x={22} y={81 + i * 24} width={w} height={5} rx={2.5} />
           </g>
-          <g className="m-check" transform={`translate(228 ${84 + i * 24})`}>
-            <circle className="ok" r={9} />
-            <path className="tick" d="M-4 0 L-1.2 3 L4 -3" />
-          </g>
+          <g className="m-check" transform={`translate(228 ${84 + i * 24})`}>{i === FLAGGED ? warnMark : okMark}</g>
         </g>
       ))}
       <g className="m-legend">
-        <circle className="ok" cx={6} cy={160} r={6} />
-        <path className="tick" d="M3.4 160 L5.2 162 L8.6 158" style={{ strokeWidth: 1.5 }} />
-        <text className="ink2" x={18} y={164} style={{ fontSize: 11 }}>{th.figChecked}</text>
+        <g transform="translate(7 162) scale(0.8)">{okMark}</g>
+        <text className="ink2" x={20} y={166} style={{ fontSize: 11 }}>{th.figChecked}</text>
+        <g transform="translate(7 182) scale(0.8)">{warnMark}</g>
+        <text className="ink2" x={20} y={186} style={{ fontSize: 11 }}>{th.figFlagged}</text>
       </g>
     </g>
   </svg>

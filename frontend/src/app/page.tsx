@@ -8,6 +8,12 @@ import { RunFigure } from "@/components/RunFigure";
 const th = landing.th;
 const en = landing.en;
 
+// Marks Latin runs (arXiv, DOI, PMID, RAG...) inside Thai text as English, so screen readers switch voice.
+const LATIN = /(\(?[A-Za-z][\w .()/-]*[\w)])/;
+function Th({ text }: { text: string }) {
+  return text.split(LATIN).map((part, i) => (i % 2 ? <span key={i} lang="en">{part}</span> : part));
+}
+
 const focusRing = { "&:focus-visible": { outline: "3px solid", outlineColor: "primary.main", outlineOffset: 3 } };
 
 // The page reads like a bilingual abstract: each statement in Thai, its English twin beside or under it.
@@ -40,7 +46,7 @@ export default function Home() {
           </Typography>
 
           <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, columnGap: 6, rowGap: 2, mt: { xs: 3, md: 4 }, maxWidth: 1000 }}>
-            <Typography lang="th" sx={{ fontSize: "1.0625rem", lineHeight: 1.85 }}>{th.lead}</Typography>
+            <Typography lang="th" sx={{ fontSize: "1.0625rem", lineHeight: 1.85 }}><Th text={th.lead} /></Typography>
             <Typography lang="en" sx={{ fontSize: "1rem", lineHeight: 1.7, color: "text.secondary" }}>{en.lead}</Typography>
           </Box>
 
@@ -51,7 +57,7 @@ export default function Home() {
               <RunFigure />
             </Box>
             <Box component="figcaption" sx={{ mt: 1.5, display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, columnGap: 6, rowGap: 0.5, fontSize: "0.875rem", lineHeight: 1.7 }}>
-              <Box component="span" lang="th">{th.figCaption}</Box>
+              <Box component="span" lang="th"><Th text={th.figCaption} /></Box>
               <Box component="span" lang="en" sx={{ color: "text.secondary" }}>{en.figCaption}</Box>
             </Box>
           </Box>
@@ -94,7 +100,7 @@ function Notes({ id, title, enTitle, items, enItems, ordered }: {
         >
           {items.map((item, i) => (
             <li key={i}>
-              <Typography lang="th" sx={{ lineHeight: 1.85 }}>{item}</Typography>
+              <Typography lang="th" sx={{ lineHeight: 1.85 }}><Th text={item} /></Typography>
               <Typography lang="en" sx={{ color: "text.secondary", fontSize: "0.9375rem", lineHeight: 1.7, mt: 0.5 }}>{enItems[i]}</Typography>
             </li>
           ))}
