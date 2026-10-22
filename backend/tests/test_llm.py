@@ -59,6 +59,32 @@ async def test_5xx_falls_back(monkeypatch):
     assert models == ["primary", "fb"] and r.text == "fb"
 
 
+@pytest.mark.parametrize("bad", [
+    httpx.Response(200, json=ok("  ")),
+    httpx.Response(200, json={"error": {"message": "provider down"}}),
+    httpx.Response(200, content=b"not json"),
+])
+async def test_bad_primary_200_falls_back(monkeypatch, bad):
+    def h(req):
+        return bad if json.loads(req.content)["model"] == "primary" else httpx.Response(200, json=ok("fb"))
+
+    patch(monkeypatch, h)
+    assert (await llm.complete("s", "u", max_tokens=5, settings=S)).text == "fb"
+
+
+async def test_401_does_not_fall_back(monkeypatch):
+    calls = []
+
+    def h(req):
+        calls.append(1)
+        return httpx.Response(401)
+
+    patch(monkeypatch, h)
+    with pytest.raises(httpx.HTTPStatusError):
+        await llm.complete("s", "u", max_tokens=5, settings=S)
+    assert len(calls) == 1
+
+
 @pytest.mark.skipif(os.getenv("LIVE") != "1", reason="live")
 async def test_live_cache():
     s = Settings()

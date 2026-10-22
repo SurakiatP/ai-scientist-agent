@@ -21,9 +21,12 @@ class LlmResult(BaseModel):
 async def _call(client: httpx.AsyncClient, key: str, body: dict) -> LlmResult:
     r = await client.post(URL, json=body, headers={"Authorization": f"Bearer {key}"})
     r.raise_for_status()
-    d = r.json()
-    u = d.get("usage") or {}
-    text = (d["choices"][0]["message"].get("content") or "")
+    try:
+        d = r.json()
+        u = d.get("usage") or {}
+        text = d["choices"][0]["message"].get("content") or ""
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
+        raise LlmEmptyError(f"malformed response: {e!r}") from e
     if not text.strip():
         raise LlmEmptyError("blank completion")
     return LlmResult(
@@ -51,5 +54,7 @@ async def complete(system: str, user: str, *, model: str | None = None, max_toke
     async with httpx.AsyncClient(transport=_transport, timeout=120) as c:
         try:
             return await _call(c, s.openrouter_api_key, {**body, "model": model or s.model})
-        except (httpx.HTTPError, LlmEmptyError):
+        except (httpx.HTTPError, LlmEmptyError) as e:
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in range(500, 600) | {429}:
+                raise  # 4xx (bad key/request): fallback would fail the same way
             return await _call(c, s.openrouter_api_key, {**body, "model": s.fallback_model})
