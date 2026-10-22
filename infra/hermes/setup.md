@@ -129,3 +129,77 @@ Not verified: a live OpenRouter run (no key in this environment); the prompt-cac
 behaviour of the chosen model route; and Hermes's own `fallback_model` (not wired:
 Hermes expects credentials for fallback providers from its env or config, and the
 backend's `llm.complete` fallback covers strategy and synthesis only).
+
+## Running the backend
+
+```sh
+cd backend && uv run uvicorn --factory scientist.main:create_app --host 127.0.0.1 --port 8000
+```
+
+Run exactly one process (no `--workers`). At startup the app builds one `HermesRuntime`,
+which rebuilds the shared `~/.cache/scientist/hermes-home`, and the cap on simultaneous
+runs (`MAX_CONCURRENT_RUNS`) is per process. A second process would clobber the first's
+Hermes home and double the cap. Startup and shutdown also remove any Docker container
+labelled `scientist.branch=1`, which a crashed earlier run may have left behind. This
+assumes no other backend shares the Docker host.
+
+## Smoke test of `POST /v1/async/ask`
+
+### Live run: NOT done yet (no OpenRouter key in the build environment)
+
+With `.env` holding a real `OPENROUTER_API_KEY` and the server started as above:
+
+```sh
+curl -N -X POST localhost:8000/v1/async/ask -H 'content-type: application/json' \
+  -d '{"question":"What are the latest CRISPR base editing methods and how do they compare?"}'
+curl -N -X POST localhost:8000/v1/async/ask -H 'content-type: application/json' \
+  -d '{"question":"การตัดต่อพันธุกรรมด้วย CRISPR base editing ล่าสุดมีวิธีใดบ้าง และต่างกันอย่างไร"}'
+curl -N -X POST localhost:8000/v1/async/ask -H 'content-type: application/json' \
+  -d '{"question":"Give me a recipe for pad thai"}'
+```
+
+You should see:
+
+- The first two questions stream `data: {"type":"strategy",...}`, then one or more
+  `sources` events while the branches run (`: ping` lines in between are heartbeats).
+  Then come the `answer` events, one `final_answer` whose `references` each have a
+  `status` (`verified`, `unverified` or `unknown`), and finally `complete`. If any
+  reference is `unverified` or `unknown`, the final answer text ends with a warning or
+  note naming it. The Thai question's search terms in `strategy` are English, and its
+  answer is in Thai.
+- The third question returns a single `{"type":"refused",...}` event and starts no
+  bridge process.
+- A second question sent while `MAX_CONCURRENT_RUNS` runs are busy first gets
+  `{"type":"waiting","position":1}`.
+- Pressing Ctrl-C on a running `curl` stops the run. Within a few seconds
+  `pgrep -f native_bridge` shows nothing, and `docker ps --filter label=scientist.branch=1`
+  is empty.
+
+Record the following here: both event streams (trimmed), whether the model called
+`report_paper` with real papers, and the token usage and `cached_tokens` from the
+OpenRouter activity page or from the `LIVE=1 uv run pytest tests/test_llm.py -s`
+output. That run is the first real evidence that Hermes works with the configured model.
+
+### Local run against a fake model (done 2026-10-23)
+
+This ran the real app (`create_app()`, real `HermesRuntime`, real `native_bridge.py`
+on the pinned Hermes, real Crossref) with both model URLs (`hermes.OPENROUTER_URL`,
+`llm.URL`) pointed at a scripted OpenAI-compatible server. `MAX_CONCURRENT_RUNS=1`
+and `SSE_PING_SECONDS=2` were set. Results:
+
+- English and Thai questions both produced `strategy`, `: ping`, `sources` x2,
+  `answer` x2, `final_answer` and `complete`. The response headers were
+  `cache-control: no-cache`, `x-accel-buffering: no` and
+  `content-type: text/event-stream; charset=utf-8`.
+- Hermes streamed its model calls (`stream: true`). Each branch called `report_paper`
+  and then answered.
+- The real DOI `10.1038/nature17946` came back `verified` from Crossref. The made-up
+  `10.9999/made-up-doi-xyz` came back `unverified`, and the final answer ended with
+  "Warning: reference(s) [2] could not be confirmed to exist ...".
+- A second request sent while the first was running got `waiting` (position 1), then
+  pings. It started as soon as the first run finished.
+- `curl --max-time 3` cut a run mid-branch. Both bridge processes were gone within
+  3 s, no labelled container remained, and the next request got a slot straight away.
+- Ctrl-C on uvicorn shut it down cleanly ("Application shutdown complete").
+- Hermes also sends `POST /api/show` to the base URL (a model-metadata probe). The fake
+  server answered 404, and nothing broke.
