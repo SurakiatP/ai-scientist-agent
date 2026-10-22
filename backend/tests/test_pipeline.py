@@ -180,3 +180,20 @@ def test_to_sse_has_type():
     line = to_sse(Error(message="boom"))
     assert line.startswith("data: ") and line.endswith("\n\n")
     assert json.loads(line[6:]) == {"type": "error", "message": "boom"}
+
+
+async def test_dropped_papers_are_not_reported_as_none_found(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    bad = {"event": "paper", "paper": {"title": "Bad", "url": "javascript:alert(1)"}}
+    events = await run(Q, runner(settings, tmp_path, {"a": [bad, bad, answer("summary")]}), settings)
+    assert types(events) == "strategy error"
+    assert "No papers were found" not in events[-1].message and "2" in events[-1].message
+
+
+async def test_dropped_papers_are_mentioned_in_final_answer(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    bad = {"event": "paper", "paper": {"title": "Bad", "url": "data:text/html,x"}}
+    rt = runner(settings, tmp_path, {"a": [paper("Good", "10.1/g"), bad, answer("summary")]})
+    events = await run(Q, rt, settings)
+    final = next(e for e in events if isinstance(e, FinalAnswer))
+    assert "1 paper" in final.content and len(final.references) == 1

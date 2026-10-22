@@ -4,16 +4,16 @@ stdin: one JSON request line. stdout: JSON lines, {"event": "paper", "paper": {.
 then {"event": "answer", "content": str} or {"event": "failed", "code": str}. See setup.md.
 """
 import json
+import re
 import signal
 import sys
 import threading
 import uuid
 
 WIRE = sys.stdout
-sys.stdout = sys.stderr  # Hermes prints; keep the wire clean
 LOCK = threading.Lock()
 ALLOWED = {"terminal", "skills_list", "skill_view", "report_paper"}
-PAPER_FIELDS = ("title", "authors", "year", "doi", "pmid", "url")
+HTTP_URL = re.compile(r"https?://[^\s/?#]+[^\s]*", re.I)  # same rule as scientist.events.Paper
 PAPER_SCHEMA = {
     "name": "report_paper",
     "description": "Record one paper you retrieved and will use. Call once per paper, as soon as you have its metadata.",
@@ -28,6 +28,37 @@ PAPER_SCHEMA = {
 }
 
 
+def clean_paper(args):
+    """(paper, None) with only the fields given, or (None, error) for the model to fix and retry."""
+    if not isinstance(args, dict):
+        return None, "arguments must be an object"
+    paper = {}
+    title, url = args.get("title"), args.get("url")
+    if not isinstance(title, str) or not title.strip():
+        return None, "title is required"
+    if not isinstance(url, str) or not HTTP_URL.fullmatch(url.strip()):
+        return None, "url must be an http(s) link, e.g. https://doi.org/<doi>"
+    paper["title"], paper["url"] = title.strip(), url.strip()
+    authors, year, doi, pmid = (args.get(k) for k in ("authors", "year", "doi", "pmid"))
+    if authors is not None:
+        if not isinstance(authors, list) or not all(isinstance(a, str) for a in authors):
+            return None, "authors must be a list of names"
+        paper["authors"] = authors
+    if year is not None:
+        if not isinstance(year, int) or isinstance(year, bool):
+            return None, "year must be an integer"
+        paper["year"] = year
+    if doi is not None:
+        if not isinstance(doi, str):
+            return None, "doi must be a string"
+        paper["doi"] = doi.strip()
+    if pmid is not None:
+        if isinstance(pmid, bool) or not isinstance(pmid, (str, int)):
+            return None, "pmid must be a string"
+        paper["pmid"] = str(pmid).strip()
+    return paper, None
+
+
 def emit(value):
     with LOCK:
         WIRE.write(json.dumps(value, ensure_ascii=False) + "\n")
@@ -35,6 +66,8 @@ def emit(value):
 
 
 def main():
+    global WIRE
+    WIRE, sys.stdout = sys.stdout, sys.stderr  # Hermes prints; keep the wire clean
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))  # runs the finally below: container cleanup
     request = json.loads(sys.stdin.readline())
     task_id = uuid.uuid4().hex
@@ -44,7 +77,10 @@ def main():
     from tools.terminal_tool_lifecycle import cleanup_vm
 
     def report_paper(args, **_):
-        emit({"event": "paper", "paper": {k: args.get(k) for k in PAPER_FIELDS}})
+        paper, error = clean_paper(args)
+        if error:
+            return json.dumps({"error": f"paper not recorded: {error}. Fix the arguments and call again."})
+        emit({"event": "paper", "paper": paper})
         return json.dumps({"recorded": True})
 
     registry.register(name="report_paper", toolset="scientist", schema=PAPER_SCHEMA, handler=report_paper)

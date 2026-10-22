@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     max_branches: int = 5
     max_concurrent_runs: int = 4
     branch_token_cap: int = 4000
-    branch_max_rounds: int = 4
+    branch_max_rounds: int = 8
     max_question_chars: int = 2000
     hermes_source_path: Path
     hermes_revision: str

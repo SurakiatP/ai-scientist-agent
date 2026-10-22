@@ -32,7 +32,13 @@ class BranchFailed(BaseModel):
     reason: str
 
 
-BranchItem = Paper | BranchAnswer | BranchFailed
+class InvalidPaper(BaseModel):
+    """A paper the bridge reported with unusable metadata; counted, never silently dropped."""
+    term: str
+    reason: str
+
+
+BranchItem = Paper | InvalidPaper | BranchAnswer | BranchFailed
 
 
 class BranchRunner(Protocol):
@@ -105,7 +111,11 @@ class HermesRuntime(BranchRunner):
                     msg = json.loads(line)
                     event = msg["event"]
                     if event == "paper":
-                        item = Paper.model_validate(msg["paper"])
+                        try:
+                            item = Paper.model_validate(msg.get("paper"))
+                        except ValidationError as e:
+                            err = e.errors()[0]
+                            item = InvalidPaper(term=term, reason=f"{'.'.join(map(str, err['loc'])) or 'paper'}: {err['msg']}")
                     elif event == "answer":
                         item = BranchAnswer(term=term, content=str(msg["content"]))
                     elif event == "failed":
@@ -115,7 +125,7 @@ class HermesRuntime(BranchRunner):
                 except (ValueError, KeyError, TypeError, ValidationError):
                     continue  # garbage or malformed line from the bridge: skip it
                 yield item
-                if not isinstance(item, Paper):
+                if isinstance(item, (BranchAnswer, BranchFailed)):
                     return
             yield BranchFailed(term=term, reason="bridge_exited")
         except (TimeoutError, ValueError, OSError) as e:  # ValueError: line over the 1 MB limit

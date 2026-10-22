@@ -59,6 +59,10 @@ loaded it.
 - The bridge registers its own tool, `report_paper(title, authors, year, doi, pmid, url)`,
   through `tools.registry.registry.register`. Hermes calls the handler during the
   loop, and the handler writes `{"event":"paper","paper":{...}}` to stdout straight away.
+  The handler validates first (`clean_paper`: title, an http(s) url, typed optional
+  fields, and an int pmid becomes a string). A bad call returns an error to the model,
+  so the model can fix it and retry. The backend validates again: a line that still
+  fails becomes `InvalidPaper`, which the pipeline counts and reports.
 - `AIAgent(tool_start_callback=..., tool_complete_callback=(call_id, name, args, result))`
   also exposes every tool call and its result. The bridge does not forward them: raw
   tool output is untrusted third-party text.

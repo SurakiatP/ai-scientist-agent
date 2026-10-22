@@ -11,7 +11,7 @@ from scientist.config import Settings
 from scientist.events import (BranchAnswer, Complete, Error, Event, FinalAnswer, Paper, Reference, Refused,
                               Search, Sources, Strategy)
 from scientist.guardrail import check_scope
-from scientist.hermes import BranchFailed, BranchRunner
+from scientist.hermes import BranchFailed, BranchRunner, InvalidPaper
 
 PROMPTS = Path(__file__).parent / "prompts"
 STRATEGY = (PROMPTS / "strategy.md").read_text()
@@ -79,11 +79,14 @@ async def ask(question: str, runner: BranchRunner, *, settings: Settings) -> Asy
     references: dict[str, Reference] = {}
     answers: list[BranchAnswer] = []
     failed: list[str] = []
+    dropped = 0
     try:
         while (msg := await queue.get()) is not DONE:
             term, item = msg
             if isinstance(item, BranchFailed):
                 failed.append(term)
+            elif isinstance(item, InvalidPaper):
+                dropped += 1
             elif isinstance(item, BranchAnswer):
                 answers.append(item)  # held back so all sources events come before the answers
             else:
@@ -94,6 +97,10 @@ async def ask(question: str, runner: BranchRunner, *, settings: Settings) -> Asy
         with suppress(asyncio.CancelledError):
             await task
 
+    if not references and dropped:
+        yield Error(message=f"{dropped} paper(s) were found but none had usable metadata (a title and an http(s) "
+                            "link), so there is nothing to answer from.")
+        return
     if not answers or not references:
         yield Error(message="No papers were found for this question, so there is nothing to answer from.")
         return
@@ -101,6 +108,8 @@ async def ask(question: str, runner: BranchRunner, *, settings: Settings) -> Asy
         yield a
 
     note = "".join(f'\n\nNote: the search for "{t}" failed, so this answer does not cover it.' for t in failed)
+    if dropped:
+        note += f"\n\nNote: {dropped} paper(s) were left out because their metadata was invalid."
     user = (_data_block(list(references.values()), answers)
             + "".join(f'\nThe search for "{t}" failed and returned no findings.' for t in failed)
             + f"\n\nQuestion:\n{question}")

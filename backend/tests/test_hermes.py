@@ -1,14 +1,17 @@
 import asyncio
+import importlib.util
 import json
 import sys
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from scientist.config import Settings
 from scientist.events import BranchAnswer, Paper
-from scientist.hermes import BranchFailed, HermesRuntime
+from scientist.hermes import BranchFailed, HermesRuntime, InvalidPaper
 
+ROOT = Path(__file__).resolve().parents[2]
 FAKE = str(Path(__file__).parent / "fake_bridge.py")
 PAPER = {"title": "Base editing", "authors": ["A. Liu"], "year": 2024, "doi": "10.1/x", "pmid": None,
          "url": "https://doi.org/10.1/x"}
@@ -57,7 +60,8 @@ async def test_failed_event_and_garbage_lines(settings, tmp_path):
     rt = runtime(settings, tmp_path, [{"raw": "not json"}, {"event": "paper", "paper": {"title": 5}},
                                       {"event": "failed", "code": "native_execution_failed"}])
     items = await collect(rt)
-    assert items == [BranchFailed(term="t", reason="native_execution_failed")]
+    assert [type(i) for i in items] == [InvalidPaper, BranchFailed]
+    assert items[-1] == BranchFailed(term="t", reason="native_execution_failed")
 
 
 async def test_close_kills_running_bridge(settings, tmp_path):
@@ -78,3 +82,54 @@ async def test_cancel_kills_process(settings, tmp_path):
     with pytest.raises(asyncio.CancelledError):
         await task
     assert proc.returncode is not None and not rt.procs
+
+
+async def test_paper_with_only_title_and_url_is_kept(settings, tmp_path):
+    rt = runtime(settings, tmp_path, [
+        {"event": "paper", "paper": {"title": "Minimal", "url": "https://x.org/1"}},
+        {"event": "paper", "paper": {"title": "Nulls", "authors": None, "year": None, "doi": None, "pmid": 12345,
+                                     "url": "https://x.org/2"}},
+        {"event": "answer", "content": "done"}])
+    items = await collect(rt)
+    assert items[0] == Paper(title="Minimal", url="https://x.org/1", authors=[])
+    assert items[1].authors == [] and items[1].pmid == "12345"
+    assert isinstance(items[2], BranchAnswer)
+
+
+async def test_invalid_paper_is_reported_not_dropped(settings, tmp_path):
+    rt = runtime(settings, tmp_path, [{"event": "paper", "paper": {"title": "Bad", "url": "javascript:alert(1)"}},
+                                      {"event": "paper"}, {"event": "answer", "content": "done"}])
+    items = await collect(rt)
+    assert [type(i) for i in items] == [InvalidPaper, InvalidPaper, BranchAnswer]
+    assert items[0].term == "t" and items[0].reason
+
+
+@pytest.mark.parametrize("url", ["javascript:alert(1)", "data:text/html,x", " JavaScript:alert(1)", "ftp://x.org/a",
+                                 "http://", "https://x.org/a b", "java\tscript:alert(1)"])
+def test_paper_url_must_be_http(url):
+    with pytest.raises(ValidationError):
+        Paper(title="t", url=url)
+
+
+def test_paper_url_http_and_https_ok():
+    assert Paper(title="t", url=" HTTPS://doi.org/10.1/x ").url == "HTTPS://doi.org/10.1/x"
+    assert Paper(title="t", url="http://x.org").url == "http://x.org"
+
+
+def load_bridge():
+    spec = importlib.util.spec_from_file_location("native_bridge", ROOT / "infra/hermes/native_bridge.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # importing must not touch sys.stdout or Hermes
+    return module
+
+
+def test_bridge_clean_paper():
+    clean = load_bridge().clean_paper
+    assert clean({"title": "T", "url": "https://x.org", "authors": None, "pmid": None}) == (
+        {"title": "T", "url": "https://x.org"}, None)
+    assert clean({"title": "T", "url": "https://x.org", "pmid": 42})[0]["pmid"] == "42"
+    for bad in ({"url": "https://x.org"}, {"title": "T", "url": "javascript:x"}, {"title": "T"},
+                {"title": "T", "url": "https://x.org", "authors": "A. Liu"},
+                {"title": "T", "url": "https://x.org", "year": "2024"}):
+        paper, error = clean(bad)
+        assert paper is None and error

@@ -1,15 +1,37 @@
+import re
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# http(s) only, with a host and no whitespace: the frontend renders url as a link
+HTTP_URL = re.compile(r"https?://[^\s/?#]+[^\s]*", re.I)
 
 
 class Paper(BaseModel):
-    title: str
+    title: str = Field(min_length=1)
     authors: list[str] = []
     year: int | None = None
     doi: str | None = None
     pmid: str | None = None
     url: str
+
+    @field_validator("authors", mode="before")
+    @classmethod
+    def _authors(cls, v):
+        return [] if v is None else v
+
+    @field_validator("pmid", mode="before")
+    @classmethod
+    def _pmid(cls, v):
+        return str(v) if isinstance(v, int) and not isinstance(v, bool) else v
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _url(cls, v):
+        v = v.strip() if isinstance(v, str) else v
+        if not isinstance(v, str) or not HTTP_URL.fullmatch(v):
+            raise ValueError("url must be an http(s) link")
+        return v
 
 
 class Reference(BaseModel):
