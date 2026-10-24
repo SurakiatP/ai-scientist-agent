@@ -3,6 +3,7 @@ import { Box, Button, Chip, Link, List, ListItem, Stack, Typography } from "@mui
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import { enterFlash } from "@/lib/motion";
 import { useInspector } from "@/lib/inspector";
 import type { Reference } from "@/lib/sse";
 import { checkLabel, hasId, paperLink } from "@/lib/refs";
@@ -36,7 +37,7 @@ export function ReferenceList({ references, t, scope }: { references: Reference[
               alignItems: "flex-start", gap: 1.75, px: { xs: 0.5, md: 1 }, py: 1.75,
               borderTop: i === 0 ? 0 : 1, borderColor: "divider",
               borderRadius: 1.5, scrollMarginTop: 80,
-              "&:target": { bgcolor: tint("primary-main", 12) },
+              "&:target": { bgcolor: tint("primary-main", 12), ...enterFlash },
             }}
           >
             <Box sx={{

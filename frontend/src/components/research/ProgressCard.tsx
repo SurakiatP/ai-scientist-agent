@@ -6,6 +6,7 @@ import { gsap } from "gsap";
 import type { Turn } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
 import type { Progress } from "@/lib/progress";
+import { ease, enterRise, prefersReduced } from "@/lib/motion";
 import type { Strings } from "@/lib/strings";
 
 // Backend has no separate "check" phase: stage 4 is only reached when the run is done.
@@ -25,8 +26,7 @@ function Stages({ p, running }: { p: Progress; running: boolean }) {
   useEffect(() => {
     const el = root.current;
     if (!el || !running || done) return;
-    const mq = typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : undefined;
-    if (mq?.matches) return;
+    if (prefersReduced()) return;
     const ctx = gsap.context(() => {
       gsap.fromTo("[data-state='active'] .node", { scale: 1 }, { scale: 1.4, duration: 0.7, repeat: -1, yoyo: true, ease: "sine.inOut", transformOrigin: "50% 50%" });
     }, el);
@@ -43,6 +43,7 @@ function Stages({ p, running }: { p: Progress; running: boolean }) {
               width: 10, height: 10, borderRadius: "2px",
               bgcolor: state === "todo" ? "surface.raised" : "primary.main",
               border: 1, borderColor: state === "todo" ? "divider" : "primary.main",
+              transition: `background-color 240ms ${ease}, border-color 240ms ${ease}`,
             }} />
             <Typography sx={{ fontSize: "0.6875rem", lineHeight: 1.3, textAlign: "center", color: state === "todo" ? "text.secondary" : "text.primary", fontWeight: state === "active" ? 700 : 400 }}>{label}</Typography>
           </Box>
@@ -79,7 +80,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
             {p.searches.length > 0 && (
               <Box component="ul" sx={{ m: 0, mt: 1, p: 0, listStyle: "none" }}>
                 {p.searches.map((s, i) => (
-                  <Stack component="li" key={`${s.term}#${i}`} direction="row" useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", gap: 1, py: 1, borderTop: i === 0 ? 0 : 1, borderColor: "divider" }}>
+                  <Stack component="li" key={`${s.term}#${i}`} direction="row" useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", gap: 1, py: 1, borderTop: i === 0 ? 0 : 1, borderColor: "divider", ...enterRise }}>
                     <Typography sx={{ width: 20, flexShrink: 0, fontSize: "0.6875rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{String(i + 1).padStart(2, "0")}</Typography>
                     <Typography sx={{ flex: "1 1 160px", minWidth: 0, fontSize: "0.875rem", lineHeight: 1.5, overflowWrap: "anywhere" }}>{s.term}</Typography>
                     {s.term in p.sources && <Chip size="small" variant="outlined" label={`${t.found} ${p.sources[s.term]} ${p.sources[s.term] === 1 ? t.paper : t.papers}`} />}

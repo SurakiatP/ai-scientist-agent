@@ -7,6 +7,7 @@ import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import { create } from "zustand";
 import { useChatStore } from "@/lib/chat";
+import { ease, enterPop } from "@/lib/motion";
 import { useT } from "@/lib/prefs";
 import { canStart, startRun, stopRun, useRunState } from "@/lib/run";
 import { MAX_QUESTION } from "@/lib/strings";
@@ -53,6 +54,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
       <Box sx={{
         display: "flex", flexDirection: "column", gap: 0.5, px: 1.5, pt: large ? 1.5 : 1, pb: 1, bgcolor: "background.paper",
         border: 1, borderColor: "divider", borderRadius: 4,
+        transition: `border-color 180ms ${ease}, box-shadow 180ms ${ease}`,
         "&:focus-within": { borderColor: "primary.main", boxShadow: "0 0 0 1px var(--mui-palette-primary-main)" },
       }}>
         <InputBase
@@ -79,14 +81,10 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               {text.length}/{MAX_QUESTION}
             </Typography>
           )}
-          {mine ? (
-            <IconButton aria-label={t.stop} onClick={stopRun} sx={{ bgcolor: "primary.main", color: "primary.contrastText", "&:hover": { bgcolor: "primary.dark" } }}><StopRoundedIcon /></IconButton>
-          ) : (
-            <IconButton aria-label={t.ask} onClick={send} disabled={!canSend}
-              sx={{ bgcolor: "primary.main", color: "primary.contrastText", "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "action.disabledBackground" } }}>
-              <SendRoundedIcon />
-            </IconButton>
-          )}
+          <IconButton aria-label={mine ? t.stop : t.ask} onClick={mine ? stopRun : send} disabled={!mine && !canSend}
+            sx={{ bgcolor: "primary.main", color: "primary.contrastText", transition: `background-color 160ms ${ease}`, "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "action.disabledBackground" } }}>
+            <Box key={mine ? "stop" : "send"} component="span" sx={{ display: "inline-flex", ...enterPop }}>{mine ? <StopRoundedIcon /> : <SendRoundedIcon />}</Box>
+          </IconButton>
         </Box>
       </Box>
       <Typography id="composer-note" role="status" sx={{ mt: 0.75, px: 1, fontSize: "0.75rem", color: over ? "error.main" : "text.secondary", minHeight: "1.2em" }}>

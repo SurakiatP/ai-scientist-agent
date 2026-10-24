@@ -5,6 +5,7 @@ import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 
 import { useChatStore, type ChatState } from "@/lib/chat";
+import { enterSlide } from "@/lib/motion";
 import { useInspector, type InspectorRef } from "@/lib/inspector";
 import { useT } from "@/lib/prefs";
 import { checkLabel, doiOf, httpUrl, paperLink } from "@/lib/refs";
@@ -67,7 +68,7 @@ export function SourceInspector({ variant }: { variant: "panel" | "sheet" }) {
   const found = useChatStore((s) => find(s, r));
   const open = !!found;
   useEffect(() => { if (r && !found) close(); }, [r, found, close]); // the source is gone (deleted chat/turn): leave nothing behind
-  if (variant === "panel") return open ? <Body /> : null;
+  if (variant === "panel") return open ? <Box key={r?.refId} sx={enterSlide}><Body /></Box> : null;
   return (
     <Drawer anchor="bottom" open={open} onClose={close} slotProps={{ paper: { sx: { maxHeight: "85dvh", borderTopLeftRadius: 16, borderTopRightRadius: 16 }, role: "dialog", "aria-label": t.inspectorTitle } }}>
       <Body />
