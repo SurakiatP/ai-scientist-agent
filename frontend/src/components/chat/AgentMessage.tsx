@@ -1,4 +1,5 @@
 "use client";
+import { memo } from "react";
 import { Box, Button, Stack, Typography } from "@mui/material";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import ReplyRoundedIcon from "@mui/icons-material/ReplyRounded";
@@ -13,7 +14,7 @@ import { focusComposer } from "./Composer";
 import { Starters } from "./EmptyChat";
 import { Time } from "./UserMessage";
 
-export function AgentMessage({ sessionId, turn }: { sessionId: string; turn: Turn }) {
+function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }) {
   const t = useT();
   const busy = !!useRunState().turnId;
   const { status } = turn;
@@ -53,3 +54,5 @@ export function AgentMessage({ sessionId, turn }: { sessionId: string; turn: Tur
     </Box>
   );
 }
+
+export const AgentMessage = memo(AgentMessageBase);

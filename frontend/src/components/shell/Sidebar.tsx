@@ -27,12 +27,12 @@ const Mark = () => (
 export function Sidebar({ onPick }: { onPick?: () => void }) {
   const t = useT();
   const hydrated = useHydrated();
-  const store = useChatStore();
-  const { newSession, setActive, addProject } = store;
+  const newSession = useChatStore((s) => s.newSession), setActive = useChatStore((s) => s.setActive), addProject = useChatStore((s) => s.addProject);
+  const storeProjects = useChatStore((s) => s.projects), storeActive = useChatStore((s) => s.activeProjectId), storeSessions = useChatStore((s) => s.sessions), store = useChatStore.getState();
   const [pedit, setPedit] = useState<{ id: string; mode: "rename" | "delete" } | null>(null);
-  const projects = hydrated ? store.projects : store.projects.slice(0, 1);
-  const activeProjectId = hydrated ? store.activeProjectId : PERSONAL;
-  const sessions = hydrated ? store.sessions : [];
+  const projects = hydrated ? storeProjects : storeProjects.slice(0, 1);
+  const activeProjectId = hydrated ? storeActive : PERSONAL;
+  const sessions = hydrated ? storeSessions : [];
   const [full, setFull] = useState(false);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(true);

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { isItem, newId, safeStorage, useHistoryStore } from "./history";
+import { isItem, newId, safeStorage, storageFull, useHistoryStore } from "./history";
 import type { Progress } from "./progress";
 import type { Reference } from "./sse";
 
@@ -40,12 +40,19 @@ const clampProgress = (p: Progress): Progress => ({
   sources: Object.fromEntries(Object.entries(p.sources).slice(0, N).map(([k, n]) => [k.slice(0, TERM), n])),
   answered: p.answered.slice(0, N).map((x) => x.slice(0, TERM)),
 });
+const clampRef = (r: Reference): Reference => ({
+  ...r, id: r.id.slice(0, 20),
+  paper: {
+    ...r.paper, title: r.paper.title.slice(0, 500), authors: r.paper.authors.slice(0, 50).map((a) => a.slice(0, 200)),
+    doi: r.paper.doi?.slice(0, 2048) ?? null, pmid: r.paper.pmid?.slice(0, 2048) ?? null, url: (r.paper.url ?? "").slice(0, 2048),
+  },
+});
 const clampPatch = (p: Partial<Turn>): Partial<Turn> => ({
   ...p,
   ...(p.progress && { progress: clampProgress(p.progress) }),
   ...(p.error !== undefined && { error: p.error.slice(0, 2048) }),
   ...(p.refused !== undefined && { refused: p.refused.slice(0, REASON) }),
-  ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS) } }),
+  ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef) } }),
 });
 // Reuses history's item validator for the answer + references (its question/id/createdAt are filled in).
 const isTurn = (v: unknown): v is Turn => {
@@ -144,6 +151,7 @@ export const useChatStore = create<State>()(
           }],
         }));
         set((s) => ({ legacyImported: true, sessions: capSessions([...s.sessions, ...imported]) }));
+        if (!storageFull()) safeStorage.removeItem("scientist-history-v1"); // history now lives in the chat store only; keep it if the flag could not be written
       },
       clearAll: () => set({ projects: [personal], sessions: [], activeId: null, activeProjectId: PERSONAL }),
     }),

@@ -16,10 +16,9 @@ export const selectProject = (id: string) =>
 export function ProjectSwitcher() {
   const t = useT();
   const hydrated = useHydrated();
-  const store = useChatStore();
-  const { addProject } = store;
-  const projects = hydrated ? store.projects : store.projects.slice(0, 1); // personal is always first
-  const activeProjectId = hydrated ? store.activeProjectId : PERSONAL;
+  const storeProjects = useChatStore((s) => s.projects), addProject = useChatStore((s) => s.addProject), storeActive = useChatStore((s) => s.activeProjectId);
+  const projects = hydrated ? storeProjects : storeProjects.slice(0, 1); // personal is always first
+  const activeProjectId = hydrated ? storeActive : PERSONAL;
   const [full, setFull] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [name, setName] = useState("");
@@ -35,7 +34,7 @@ export function ProjectSwitcher() {
         {projects.map((p) => (
           <MenuItem key={p.id} selected={p.id === activeProjectId} onClick={() => { selectProject(p.id); close(); }} sx={{ minHeight: 44 }}>{projectName(p, t)}</MenuItem>
         ))}
-        <MenuItem disableRipple sx={{ "&:hover": { bgcolor: "transparent" } }} onKeyDown={(e) => e.stopPropagation()}>
+        <MenuItem disableRipple sx={{ "&:hover": { bgcolor: "transparent" } }} onKeyDown={(e) => { if (e.key !== "Escape" && e.key !== "Tab") e.stopPropagation(); }}>
           <TextField size="small" placeholder={t.newProject} value={name} onChange={(e) => { setName(e.target.value); setFull(false); }} error={full} helperText={full ? t.projectLimit : undefined}
             slotProps={{ htmlInput: { "aria-label": t.projectName, maxLength: 100 } }}
             onKeyDown={(e) => {

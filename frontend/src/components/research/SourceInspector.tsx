@@ -24,7 +24,8 @@ function Body() {
   useEffect(() => { btn.current?.focus(); }, [r?.refId, r?.turnId]);
   useEffect(() => {
     if (!r) return;
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    // a menu/dialog on top owns Esc
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector("[role=dialog],[role=menu]")) close(); };
     document.addEventListener("keydown", esc);
     return () => document.removeEventListener("keydown", esc);
   }, [r, close]);

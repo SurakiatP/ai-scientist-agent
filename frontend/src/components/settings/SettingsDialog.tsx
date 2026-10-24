@@ -4,7 +4,7 @@ import { Button, Dialog, DialogContent, DialogTitle, FormControl, FormControlLab
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import { API_BASE } from "@/lib/config";
 import { useChatStore } from "@/lib/chat";
-import { useHistoryStore, useHydrated } from "@/lib/history";
+import { useHistoryStore, useHydrated, useStorageFull } from "@/lib/history";
 import { usePrefs, useT } from "@/lib/prefs";
 import { stopRun } from "@/lib/run";
 import { useSettingsOpen } from "@/components/shell/Sidebar";
@@ -26,6 +26,7 @@ function useHealth(open: boolean): Health {
 }
 
 export function SettingsDialog() {
+  const full = useStorageFull();
   const t = useT();
   const hydrated = useHydrated();
   const { open, set } = useSettingsOpen();
@@ -62,6 +63,7 @@ export function SettingsDialog() {
           <Stack spacing={1}>
             <Typography component="h3" sx={{ fontSize: "0.875rem", fontWeight: 700 }}>{t.dataTitle}</Typography>
             <Typography sx={{ fontSize: "0.875rem", color: "text.secondary" }}>{t.dataNote}</Typography>
+            {full && <Typography role="status" sx={{ fontSize: "0.875rem", color: "error.main" }}>{t.storageFull}</Typography>}
             {confirm ? (
               <Stack role="group" aria-label={t.deleteAllConfirm} spacing={1}>
                 <Typography sx={{ fontSize: "0.875rem" }}>{t.deleteAllConfirm}</Typography>

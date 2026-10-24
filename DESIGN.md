@@ -43,7 +43,7 @@ Source of truth is `frontend/src/theme.ts` (MUI `createTheme`, `cssVariables` wi
 
 A chat-first workspace: a left sidebar (new chat, search, projects, recent chats, settings), a centred thread (max 820px), and a right panel at >= 1200px that shows live run progress or the source being inspected. Below 1200px the inspector is a bottom sheet; below 900px the sidebar is a drawer. Warm off-white ground, white message sheets, one action colour (teal), no ambient decoration.
 
-Thai is the default language (SSR renders Thai, the persisted language applies after hydration); English is a full twin of every string in `frontend/src/lib/strings.ts`.
+Thai is the default language (SSR renders Thai, the persisted language applies after hydration); English mirrors every string in `frontend/src/lib/strings.ts` (type-checked key parity), and has its own hand-written starter questions.
 
 ## Colors
 

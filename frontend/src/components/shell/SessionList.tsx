@@ -20,9 +20,9 @@ export function SessionList({ query, onPick }: { query: string; onPick?: () => v
   const t = useT();
   const lang = usePrefs((s) => s.lang);
   const hydrated = useHydrated(); // persisted store is browser-only: first render must match the server
-  const store = useChatStore();
-  const { projects, activeId, activeProjectId, setActive } = store;
-  const sessions = hydrated ? store.sessions : [];
+  const projects = useChatStore((s) => s.projects), activeId = useChatStore((s) => s.activeId), activeProjectId = useChatStore((s) => s.activeProjectId), setActive = useChatStore((s) => s.setActive);
+  const storeSessions = useChatStore((s) => s.sessions), store = useChatStore.getState();
+  const sessions = hydrated ? storeSessions : [];
   const { sessionId: runningId } = useRunState();
   const [edit, setEdit] = useState<{ id: string; mode: "rename" | "delete" } | null>(null);
   const done = (id: string) => { setEdit(null); focusKebab(id); };

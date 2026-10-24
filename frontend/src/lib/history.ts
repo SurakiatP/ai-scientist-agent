@@ -35,9 +35,15 @@ export const isItem = (v: unknown): v is HistoryItem => {
 
 // Storage that never throws (quota, disabled, blocked). In-memory state stays authoritative; a corrupt
 // value reads as null and is overwritten by the next successful write.
+let full = false;
+const fullSubs = new Set<() => void>();
+const setFull = (v: boolean) => { if (v !== full) { full = v; fullSubs.forEach((f) => f()); } };
+export const storageFull = () => full;
+// true after a failed write, false again after the next successful one
+export const useStorageFull = () => useSyncExternalStore((f) => { fullSubs.add(f); return () => fullSubs.delete(f); }, () => full, () => false);
 export const safeStorage = {
   getItem: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
-  setItem: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch {} },
+  setItem: (k: string, v: string) => { try { localStorage.setItem(k, v); setFull(false); } catch { setFull(true); } },
   removeItem: (k: string) => { try { localStorage.removeItem(k); } catch {} },
 };
 

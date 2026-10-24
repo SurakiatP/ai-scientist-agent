@@ -5,7 +5,7 @@ const ARXIV = /^https?:\/\/(www\.)?arxiv\.org\/(abs|pdf)\//i;
 const DOI = /^10\.[0-9]{4,9}\/\S+$/;
 const PMID = /^[0-9]{1,9}$/;
 
-export const doiOf = (p: Reference["paper"]) => p.doi?.trim().replace(/^(https?:\/\/(dx\.)?doi\.org\/|doi:\s*)/i, "") ?? "";
+export const doiOf = (p: Reference["paper"]) => p.doi?.trim().replace(/^(https?:\/\/(dx\.)?doi\.org\/|doi:?\s*)/i, "") ?? "";
 export const httpUrl = (u: string | undefined) => {
   try {
     const x = new URL(u?.trim() ?? "");

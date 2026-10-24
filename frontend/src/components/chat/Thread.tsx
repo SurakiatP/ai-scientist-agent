@@ -10,7 +10,8 @@ export function Thread({ sessionId }: { sessionId: string }) {
   const turns = useChatStore((s) => s.sessions.find((x) => x.id === sessionId)?.turns);
   const box = useRef<HTMLDivElement>(null), stick = useRef(true), count = useRef(0);
   // Turns present on mount never animate; only ones added after (and the first turn after the empty state).
-  const [seen] = useState(() => { const s = new Set(wasEmpty.has(sessionId) ? [] : turns?.map((x) => x.id)); wasEmpty.delete(sessionId); return s; });
+  const [seen] = useState(() => { return new Set(wasEmpty.has(sessionId) ? [] : turns?.map((x) => x.id)); });
+  useEffect(() => () => { wasEmpty.delete(sessionId); }, [sessionId]); // after mount, not in the initializer (StrictMode double-invokes it)
   useEffect(() => {
     const el = box.current;
     if (!el || !turns) return;

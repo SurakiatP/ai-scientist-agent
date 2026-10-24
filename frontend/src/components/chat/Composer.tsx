@@ -7,6 +7,7 @@ import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import { create } from "zustand";
 import { useChatStore } from "@/lib/chat";
+import { useStorageFull } from "@/lib/history";
 import { ease, enterPop } from "@/lib/motion";
 import { useT } from "@/lib/prefs";
 import { canStart, startRun, stopRun, useRunState } from "@/lib/run";
@@ -26,6 +27,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const setText = (v: string) => set(sessionId, v);
   const [err, setErr] = useState("");
   const run = useRunState();
+  const full = useStorageFull();
   const hasTurns = useChatStore((s) => (s.sessions.find((x) => x.id === sessionId)?.turns.length ?? 0) > 0);
   const [composing, setComposing] = useState(false);
   const busy = !!run.turnId, mine = busy && run.sessionId === sessionId;
@@ -90,8 +92,8 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
           </IconButton>
         </Box>
       </Box>
-      <Typography id="composer-note" role="status" sx={{ mt: 0.75, px: 1, fontSize: "0.75rem", color: over ? "error.main" : "text.secondary", minHeight: "1.2em" }}>
-        {note || (hasTurns ? t.followUpNote : "")}
+      <Typography id="composer-note" role="status" sx={{ mt: 0.75, px: 1, fontSize: "0.75rem", color: over || (full && !note) ? "error.main" : "text.secondary", minHeight: "1.2em" }}>
+        {note || (full ? t.storageFull : hasTurns ? t.followUpNote : "")}
       </Typography>
     </Box>
   );

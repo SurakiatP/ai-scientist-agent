@@ -193,3 +193,13 @@ describe("Thread", () => {
     expect(container.querySelector("script")).toBeNull();
   });
 });
+
+describe("English starters", () => {
+  it("use the English set when lang=en", async () => {
+    const { sampleQuestionsEn } = await import("@/lib/strings");
+    usePrefs.setState({ lang: "en" });
+    render(<EmptyChat sessionId={mk()} />);
+    expect(screen.getByRole("button", { name: sampleQuestionsEn[0] })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: sampleQuestions[0] })).toBeNull();
+  });
+});

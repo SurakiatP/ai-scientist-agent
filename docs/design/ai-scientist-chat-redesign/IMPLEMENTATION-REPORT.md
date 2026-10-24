@@ -58,3 +58,5 @@ lint clean, tsc clean, vitest 135 passed (133 before), `next build` ok, backend 
 - The motion commits (25a2830, a02c897) landed after this verification; only lint, tsc, vitest and build were re-run on top of them.
 
 Task 9 fix round 1: instant follow-scroll, flash 400ms, entrances only for user-driven change (aside slide removed; inspector slide, composer pop, search rows, first turn after empty state), SSR-safe `prefersReduced`, Send double-click guard, reduced motion zeroes delays; tests guard the `seen` logic and follow/release.
+
+Final fix wave: references clamped to the reader's limits on write (no whole-turn loss on reload), legacy history key removed after import, storage-full notice (th+en), cross-tab rehydrate on `storage`, memo(AgentMessage), selector-based sidebar subscriptions, inspector Esc yields to open menus/dialogs, five unused strings removed, English starter questions, report URL revoked after 10s. 148 tests.

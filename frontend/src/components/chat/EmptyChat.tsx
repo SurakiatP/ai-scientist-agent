@@ -3,16 +3,16 @@ import { Box, Button, Stack, Typography } from "@mui/material";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import { useEffect } from "react";
 import { wasEmpty } from "@/lib/motion";
-import { useT } from "@/lib/prefs";
-import { sampleQuestions } from "@/lib/strings";
+import { usePrefs, useT } from "@/lib/prefs";
+import { sampleQuestions, sampleQuestionsEn } from "@/lib/strings";
 import { Composer, focusComposer, useDraft } from "./Composer";
 
-// Fills the composer, never sends. ponytail: sampleQuestions are Thai-only; add an English set when needed.
+// Fills the composer, never sends. Hand-written per language.
 export function Starters({ label, sessionId }: { label: string; sessionId: string }) {
-  const set = useDraft((s) => s.set);
+  const set = useDraft((s) => s.set), en = usePrefs((s) => s.lang) === "en";
   return (
     <Stack component="section" aria-label={label} spacing={1} sx={{ width: "100%" }}>
-      {sampleQuestions.map((q) => (
+      {(en ? sampleQuestionsEn : sampleQuestions).map((q) => (
         <Button key={q} variant="outlined" color="inherit" endIcon={<ArrowForwardRoundedIcon />}
           onClick={() => { set(sessionId, q); focusComposer(); }}
           sx={{ justifyContent: "space-between", textAlign: "left", borderColor: "divider", bgcolor: "background.paper", fontWeight: 400, px: 2, py: 1 }}>
