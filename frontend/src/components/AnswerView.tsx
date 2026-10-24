@@ -49,9 +49,9 @@ export function AnswerView({ content, references = [], scope }: { content: strin
         "& pre": { bgcolor: "surface.shell", color: "text.primary", border: 1, borderColor: "divider", p: 2, borderRadius: 1.5, overflowX: "auto", my: 2, fontSize: "0.8125rem", lineHeight: 1.7 },
         "& pre code": { bgcolor: "transparent", color: "inherit", p: 0, fontSize: "inherit" },
         "& table": { borderCollapse: "collapse", width: "100%", minWidth: { xs: 460, sm: 0 }, fontSize: { xs: "0.875rem", sm: "0.9375rem" } },
-        "& th, & td": { border: 1, borderColor: "divider", p: 1.25, textAlign: "left", verticalAlign: "top" },
+        "& th, & td": { border: 1, borderColor: "divider", p: 1.25, textAlign: "left", verticalAlign: "top", overflowWrap: "break-word" }, // not "anywhere": that lets columns collapse to one letter wide
         "& th": { bgcolor: "surface.shell", fontWeight: 700, fontSize: "0.8125rem" },
-        "& th:first-of-type, & td:first-of-type": { position: "sticky", left: 0, zIndex: 1, width: { xs: "20%", sm: "auto" }, minWidth: { xs: 88, sm: 0 }, bgcolor: "background.paper", borderRight: 1, borderColor: "divider" },
+        "& th:first-of-type, & td:first-of-type": { position: "sticky", left: 0, zIndex: 1, width: { xs: "20%", sm: "auto" }, minWidth: { xs: 88, sm: 120 }, bgcolor: "background.paper", borderRight: 1, borderColor: "divider" },
         "& th:first-of-type": { zIndex: 2, bgcolor: "surface.shell" },
         "& tbody tr:nth-of-type(even)": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 5%, transparent)" },
         "& a[href^='#ref-']": {

@@ -12,32 +12,6 @@ declare module "@mui/material/styles" {
   }
 }
 
-// ponytail: legacy light palette, only for old /ask + /saved pages; delete with them in T3.
-export const palette = {
-  primary: "#2E6B4F",
-  primaryDark: "#245740",
-  primaryLight: "#E3EDE4",
-  onPrimary: "#F2F8F3",
-  background: "#F4F4F0",
-  surface: "#FDFDFA",
-  surfaceRaised: "#FFFFFF",
-  sidebar: "#ECECE5",
-  sidebarActive: "#FDFDFA",
-  railHover: "#E4E4DC",
-  rowStripe: "#FAFAF6",
-  border: "#E2E2D9",
-  textPrimary: "#23252A",
-  textSecondary: "#575B61",
-  success: "#0E7268", // evidence / verified (>= 4.5:1)
-  error: "#A63B26", // darkened for text use (>= 4.5:1)
-  teal: "#0E7268",
-  tealLight: "#DDECE8",
-  gold: "#A97B12",
-  goldLight: "#F3EAD3",
-  clay: "#B0451F",
-  clayLight: "#F5E4DB",
-};
-
 export const FONT_FAMILY =
   '"Noto Sans Thai", "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif';
 
@@ -73,6 +47,7 @@ export const theme = createTheme({
   components: {
     MuiPaper: { defaultProps: { elevation: 0 }, styleOverrides: { root: { backgroundImage: "none" } } },
     MuiButton: { defaultProps: { disableElevation: true }, styleOverrides: { root: { minHeight: 44 } } },
+    MuiButtonBase: { styleOverrides: { root: { "&.Mui-focusVisible": { outline: "2px solid var(--mui-palette-primary-main)", outlineOffset: 2 } } } }, // MUI sets outline:0, which beats the global :focus-visible rule
     MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } },
     MuiCssBaseline: { styleOverrides: {
       html: { scrollbarColor: "var(--mui-palette-text-secondary) transparent" },
