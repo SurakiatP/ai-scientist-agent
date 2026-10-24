@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import { Noto_Sans_Thai } from "next/font/google";
 import InitColorSchemeScript from "@mui/material/InitColorSchemeScript";
 import { Box } from "@mui/material";
-import { Nav } from "@/components/Nav";
 import { Providers } from "@/components/Providers";
-import { landing } from "@/lib/strings";
+import { SkipLink } from "@/components/SkipLink";
 
 const notoSansThai = Noto_Sans_Thai({ subsets: ["thai", "latin"], display: "swap" });
 
@@ -19,15 +18,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body>
         <InitColorSchemeScript attribute="data" defaultMode="system" />
         <Providers>
-            <Box component="a" href="#content" sx={{
-              position: "absolute", left: 16, top: -100, zIndex: 1300, px: 2, py: 1.5, borderRadius: 1,
-              bgcolor: "background.paper", color: "primary.main", fontWeight: 600, border: 1, borderColor: "primary.main",
-              "&:focus": { top: 8 },
-            }}>{landing.th.skip}</Box>
-            <Box sx={{ display: { xs: "block", md: "flex" }, minHeight: "100dvh", bgcolor: "background.default" }}>
-              <Nav />
-              <Box id="content" tabIndex={-1} component="main" sx={{ flex: 1, minWidth: 0, pt: { xs: "56px", md: 0 }, outline: "none" }}>{children}</Box>
-            </Box>
+          <SkipLink />
+          <Box id="content" tabIndex={-1} component="main" sx={{ minHeight: "100dvh", bgcolor: "background.default", outline: "none" }}>{children}</Box>
         </Providers>
       </body>
     </html>

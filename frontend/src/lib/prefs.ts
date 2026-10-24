@@ -5,18 +5,21 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { safeStorage, useHydrated } from "./history";
 import { strings, type Lang, type Strings } from "./strings";
 
-type State = { lang: Lang; setLang: (l: Lang) => void };
+type State = { lang: Lang; setLang: (l: Lang) => void; sidebarCollapsed: boolean; setSidebarCollapsed: (c: boolean) => void };
 
 export const usePrefs = create<State>()(
   persist(
-    (set) => ({ lang: "th", setLang: (lang) => set({ lang }) }),
+    (set) => ({ lang: "th", setLang: (lang) => set({ lang }), sidebarCollapsed: false, setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }) }),
     {
       name: "scientist-prefs-v1",
       storage: createJSONStorage(() => safeStorage),
       version: 1,
-      partialize: (s) => ({ lang: s.lang }),
-      // unknown/garbage values fall back to th
-      merge: (p, cur) => ({ ...cur, ...(p as object | null), lang: (p as { lang?: unknown } | null)?.lang === "en" ? "en" : "th" }),
+      partialize: (s) => ({ lang: s.lang, sidebarCollapsed: s.sidebarCollapsed }),
+      // unknown/garbage values fall back to defaults (th, expanded)
+      merge: (p, cur) => {
+        const x = (p ?? {}) as { lang?: unknown; sidebarCollapsed?: unknown };
+        return { ...cur, lang: x.lang === "en" ? "en" : "th", sidebarCollapsed: x.sidebarCollapsed === true };
+      },
     },
   ),
 );

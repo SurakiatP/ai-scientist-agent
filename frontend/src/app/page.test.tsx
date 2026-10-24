@@ -173,6 +173,7 @@ describe("reduced motion", () => {
 
 it("layout skip link has its #content target on every page", () => {
   const src = readFileSync("src/app/layout.tsx", "utf8");
-  expect(src).toContain('href="#content"');
+  expect(readFileSync("src/components/SkipLink.tsx", "utf8")).toContain('href="#content"');
+  expect(src).toContain("<SkipLink />");
   expect(src).toMatch(/id="content"[^>]*>\{children\}/); // the target wraps every route, not only /
 });
