@@ -11,7 +11,7 @@ import { hydrateRoot } from "react-dom/client";
 import { MAX_PROJECTS } from "@/lib/chat";
 
 const run = vi.hoisted(() => ({ sessionId: null as string | null }));
-vi.mock("@/lib/run", () => ({ useRunState: () => ({ sessionId: run.sessionId, turnId: run.sessionId && "t" }) }));
+vi.mock("@/lib/run", () => ({ useRunState: () => ({ sessionId: run.sessionId, turnId: run.sessionId && "t" }), stopRun: vi.fn() }));
 
 const t = strings.th;
 const prog = { waiting: null, reasoning: "", searches: [], sources: {}, answered: [], writing: false, phase: "done" as const };

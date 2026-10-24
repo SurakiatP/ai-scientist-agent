@@ -9,6 +9,7 @@ import { create } from "zustand";
 import { useHydrated } from "@/lib/history";
 import { PERSONAL, useChatStore } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
+import { InlineConfirm, InlineRename, KebabMenu } from "./SessionMenu";
 import { projectName, selectProject } from "./ProjectSwitcher";
 import { SessionList } from "./SessionList";
 
@@ -28,6 +29,7 @@ export function Sidebar({ onPick }: { onPick?: () => void }) {
   const hydrated = useHydrated();
   const store = useChatStore();
   const { newSession, setActive, addProject } = store;
+  const [pedit, setPedit] = useState<{ id: string; mode: "rename" | "delete" } | null>(null);
   const projects = hydrated ? store.projects : store.projects.slice(0, 1);
   const activeProjectId = hydrated ? store.activeProjectId : PERSONAL;
   const sessions = hydrated ? store.sessions : [];
@@ -70,12 +72,26 @@ export function Sidebar({ onPick }: { onPick?: () => void }) {
               setAdding(false); setName("");
             }} />
         )}
-        {open && projects.map((p) => (
-          <Button key={p.id} fullWidth color="inherit" aria-current={p.id === activeProjectId ? "true" : undefined}
-            onClick={() => selectProject(p.id)}
-            sx={{ justifyContent: "flex-start", fontWeight: p.id === activeProjectId ? 700 : 400, bgcolor: p.id === activeProjectId ? "action.selected" : "transparent" }}>
-            {projectName(p, t)}
-          </Button>
+        {open && projects.map((p) => pedit?.id === p.id ? (
+          <Box key={p.id} sx={{ px: 0.5 }}>
+            {pedit.mode === "rename"
+              ? <InlineRename value={p.name} label={t.projectName} onCancel={() => setPedit(null)} onSave={(v) => { store.renameProject(p.id, v); setPedit(null); }} />
+              : <InlineConfirm text={t.deleteProjectConfirm} onCancel={() => setPedit(null)} onConfirm={() => { store.deleteProject(p.id); setPedit(null); }} />}
+          </Box>
+        ) : (
+          <Box key={p.id} sx={{ display: "flex", alignItems: "center" }}>
+            <Button fullWidth color="inherit" aria-current={p.id === activeProjectId ? "true" : undefined}
+              onClick={() => selectProject(p.id)}
+              sx={{ justifyContent: "flex-start", minWidth: 0, minHeight: 44, fontWeight: p.id === activeProjectId ? 700 : 400, bgcolor: p.id === activeProjectId ? "action.selected" : "transparent" }}>
+              <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{projectName(p, t)}</Box>
+            </Button>
+            {p.id !== PERSONAL && (
+              <KebabMenu label={`${t.moreActions}: ${projectName(p, t)}`} actions={[
+                { label: t.rename, onClick: () => setPedit({ id: p.id, mode: "rename" }) },
+                { label: t.deleteItem, onClick: () => setPedit({ id: p.id, mode: "delete" }) },
+              ]} />
+            )}
+          </Box>
         ))}
       </Box>
       <Box sx={{ flex: 1, minHeight: 0 }}>

@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 import { Box, Drawer, IconButton, Stack, useMediaQuery, useTheme } from "@mui/material";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import ViewSidebarOutlinedIcon from "@mui/icons-material/ViewSidebarOutlined";
+import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { useHydrated } from "@/lib/history";
 import { usePrefs, useT } from "@/lib/prefs";
 import { ProjectSwitcher } from "./ProjectSwitcher";
@@ -37,6 +38,7 @@ export function AppShell({ children, aside }: { children: ReactNode; aside?: Rea
         <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{children}</Box>
       </Box>
       {aside && <Box component="aside" sx={{ display: { xs: "none", lg: "block" }, width: 340, flexShrink: 0, borderLeft: 1, borderColor: "divider", overflowY: "auto", p: 2.5 }}>{aside}</Box>}
+      <SettingsDialog />
     </Box>
   );
 }
