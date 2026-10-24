@@ -63,6 +63,17 @@ describe("run controller", () => {
     await p;
     expect(last(chat).status).toBe("stopped");
   });
+  it("page unload leaves the stored run running so a reload reads interrupted", async () => {
+    const { chat, run, sid } = await setup();
+    script = async function* (signal) { await new Promise((r) => signal.addEventListener("abort", r)); throw new Error("network"); };
+    const p = run.startRun(sid, "q");
+    await Promise.resolve();
+    window.dispatchEvent(new Event("pagehide"));
+    run.stopRun();
+    await p;
+    expect(last(chat).status).toBe("running");
+    window.dispatchEvent(new Event("pageshow"));
+  });
   it("second run while running rejects busy and adds no turn", async () => {
     const { chat, run, sid } = await setup();
     let release!: () => void;

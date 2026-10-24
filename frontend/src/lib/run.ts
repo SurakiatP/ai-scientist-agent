@@ -10,6 +10,8 @@ type RunState = { sessionId: string | null; turnId: string | null };
 const idle: RunState = { sessionId: null, turnId: null };
 let state = idle; // module-level: survives navigation, never persisted
 let ac: AbortController | null = null;
+let leaving = false; // page unloading: the aborted fetch must not overwrite the stored run, so a reload reads "interrupted"
+if (typeof window !== "undefined") { window.addEventListener("pagehide", () => { leaving = true; }); window.addEventListener("pageshow", () => { leaving = false; }); } // pageshow: restored from bfcache
 const subs = new Set<() => void>();
 const setState = (s: RunState) => { state = s; subs.forEach((f) => f()); };
 
@@ -34,7 +36,7 @@ export async function startRun(sessionId: string, question: string): Promise<voi
   const store = () => useChatStore.getState();
   store().addTurn(sessionId, { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress });
   setState({ sessionId, turnId });
-  const patch = (p: Parameters<ReturnType<typeof store>["patchTurn"]>[2]) => { try { store().patchTurn(sessionId, turnId, p); } catch {} }; // storage must never abort a run
+  const patch = (p: Parameters<ReturnType<typeof store>["patchTurn"]>[2]) => { if (leaving) return; try { store().patchTurn(sessionId, turnId, p); } catch {} }; // storage must never abort a run
   let progress: Progress = emptyProgress;
   let final: { content: string; references: Reference[] } | null = null;
   let outcome: Parameters<typeof patch>[0] | null = null;
