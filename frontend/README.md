@@ -13,4 +13,6 @@ npm test
 npm run build
 ```
 
-Set `NEXT_PUBLIC_API_BASE` (see `.env.example`) to point at a different backend; default `http://localhost:8000`.
+Routes: `/` landing, `/chat` workspace (sessions, projects, settings). `/ask` and `/saved` redirect to `/chat`.
+
+Set `NEXT_PUBLIC_API_BASE` (see `.env.example`; read at build time, so rebuild after changing it) to point at a different backend; default `http://localhost:8000`. The backend must list the frontend origin in `CORS_ORIGINS`. Production: `npm run build && npm start`.

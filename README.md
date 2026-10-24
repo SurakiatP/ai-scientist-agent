@@ -14,7 +14,7 @@ Ask a research question (Thai or English) and get a streamed answer with referen
 8. Everything travels back as server-sent events; history and saved answers live only in the browser.
 
 - `backend/`: FastAPI, one streaming endpoint.
-- `frontend/`: Next.js 16 + MUI. Pages `/`, `/ask`, `/saved`.
+- `frontend/`: Next.js 16 + MUI. Routes `/` (landing), `/chat` (workspace); `/ask`, `/saved` redirect to `/chat`.
 - `infra/hermes/`: bridge that runs Hermes in its own Python env. Pinned install and findings: `infra/hermes/setup.md`.
 
 ## Setup
@@ -60,7 +60,7 @@ scripts/dev.sh
 
 Checks prerequisites (uv, node >= 20, npm, docker answering within 10 s, `.env`, non-empty `OPENROUTER_API_KEY`
 from `.env` or the environment, free ports 8000 and 3000; it never kills an existing listener), starts the backend on :8000 and the frontend on :3000, waits for `/v1/health`, and stops both on Ctrl+C. `WAIT_SECONDS` (default 60) bounds each startup wait.
-Open http://localhost:3000. Set `NEXT_PUBLIC_API_BASE` (see `frontend/.env.example`) for another backend URL.
+Open http://localhost:3000. Set `NEXT_PUBLIC_API_BASE` (see `frontend/.env.example`; read at build time) for another backend URL, and add that frontend origin to `CORS_ORIGINS`.
 
 Backend alone (run from the repo root so `.env` is found):
 
