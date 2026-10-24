@@ -8,16 +8,22 @@ import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import { create } from "zustand";
 import { useChatStore } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
-import { startRun, stopRun, useRunState } from "@/lib/run";
+import { canStart, startRun, stopRun, useRunState } from "@/lib/run";
 import { MAX_QUESTION } from "@/lib/strings";
 
 // Shared draft so starter chips / "ask follow-up" can fill the one composer. In memory only.
-export const useDraft = create<{ text: string; set: (s: string) => void }>((set) => ({ text: "", set: (text) => set({ text }) }));
+// Per session, so a draft never travels into (and sends from) another session.
+export const useDraft = create<{ drafts: Record<string, string>; set: (sid: string, s: string) => void }>((set) => ({
+  drafts: {},
+  set: (sid, text) => set((d) => { const { [sid]: _, ...rest } = d.drafts; return { drafts: text ? { ...rest, [sid]: text } : rest }; }),
+}));
 export const focusComposer = () => document.getElementById("composer")?.focus();
 
 export function Composer({ sessionId, large = false }: { sessionId: string; large?: boolean }) {
   const t = useT();
-  const text = useDraft((s) => s.text), setText = useDraft((s) => s.set);
+  const text = useDraft((s) => s.drafts[sessionId] ?? ""), set = useDraft((s) => s.set);
+  const setText = (v: string) => set(sessionId, v);
+  const [err, setErr] = useState("");
   const run = useRunState();
   const hasTurns = useChatStore((s) => (s.sessions.find((x) => x.id === sessionId)?.turns.length ?? 0) > 0);
   const [composing, setComposing] = useState(false);
@@ -27,15 +33,20 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const send = () => {
     if (!canSend) return;
     const q = text.trim();
-    setText("");
-    startRun(sessionId, q).catch(() => {}); // canSend already ruled out busy; a missing session rejects here and is dropped
+    if (!canStart().ok) { setErr(t.busyElsewhere); return; } // text stays; never dropped silently
+    setErr("");
+    setText(""); // startRun adds the turn synchronously; a refusal rejects before any state change
+    startRun(sessionId, q).catch((e: unknown) => {
+      if (!useDraft.getState().drafts[sessionId]) set(sessionId, q); // restore unless the user already typed again
+      setErr(e instanceof Error && e.message === "busy" ? t.busyElsewhere : t.startFailed);
+    });
   };
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Enter" || e.shiftKey || composing || e.nativeEvent.isComposing || e.keyCode === 229) return; // 229: IME (Safari fires keydown after compositionend)
     e.preventDefault();
     send();
   };
-  const note = busy && !mine ? t.busyElsewhere : over ? t.tooLong : "";
+  const note = busy && !mine ? t.busyElsewhere : over ? t.tooLong : err;
   const counter = text.length >= MAX_QUESTION * 0.8;
   return (
     <Box sx={{ width: "100%" }}>
@@ -46,7 +57,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
       }}>
         <InputBase
           id="composer" multiline fullWidth minRows={large ? 3 : 1} maxRows={10} value={text}
-          placeholder={t.placeholder} onChange={(e) => setText(e.target.value)} onKeyDown={onKeyDown}
+          placeholder={t.placeholder} onChange={(e) => { setText(e.target.value); setErr(""); }} onKeyDown={onKeyDown}
           onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
           slotProps={{ input: { "aria-label": t.composerLabel, "aria-describedby": "composer-note" } }}
           sx={{ px: 0.5, py: 0.5, fontSize: "1rem", lineHeight: 1.6, alignItems: "flex-start" }}
@@ -58,8 +69,8 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
             </span>
           </Tooltip>
           <Tooltip title={t.modeReason}>
-            <span tabIndex={0} style={{ display: "inline-flex" }}>
-              <Chip size="small" variant="outlined" icon={<LayersOutlinedIcon />} label={t.modeChip} aria-label={`${t.modeChip}. ${t.modeReason}`} sx={{ height: 32 }} />
+            <span tabIndex={0} role="group" aria-label={`${t.modeChip}. ${t.modeReason}`} style={{ display: "inline-flex", alignItems: "center", minHeight: 44 }}>
+              <Chip size="small" variant="outlined" icon={<LayersOutlinedIcon />} label={t.modeChip} sx={{ height: 32 }} />
             </span>
           </Tooltip>
           <Box sx={{ flex: 1 }} />

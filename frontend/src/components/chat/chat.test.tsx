@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useChatStore, type Turn } from "@/lib/chat";
 import { usePrefs } from "@/lib/prefs";
 import { emptyProgress } from "@/lib/progress";
 import { MAX_QUESTION, sampleQuestions, strings } from "@/lib/strings";
-import { Composer } from "./Composer";
+import { AgentMessage } from "./AgentMessage";
+import { Composer, useDraft } from "./Composer";
 import { EmptyChat } from "./EmptyChat";
 import { Thread } from "./Thread";
 
@@ -33,7 +34,8 @@ beforeEach(() => {
   useChatStore.getState().clearAll();
   usePrefs.setState({ lang: "th" });
   run.sessionId = run.turnId = null;
-  run.startRun.mockClear(); run.stopRun.mockClear();
+  run.startRun.mockReset(); run.startRun.mockImplementation(async () => {}); run.stopRun.mockClear();
+  useDraft.setState({ drafts: {} });
 });
 afterEach(cleanup);
 
@@ -87,6 +89,29 @@ describe("Composer", () => {
     expect(run.stopRun).toHaveBeenCalled();
   });
 
+  it("busy start keeps the text and shows the reason", () => {
+    const id = mk();
+    render(<Composer sessionId={id} />);
+    type("keep me");
+    run.startRun.mockRejectedValueOnce(new Error("busy"));
+    fireEvent.keyDown(box(), { key: "Enter" });
+    return waitFor(() => {
+      expect(box().value).toBe("keep me");
+      expect(screen.getByText(t.busyElsewhere)).toBeInTheDocument();
+    });
+  });
+
+  it("draft is per session", () => {
+    const a = mk(), b = mk();
+    const { unmount } = render(<Composer sessionId={a} />);
+    type("only in a");
+    unmount();
+    render(<Composer sessionId={b} />);
+    expect(box().value).toBe("");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(run.startRun).not.toHaveBeenCalled();
+  });
+
   it("follow-up note only once the session has turns", () => {
     const { unmount } = render(<Composer sessionId={mk()} />);
     expect(screen.queryByText(t.followUpNote)).toBeNull();
@@ -98,9 +123,12 @@ describe("Composer", () => {
 
 describe("EmptyChat", () => {
   it("shows starters that fill the composer without sending, and no sample rows", () => {
+    mk([turn("done", { question: "OTHER-SESSION-Q", answer: { content: "OTHER-ANSWER", references: [] } })]);
     render(<EmptyChat sessionId={mk()} />);
+    expect(screen.queryByText(/OTHER-/)).toBeNull();
     expect(screen.getByRole("heading", { name: t.emptyHeading })).toBeInTheDocument();
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+    expect(screen.getAllByRole("button").filter((b) => sampleQuestions.includes(b.textContent as never))).toHaveLength(3);
     fireEvent.click(screen.getByRole("button", { name: sampleQuestions[1] }));
     expect(box().value).toBe(sampleQuestions[1]);
     expect(run.startRun).not.toHaveBeenCalled();
@@ -108,6 +136,28 @@ describe("EmptyChat", () => {
 });
 
 describe("Thread", () => {
+  it("running status is the live region; a finished answer is not", () => {
+    const { container, rerender } = render(<AgentMessage sessionId="s" turn={turn("running")} />);
+    const live = container.querySelectorAll('[aria-live]');
+    expect(live).toHaveLength(1);
+    rerender(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "final answer", references: [] } })} />);
+    expect(screen.getByText("final answer").closest("[aria-live]")).toBeNull();
+  });
+
+  it("retry is disabled with a reason while a run is active", () => {
+    run.sessionId = "s"; run.turnId = "x";
+    render(<AgentMessage sessionId="s" turn={turn("error", { error: "e" })} />);
+    expect(screen.getByRole("button", { name: t.retry })).toBeDisabled();
+    expect(screen.getByText(t.retryBusy)).toBeInTheDocument();
+  });
+
+  it("copy failure shows feedback", async () => {
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("no")) }, configurable: true });
+    render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "x", references: [] } })} />);
+    fireEvent.click(screen.getByRole("button", { name: t.copy }));
+    expect(await screen.findByText(t.copyFailed)).toBeInTheDocument();
+  });
+
   it("renders nothing for an empty session", () => {
     const { container } = render(<Thread sessionId={mk()} />);
     expect(container.querySelectorAll("article")).toHaveLength(0);
