@@ -57,7 +57,7 @@ describe("run controller", () => {
   });
   it("abort ends stopped", async () => {
     const { chat, run, sid } = await setup();
-    script = async function* (signal) { yield { type: "waiting", position: 1 }; await new Promise((r) => signal.addEventListener("abort", r)); };
+    script = async function* (signal) { yield { type: "waiting", position: 1 }; await new Promise((r) => (signal.aborted ? r(0) : signal.addEventListener("abort", r))); };
     const p = run.startRun(sid, "q");
     await Promise.resolve();
     run.stopRun();
