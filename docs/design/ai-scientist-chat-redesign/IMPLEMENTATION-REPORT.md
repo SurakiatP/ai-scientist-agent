@@ -38,3 +38,7 @@ lint clean, tsc clean, vitest 135 passed (133 before), `next build` ok, backend 
 - `next.config.ts` has no rewrites or headers; CORS lives in the backend (`CORS_ORIGINS`). No CSP header is set (no inline eval exists, so one can be added later).
 - `tsconfig.tsbuildinfo` sits untracked-ignored in frontend/; harmless.
 - Mobile 360/390 answer-with-table and sheet screenshots were taken; pixel-level comparison to the references was visual only.
+
+## Task 9: motion pass
+
+Message rise + smooth follow-scroll, aside/inspector slide, one-time reference flash, sidebar width collapse, send/stop morph, stage node easing. CSS under no-preference, helpers in `frontend/src/lib/motion.ts`; reduced motion is static. Details: `.superpowers/sdd/2026-10-25-chat-first-frontend/task-9-report.md`.
