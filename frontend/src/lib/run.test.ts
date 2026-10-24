@@ -71,8 +71,12 @@ describe("run controller", () => {
     window.dispatchEvent(new Event("pagehide"));
     run.stopRun();
     await p;
-    expect(last(chat).status).toBe("running");
-    window.dispatchEvent(new Event("pageshow"));
+    try {
+      expect(last(chat).status).toBe("running");
+      const ev = new Event("pageshow"); Object.assign(ev, { persisted: true });
+      window.dispatchEvent(ev); // bfcache restore, no live run: stored "running" becomes interrupted
+      expect(last(chat).status).toBe("interrupted");
+    } finally { window.dispatchEvent(new Event("pageshow")); }
   });
   it("second run while running rejects busy and adds no turn", async () => {
     const { chat, run, sid } = await setup();

@@ -11,7 +11,14 @@ const idle: RunState = { sessionId: null, turnId: null };
 let state = idle; // module-level: survives navigation, never persisted
 let ac: AbortController | null = null;
 let leaving = false; // page unloading: the aborted fetch must not overwrite the stored run, so a reload reads "interrupted"
-if (typeof window !== "undefined") { window.addEventListener("pagehide", () => { leaving = true; }); window.addEventListener("pageshow", () => { leaving = false; }); } // pageshow: restored from bfcache
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => { leaving = true; });
+  window.addEventListener("pageshow", (e) => {
+    leaving = false;
+    if (!e.persisted || state.turnId) return; // bfcache restore with no live run: any turn still stored as running is dead
+    for (const s of useChatStore.getState().sessions) for (const t of s.turns) if (t.status === "running") useChatStore.getState().patchTurn(s.id, t.id, { status: "interrupted" });
+  });
+}
 const subs = new Set<() => void>();
 const setState = (s: RunState) => { state = s; subs.forEach((f) => f()); };
 
