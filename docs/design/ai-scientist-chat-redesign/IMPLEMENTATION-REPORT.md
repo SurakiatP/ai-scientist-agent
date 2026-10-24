@@ -4,7 +4,7 @@ Branch `feature/research-search`. Shipped system: Arctic Teal, see `DESIGN.md` a
 
 ## What was verified
 Real Google Chrome driven by playwright-core (claude-in-chrome tools were not available in this session), against the live backend with a real key.
-Viewports 360, 390 (touch), 768, 1440; Thai and English; light, dark via emulated OS scheme; reduced motion. Screenshots: `/private/tmp/claude-501/-Users-parksurakiat-ai-scientist-dem/14b232e4-ac3f-44cc-9f1a-2f1230bf707c/scratchpad/`.
+Viewports 360, 390 (touch), 768, 1440; Thai and English; light, dark via emulated OS scheme; reduced motion. Four curated screenshots are in `verification/` (answer 1440, inspector panel 1440, inspector sheet 390, error and retry 1440); the rest were not retained.
 
 | Area | Result |
 |---|---|
@@ -30,15 +30,29 @@ Reference images 01-19 were compared for layout and feel only (sidebar, centred 
 5. DESIGN.md rewritten from the shipped theme. (b13c9a9)
 
 ## Checks
-lint clean, tsc clean, vitest 135 passed (133 before), `next build` ok, backend pytest 210 passed 2 skipped. `next start` smoke: / and /chat 200, /ask and /saved 307 to /chat, unknown path 404 with the new page, title/theme-color/icon in HTML. No console.log, no eval, no gsap on the landing (gsap remains only in ProgressCard's stage pulse, which skips under reduced motion). `impeccable detect`: no findings.
+lint clean, tsc clean, vitest 135 passed (133 before), `next build` ok, backend pytest 210 passed 2 skipped. `next start` smoke: / and /chat 200, /ask and /saved 307 to /chat, unknown path 404 with the new page, title/theme-color/icon in HTML. No console.log, no eval, no gsap on the landing (gsap remains only in ProgressCard's stage pulse, which skips under reduced motion). `impeccable detect --json` over `frontend/src/app`, `components`, `lib/strings.ts` printed `[]` (no findings; the detector may not parse every MUI `sx` pattern, so treat as weak evidence).
 
-## Remaining
-- Keyboard pass covered sidebar, composer, inspector, settings; tab order inside the sheet on touch was not exercised with a real screen reader.
-- Real hydration warnings: none seen in dev console across all passes.
-- `next.config.ts` has no rewrites or headers; CORS lives in the backend (`CORS_ORIGINS`). No CSP header is set (no inline eval exists, so one can be added later).
-- `tsconfig.tsbuildinfo` sits untracked-ignored in frontend/; harmless.
-- Mobile 360/390 answer-with-table and sheet screenshots were taken; pixel-level comparison to the references was visual only.
+## Fix round 1
+- Viewport theme-color now reads shared `BG` constants in `lib/config.ts`, which `theme.ts` also uses (one source for the two backgrounds).
+- `pageshow` with `persisted` (bfcache restore) and no live run marks any stored "running" turn "interrupted"; test resets `pageshow` in `finally`.
+- Focus rings checked in real Chrome: sidebar session rows and the kebab menu. Rows are not clipped; the menu item ring was cut by the menu paper, so `MuiMenuItem` focus uses `outlineOffset: -2`.
+- A long unbroken DOI/URL inside an answer table: no horizontal page scroll at 360 or 1440 (table scrolls in its own box).
+- Browsers request `/favicon.ico` regardless of the `<link>`; it returned 404. Added a 32px `app/favicon.ico` rendered from `icon.svg`.
+- Verified in a real browser: not-found page (404 shows th copy and a link to chat). Verified by build only: `error.tsx` and `global-error.tsx` (no way to trigger a render error without editing code).
 
-## Task 9: motion pass
+## Not built / gaps (all intentional or backend-limited)
+- Sessions and projects live only in this browser (localStorage). No server persistence, no sync across devices, cleared with site data.
+- The research plan is shown read-only ("proposed by Hermes, cannot be edited"); no plan editing or approval step.
+- No file upload (attach is disabled with a reason).
+- No PDF or DOCX export (buttons disabled with a reason; only Markdown copy and download).
+- No analysis or report artifacts (images in the reference set showing them are not implemented).
+- No quick-chat mode; only Deep Research.
+- Follow-ups do not send earlier turns; each question is answered on its own (stated in the UI).
 
-Message rise + smooth follow-scroll, aside/inspector slide, one-time reference flash, sidebar width collapse, send/stop morph, stage node easing. CSS under no-preference, helpers in `frontend/src/lib/motion.ts`; reduced motion is static. Details: `.superpowers/sdd/2026-10-25-chat-first-frontend/task-9-report.md`.
+## Not tested
+- Safari, Firefox, real screen readers (VoiceOver, NVDA). Only Chrome via playwright-core.
+- Touch behaviour beyond tap emulation at 390px.
+- No CSP header is set (no inline eval exists, so one could be added).
+- Reference images 01-19 compared by eye for layout and feel, not pixel-diffed.
+- Real hydration warnings: none seen in dev or production console across the passes.
+- The motion commits (25a2830, a02c897) landed after this verification; only lint, tsc, vitest and build were re-run on top of them.
