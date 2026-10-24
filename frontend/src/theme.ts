@@ -1,5 +1,6 @@
 "use client";
 import { createTheme } from "@mui/material/styles";
+import { BG } from "@/lib/config";
 
 declare module "@mui/material/styles" {
   interface Palette {
@@ -23,7 +24,7 @@ export const theme = createTheme({
       palette: {
         primary: { main: "#0A6B6B", contrastText: "#FFFFFF" },
         secondary: { main: "#3F4F55" },
-        background: { default: "#FAF8F4", paper: "#FFFFFF" },
+        background: { default: BG.light, paper: "#FFFFFF" },
         text: { primary: "#0B1620", secondary: "#3F4F55" },
         divider: "#E3DED6",
         evidence: { verified: "#0A6B5A", unverified: "#8A5A00", unknown: "#5A6B70" },
@@ -34,7 +35,7 @@ export const theme = createTheme({
       palette: {
         primary: { main: "#69D8D1", contrastText: "#06201E" },
         secondary: { main: "#9DB0B4" },
-        background: { default: "#0D151B", paper: "#182B34" },
+        background: { default: BG.dark, paper: "#182B34" },
         text: { primary: "#ECF4F4", secondary: "#9DB0B4" },
         divider: "#2A4350",
         evidence: { verified: "#5FD6B5", unverified: "#E5B44F", unknown: "#9DB0B4" },
@@ -48,6 +49,7 @@ export const theme = createTheme({
     MuiPaper: { defaultProps: { elevation: 0 }, styleOverrides: { root: { backgroundImage: "none" } } },
     MuiButton: { defaultProps: { disableElevation: true }, styleOverrides: { root: { minHeight: 44 } } },
     MuiButtonBase: { styleOverrides: { root: { "&.Mui-focusVisible": { outline: "2px solid var(--mui-palette-primary-main)", outlineOffset: 2 } } } }, // MUI sets outline:0, which beats the global :focus-visible rule
+    MuiMenuItem: { styleOverrides: { root: { "&.Mui-focusVisible": { outlineOffset: -2 } } } }, // menu paper clips an outside ring
     MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } },
     MuiCssBaseline: { styleOverrides: {
       html: { scrollbarColor: "var(--mui-palette-text-secondary) transparent" },

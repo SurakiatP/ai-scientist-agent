@@ -4,6 +4,7 @@ import InitColorSchemeScript from "@mui/material/InitColorSchemeScript";
 import { Box } from "@mui/material";
 import { Providers } from "@/components/Providers";
 import { SkipLink } from "@/components/SkipLink";
+import { BG } from "@/lib/config";
 
 const notoSansThai = Noto_Sans_Thai({ subsets: ["thai", "latin"], display: "swap" });
 
@@ -13,7 +14,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: [{ media: "(prefers-color-scheme: light)", color: "#FAF8F4" }, { media: "(prefers-color-scheme: dark)", color: "#0D151B" }],
+  themeColor: [{ media: "(prefers-color-scheme: light)", color: BG.light }, { media: "(prefers-color-scheme: dark)", color: BG.dark }],
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
