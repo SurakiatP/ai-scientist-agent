@@ -1,7 +1,11 @@
 "use client";
-import { Chip, Link, List, ListItem, Stack, Typography } from "@mui/material";
+import { Box, Chip, Link, List, ListItem, Stack, Typography } from "@mui/material";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
+import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import type { Reference } from "@/lib/sse";
 import type { Strings } from "@/lib/strings";
+import { palette } from "@/theme";
 
 const ARXIV = /^https?:\/\/(www\.)?arxiv\.org\/(abs|pdf)\//i;
 const DOI = /^10\.[0-9]{4,9}\/\S+$/;
@@ -29,49 +33,61 @@ export function paperLink(p: Reference["paper"]): string | null {
 // "unverified" also covers papers with nothing to check, so word it by whether an identifier exists.
 const hasId = (p: Reference["paper"]) => !!(doiOf(p) || p.pmid?.trim() || ARXIV.test(p.url?.trim() ?? ""));
 
+const idChipSx = { fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: "0.6875rem" };
+
 export function ReferenceList({ references, t }: { references: Reference[]; t: Strings }) {
   return (
-    <List disablePadding sx={{ display: "grid", gap: 1.5 }}>
-      {references.map((r) => {
+    <List disablePadding sx={{ display: "grid" }}>
+      {references.map((r, i) => {
         const href = paperLink(r.paper);
         const meta = [r.paper.authors.slice(0, 3).join(", ") + (r.paper.authors.length > 3 ? ` ${t.etAl}` : ""), r.paper.year]
           .filter(Boolean)
           .join(" · ");
+        const verified = r.status === "verified";
         return (
           <ListItem
             key={r.id}
             id={`ref-${r.id}`}
             disableGutters
             sx={{
-              alignItems: "flex-start",
-              gap: 1.5,
-              p: 1.5,
-              borderRadius: 2,
-              scrollMarginTop: 16,
-              "&:target": { bgcolor: "primary.light" },
+              alignItems: "flex-start", gap: 1.75, px: { xs: 0.5, md: 1 }, py: 1.75,
+              borderTop: i === 0 ? 0 : 1, borderColor: "divider",
+              borderRadius: 1.5, scrollMarginTop: 80,
+              "&:target": { bgcolor: palette.tealLight },
             }}
           >
-            <Typography sx={{ color: "text.secondary", minWidth: 28 }}>[{r.id}]</Typography>
-            <Stack spacing={0.5} sx={{ minWidth: 0 }}>
+            <Box sx={{
+              display: "grid", placeItems: "center", width: 30, height: 30, flexShrink: 0,
+              borderRadius: 1, border: 1, borderColor: verified ? palette.tealLight : "divider",
+              bgcolor: verified ? palette.tealLight : palette.surface,
+              color: verified ? palette.teal : "text.secondary",
+              fontSize: "0.75rem", fontWeight: 700, fontVariantNumeric: "tabular-nums",
+            }}>
+              {r.id}
+            </Box>
+            <Stack spacing={0.6} sx={{ minWidth: 0, flex: 1 }}>
               {href ? (
-                <Link href={href} target="_blank" rel="noopener noreferrer" underline="hover" sx={{ fontWeight: 600 }}>
+                <Link
+                  href={href} target="_blank" rel="noopener noreferrer" underline="hover"
+                  sx={{ fontWeight: 600, fontSize: "0.9375rem", lineHeight: 1.5, color: palette.teal, overflowWrap: "anywhere" }}
+                >
                   {r.paper.title}
                 </Link>
               ) : (
-                <Typography sx={{ fontWeight: 600 }}>{r.paper.title}</Typography>
+                <Typography sx={{ fontWeight: 600, fontSize: "0.9375rem", lineHeight: 1.5, overflowWrap: "anywhere" }}>{r.paper.title}</Typography>
               )}
-              {meta && <Typography variant="body2" sx={{ color: "text.secondary" }}>{meta}</Typography>}
-              <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap", alignItems: "center" }}>
-                {r.status === "verified" && <Chip size="small" color="success" variant="outlined" label={`✓ ${t.verified}`} />}
-                {r.status === "unverified" && <Chip size="small" variant="outlined" sx={{ borderColor: "warning.main" }} label={hasId(r.paper) ? `⚠ ${t.unconfirmed}` : `ⓘ ${t.noId}`} />}
-                {r.status === "unknown" && <Chip size="small" variant="outlined" sx={{ borderColor: "warning.main" }} label={`⚠ ${t.unknown}`} />}
-                {r.paper.doi && <Chip size="small" variant="outlined" label={`${t.doi} ${r.paper.doi}`} />}
-                {r.paper.pmid && <Chip size="small" variant="outlined" label={`${t.pmid} ${r.paper.pmid}`} />}
+              {meta && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.5 }}>{meta}</Typography>}
+              <Stack direction="row" spacing={0.75} useFlexGap sx={{ pt: 0.25, flexWrap: "wrap", alignItems: "center" }}>
+                {verified && <Chip size="small" variant="outlined" icon={<CheckRoundedIcon />} label={t.verified} sx={{ bgcolor: palette.tealLight, borderColor: palette.tealLight, color: palette.teal, "& .MuiChip-icon": { color: palette.teal, fontSize: 15 } }} />}
+                {r.status === "unverified" && <Chip size="small" variant="outlined" icon={hasId(r.paper) ? <WarningAmberRoundedIcon /> : <InfoOutlinedIcon />} label={hasId(r.paper) ? t.unconfirmed : t.noId} sx={{ bgcolor: palette.clayLight, borderColor: palette.clayLight, color: palette.clay, "& .MuiChip-icon": { color: palette.clay, fontSize: 15 } }} />}
+                {r.status === "unknown" && <Chip size="small" variant="outlined" icon={<WarningAmberRoundedIcon />} label={t.unknown} sx={{ bgcolor: palette.clayLight, borderColor: palette.clayLight, color: palette.clay, "& .MuiChip-icon": { color: palette.clay, fontSize: 15 } }} />}
+                {r.paper.doi && <Chip size="small" variant="outlined" label={`${t.doi} ${r.paper.doi}`} sx={idChipSx} />}
+                {r.paper.pmid && <Chip size="small" variant="outlined" label={`${t.pmid} ${r.paper.pmid}`} sx={idChipSx} />}
               </Stack>
               {r.status === "unverified" && (
-                <Typography variant="body2" sx={{ color: "text.secondary" }}>{hasId(r.paper) ? t.unconfirmedText : t.noIdText}</Typography>
+                <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.6 }}>{hasId(r.paper) ? t.unconfirmedText : t.noIdText}</Typography>
               )}
-              {r.status === "unknown" && <Typography variant="body2" sx={{ color: "text.secondary" }}>{t.unknownText}</Typography>}
+              {r.status === "unknown" && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.6 }}>{t.unknownText}</Typography>}
             </Stack>
           </ListItem>
         );

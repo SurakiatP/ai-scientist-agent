@@ -34,7 +34,7 @@ describe("AskPage", () => {
     ]);
     expect(await screen.findByText("Final text")).toBeInTheDocument();
     expect(screen.getByText("rag")).toBeInTheDocument();
-    expect(screen.getByText("1 พบงานวิจัย")).toBeInTheDocument();
+    expect(screen.getByText("พบ 1 งานวิจัย")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Great Paper" })).toHaveAttribute("href", "https://doi.org/10.1000/abc");
     expect(screen.getByText("ยังยืนยันไม่ได้ว่ามีงานนี้จริง")).toBeInTheDocument();
   });
@@ -52,7 +52,7 @@ describe("AskPage", () => {
       { type: "sources", term: "rag", papers: [paper] },
       { type: "complete" },
     ]);
-    expect(await screen.findByText("3 พบงานวิจัย")).toBeInTheDocument();
+    expect(await screen.findByText("พบ 3 งานวิจัย")).toBeInTheDocument();
   });
   it("shows an error when the stream ends without a terminal event", async () => {
     await run([{ type: "strategy", reasoning: "r", searches: [{ term: "rag", instructions: "i" }] }]);

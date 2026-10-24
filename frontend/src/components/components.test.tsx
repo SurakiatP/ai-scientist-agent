@@ -31,7 +31,8 @@ describe("ReferenceList", () => {
   });
   it("labels verified as identifier existence only, not content verification", () => {
     render(<ReferenceList t={strings.en} references={[ref("1", "verified", { doi: "10.1000/x" })]} />);
-    expect(screen.getByText("✓ Identifier exists")).toBeInTheDocument();
+    expect(screen.getByText("Identifier exists")).toBeInTheDocument();
+    expect(document.querySelector(".MuiChip-icon")).not.toBeNull();
     expect(strings.th.verified).toBe("พบเลขอ้างอิงนี้จริง");
     expect(screen.queryByText(/verified/i)).toBeNull();
   });

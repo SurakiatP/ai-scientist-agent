@@ -9,7 +9,7 @@ import { landing } from "@/lib/strings";
 const notoSansThai = Noto_Sans_Thai({ subsets: ["thai", "latin"], display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Research Search",
+  title: "AI Scientist — Research Search",
   description: "Ask research questions and get cited answers",
 };
 
@@ -25,8 +25,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               bgcolor: "background.paper", color: "primary.main", fontWeight: 600, border: 1, borderColor: "primary.main",
               "&:focus": { top: 8 },
             }}>{landing.th.skip}</Box>
-            <Nav />
-            <Box id="content" tabIndex={-1} sx={{ outline: "none" }}>{children}</Box>
+            <Box sx={{ display: { xs: "block", md: "flex" }, minHeight: "100dvh", bgcolor: "background.default" }}>
+              <Nav />
+              <Box id="content" tabIndex={-1} component="main" sx={{ flex: 1, minWidth: 0, pt: { xs: "56px", md: 0 }, outline: "none" }}>{children}</Box>
+            </Box>
           </ThemeProvider>
         </AppRouterCacheProvider>
       </body>
