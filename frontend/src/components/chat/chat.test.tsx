@@ -154,7 +154,7 @@ describe("Thread", () => {
   it("copy failure shows feedback", async () => {
     Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("no")) }, configurable: true });
     render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "x", references: [] } })} />);
-    fireEvent.click(screen.getByRole("button", { name: t.copy }));
+    fireEvent.click(screen.getByRole("button", { name: t.copyAnswer }));
     expect(await screen.findByText(t.copyFailed)).toBeInTheDocument();
   });
 

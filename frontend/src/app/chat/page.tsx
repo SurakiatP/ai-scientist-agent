@@ -1,10 +1,13 @@
 "use client";
 import { useEffect } from "react";
-import { Box } from "@mui/material";
+import { Box, useMediaQuery, useTheme } from "@mui/material";
 import { AppShell } from "@/components/shell/AppShell";
 import { Composer } from "@/components/chat/Composer";
 import { EmptyChat } from "@/components/chat/EmptyChat";
 import { Thread } from "@/components/chat/Thread";
+import { ProgressPanel } from "@/components/research/ProgressPanel";
+import { SourceInspector } from "@/components/research/SourceInspector";
+import { useInspector } from "@/lib/inspector";
 import { useChatStore } from "@/lib/chat";
 import { useHydrated } from "@/lib/history";
 
@@ -18,8 +21,14 @@ export default function ChatPage() {
     const empty = s.sessions.find((x) => x.projectId === s.activeProjectId && x.turns.length === 0);
     if (empty) s.setActive(empty.id); else s.newSession(s.activeProjectId);
   }, [hydrated, active]);
+  const wide = useMediaQuery(useTheme().breakpoints.up("lg"));
+  const inspecting = !!useInspector((s) => s.ref);
+  // right panel: the source being inspected, else the running (or last) turn's real progress
+  const turn = active?.turns.find((x) => x.status === "running") ?? active?.turns.at(-1);
+  const progress = turn && (turn.status === "running" || turn.progress.searches.length > 0) ? <ProgressPanel turn={turn} /> : null;
   return (
-    <AppShell>
+    <AppShell aside={wide ? (inspecting ? <SourceInspector variant="panel" /> : progress) : null}>
+      {!wide && <SourceInspector variant="sheet" />}
       {hydrated && active && (active.turns.length === 0 ? <EmptyChat sessionId={active.id} /> : (
         <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
           <Thread key={active.id} sessionId={active.id} />

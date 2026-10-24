@@ -2,20 +2,24 @@
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Box } from "@mui/material";
+import { useInspector } from "@/lib/inspector";
 import { useT } from "@/lib/prefs";
 
 // "[1]" / "[2][3]" -> link to #ref-N so a click jumps to (and :target highlights) the reference.
 // Only ids that exist in the reference list; never inside inline or fenced code.
-export function cite(s: string, ids: Set<string>) {
+export function cite(s: string, ids: Set<string>, prefix = "ref-") {
   return s
     .split(/(```[\s\S]*?```|`[^`\n]*`)/)
-    .map((part, i) => (i % 2 ? part : part.replace(/\[(\d{1,3})\](?!\()/g, (m, n) => (ids.has(n) ? `[[${n}]](#ref-${n})` : m))))
+    .map((part, i) => (i % 2 ? part : part.replace(/\[(\d{1,3})\](?!\()/g, (m, n) => (ids.has(n) ? `[[${n}]](#${prefix}${n})` : m))))
     .join("");
 }
-const safeUrl = (u: string) => (/^#ref-\d+$/.test(u) || /^https?:\/\//i.test(u) ? defaultUrlTransform(u) : "");
+const safeUrl = (u: string) => (/^#ref-\S+$/.test(u) || /^https?:\/\//i.test(u) ? defaultUrlTransform(u) : "");
 
-export function AnswerView({ content, references = [] }: { content: string; references?: { id: string }[] }) {
+// With `scope`, anchors are unique per turn (ref-<turnId>-N) and a pill opens the source inspector.
+export function AnswerView({ content, references = [], scope }: { content: string; references?: { id: string }[]; scope?: { sessionId: string; turnId: string } }) {
   const t = useT();
+  const open = useInspector((s) => s.open);
+  const prefix = scope ? `ref-${scope.turnId}-` : "ref-";
   return (
     <Box
       sx={{
@@ -76,7 +80,7 @@ export function AnswerView({ content, references = [] }: { content: string; refe
           img: ({ alt }) => <span>{alt}</span>,
           a: ({ href, children }) =>
             href?.startsWith("#") ? (
-              <a href={href}>{children}</a>
+              <a href={href} onClick={scope ? (e) => { e.preventDefault(); open({ ...scope, refId: href.slice(1 + prefix.length) }, e.currentTarget); } : undefined}>{children}</a>
             ) : href ? (
               <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
             ) : (
@@ -84,7 +88,7 @@ export function AnswerView({ content, references = [] }: { content: string; refe
             ),
         }}
       >
-        {cite(content, new Set(references.map((r) => r.id)))}
+        {cite(content, new Set(references.map((r) => r.id)), prefix)}
       </Markdown>
     </Box>
   );

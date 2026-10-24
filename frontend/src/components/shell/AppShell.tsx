@@ -10,7 +10,7 @@ import { Sidebar } from "./Sidebar";
 
 const W = 280;
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   const t = useT();
   const [drawer, setDrawer] = useState(false);
   const pref = usePrefs((s) => s.sidebarCollapsed);
@@ -36,6 +36,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </Stack>
         <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{children}</Box>
       </Box>
+      {aside && <Box component="aside" sx={{ display: { xs: "none", lg: "block" }, width: 340, flexShrink: 0, borderLeft: 1, borderColor: "divider", overflowY: "auto", p: 2.5 }}>{aside}</Box>}
     </Box>
   );
 }
