@@ -9,7 +9,7 @@ import { create } from "zustand";
 import { useHydrated } from "@/lib/history";
 import { PERSONAL, useChatStore } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
-import { InlineConfirm, InlineRename, KebabMenu } from "./SessionMenu";
+import { focusKebab, InlineConfirm, InlineRename, KebabMenu } from "./SessionMenu";
 import { projectName, selectProject } from "./ProjectSwitcher";
 import { SessionList } from "./SessionList";
 
@@ -51,7 +51,7 @@ export function Sidebar({ onPick }: { onPick?: () => void }) {
       <Stack direction="row" spacing={1} sx={{ alignItems: "center", px: 0.5 }}>
         <Mark /><Typography sx={{ fontWeight: 700 }}>{t.brand}</Typography>
       </Stack>
-      <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={newChat}>{t.newChat}</Button>
+      <Button id="new-chat" variant="contained" startIcon={<AddRoundedIcon />} onClick={newChat}>{t.newChat}</Button>
       <TextField size="small" type="search" placeholder={t.searchChats} value={query} onChange={(e) => setQuery(e.target.value)}
         slotProps={{ htmlInput: { "aria-label": t.searchChats }, input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small" /></InputAdornment> } }} />
       <Box>
@@ -75,8 +75,8 @@ export function Sidebar({ onPick }: { onPick?: () => void }) {
         {open && projects.map((p) => pedit?.id === p.id ? (
           <Box key={p.id} sx={{ px: 0.5 }}>
             {pedit.mode === "rename"
-              ? <InlineRename value={p.name} label={t.projectName} onCancel={() => setPedit(null)} onSave={(v) => { store.renameProject(p.id, v); setPedit(null); }} />
-              : <InlineConfirm text={t.deleteProjectConfirm} onCancel={() => setPedit(null)} onConfirm={() => { store.deleteProject(p.id); setPedit(null); }} />}
+              ? <InlineRename value={p.name} label={t.projectName} onCancel={() => { setPedit(null); focusKebab(p.id); }} onSave={(v) => { store.renameProject(p.id, v); setPedit(null); focusKebab(p.id); }} />
+              : <InlineConfirm text={t.deleteProjectConfirm} onCancel={() => { setPedit(null); focusKebab(p.id); }} onConfirm={() => { store.deleteProject(p.id); setPedit(null); focusKebab(p.id); }} />}
           </Box>
         ) : (
           <Box key={p.id} sx={{ display: "flex", alignItems: "center" }}>
@@ -86,7 +86,7 @@ export function Sidebar({ onPick }: { onPick?: () => void }) {
               <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{projectName(p, t)}</Box>
             </Button>
             {p.id !== PERSONAL && (
-              <KebabMenu label={`${t.moreActions}: ${projectName(p, t)}`} actions={[
+              <KebabMenu id={p.id} label={`${t.moreActions}: ${projectName(p, t)}`} actions={[
                 { label: t.rename, onClick: () => setPedit({ id: p.id, mode: "rename" }) },
                 { label: t.deleteItem, onClick: () => setPedit({ id: p.id, mode: "delete" }) },
               ]} />

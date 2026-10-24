@@ -6,20 +6,23 @@ import { useChatStore, type Session } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
 import { projectName } from "./ProjectSwitcher";
 
-export type MenuAction = { label: string; onClick: () => void; selected?: boolean; header?: boolean };
+export type MenuAction = { key?: string; label: string; onClick: () => void; selected?: boolean; header?: boolean };
+
+// After an inline editor closes its row's kebab is re-created; put focus there, or on New chat when the row is gone.
+export const focusKebab = (id: string) => setTimeout(() => (document.getElementById(`kebab-${id}`) ?? document.getElementById("new-chat"))?.focus(), 0);
 
 // Keyboard reachable: Tab to the button, Enter/Space opens, arrows move, Escape closes and returns focus.
-export function KebabMenu({ label, actions }: { label: string; actions: MenuAction[] }) {
+export function KebabMenu({ id, label, actions }: { id: string; label: string; actions: MenuAction[] }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   return (
     <>
-      <IconButton aria-label={label} aria-haspopup="menu" aria-expanded={!!anchor} onClick={(e) => setAnchor(e.currentTarget)} sx={{ width: 44, height: 44, flexShrink: 0 }}>
+      <IconButton id={`kebab-${id}`} aria-label={label} aria-haspopup="menu" aria-expanded={!!anchor} onClick={(e) => setAnchor(e.currentTarget)} sx={{ width: 44, height: 44, flexShrink: 0 }}>
         <MoreVertRoundedIcon fontSize="small" />
       </IconButton>
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
         {actions.map((a) => a.header
           ? <MenuItem key={a.label} disabled sx={{ minHeight: 32, "&.Mui-disabled": { opacity: 1, color: "text.secondary", fontSize: "0.75rem", fontWeight: 700 } }}>{a.label}</MenuItem>
-          : <MenuItem key={a.label} selected={a.selected} onClick={() => { setAnchor(null); a.onClick(); }} sx={{ minHeight: 44 }}>{a.label}</MenuItem>)}
+          : <MenuItem key={a.key ?? a.label} selected={a.selected} onClick={() => { setAnchor(null); a.onClick(); }} sx={{ minHeight: 44 }}>{a.label}</MenuItem>)}
       </Menu>
     </>
   );
@@ -60,16 +63,17 @@ export function InlineConfirm({ text, onConfirm, onCancel }: { text: string; onC
 
 export function SessionMenu({ session, onRename, onDelete }: { session: Session; onRename: () => void; onDelete: () => void }) {
   const t = useT();
-  const { projects, moveSession, setActive, activeId } = useChatStore();
+  const projects = useChatStore((s) => s.projects), moveSession = useChatStore((s) => s.moveSession), setActive = useChatStore((s) => s.setActive), activeId = useChatStore((s) => s.activeId);
   const others = projects.filter((p) => p.id !== session.projectId);
   const actions: MenuAction[] = [
     { label: t.rename, onClick: onRename },
     ...(others.length ? [{ label: t.moveTo, header: true, onClick: () => {} }] : []),
     ...others.map((p) => ({
+      key: p.id,
       label: projectName(p, t),
       onClick: () => { moveSession(session.id, p.id); if (activeId === session.id) setActive(session.id); }, // keep the highlighted project in sync
     })),
     { label: t.deleteItem, onClick: onDelete },
   ];
-  return <KebabMenu label={`${t.moreActions}: ${session.title || t.untitled}`} actions={actions} />;
+  return <KebabMenu id={session.id} label={`${t.moreActions}: ${session.title || t.untitled}`} actions={actions} />;
 }

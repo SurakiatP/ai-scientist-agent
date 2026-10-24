@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import ChatPage from "@/app/chat/page";
 import { AppShell } from "@/components/shell/AppShell";
 import { useSettingsOpen } from "@/components/shell/Sidebar";
 import { PERSONAL, useChatStore } from "@/lib/chat";
@@ -9,7 +10,7 @@ import { emptyProgress } from "@/lib/progress";
 import { strings } from "@/lib/strings";
 
 const run = vi.hoisted(() => ({ sessionId: null as string | null, stopRun: vi.fn() }));
-vi.mock("@/lib/run", () => ({ useRunState: () => ({ sessionId: run.sessionId, turnId: run.sessionId && "t" }), stopRun: run.stopRun }));
+vi.mock("@/lib/run", () => ({ useRunState: () => ({ sessionId: run.sessionId, turnId: run.sessionId && "t" }), stopRun: run.stopRun, startRun: vi.fn(), canStart: () => ({ ok: true }) }));
 const cs = vi.hoisted(() => ({ mode: "system" as string, setMode: vi.fn() }));
 vi.mock("@mui/material", async (orig) => ({ ...(await orig<typeof import("@mui/material")>()), useColorScheme: () => cs }));
 
@@ -149,5 +150,37 @@ describe("session and project management", () => {
   it("personal project has no actions menu", () => {
     render(<AppShell>x</AppShell>);
     expect(within(sb()).queryByRole("button", { name: `${t.moreActions}: ${t.personal}` })).toBeNull();
+  });
+
+  it("focus returns to the row's kebab after rename save and Esc cancel, and to New chat after delete", async () => {
+    seed("focus me");
+    render(<AppShell>x</AppShell>);
+    fireEvent.click(kebab("focus me"));
+    await pick(t.rename);
+    const box = within(sb()).getByRole("textbox", { name: t.newName });
+    fireEvent.change(box, { target: { value: "saved" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() => expect(kebab("saved")).toHaveFocus());
+    fireEvent.click(kebab("saved"));
+    await pick(t.rename);
+    fireEvent.keyDown(within(sb()).getByRole("textbox", { name: t.newName }), { key: "Escape" });
+    await waitFor(() => expect(kebab("saved")).toHaveFocus());
+    fireEvent.click(kebab("saved"));
+    await pick(t.deleteItem);
+    fireEvent.click(within(sb()).getByRole("button", { name: t.confirm }));
+    await waitFor(() => expect(within(sb()).getByRole("button", { name: t.newChat })).toHaveFocus());
+  });
+
+  it("deleting the active session on /chat shows an empty chat", async () => {
+    const id = seed("gone");
+    useChatStore.getState().setActive(id);
+    render(<ChatPage />);
+    expect(screen.queryByRole("heading", { name: t.emptyHeading })).toBeNull(); // thread, not empty chat
+    fireEvent.click(kebab("gone"));
+    await pick(t.deleteItem);
+    fireEvent.click(within(sb()).getByRole("button", { name: t.confirm }));
+    expect(await screen.findByRole("heading", { name: t.emptyHeading })).toBeInTheDocument();
+    expect(useChatStore.getState().sessions).toHaveLength(1);
+    expect(useChatStore.getState().sessions[0].turns).toHaveLength(0);
   });
 });
