@@ -51,4 +51,16 @@ describe("buildReportMarkdown", () => {
     expect(md).toContain("if (a <b) { <div> }");
     expect(md).toContain("`<i>`");
   });
+  it("does not treat escaped backticks as code", () => {
+    const [s, t] = mk([], "\\`[x](javascript:alert(1))\\` and `[ok](javascript:keep)`");
+    const md = buildReportMarkdown(s, t, "en");
+    expect(md).not.toContain("\\`[x](javascript:");
+    expect(md).toContain("`[ok](javascript:keep)`");
+  });
+  it("neutralises definitions inside blockquotes and lists", () => {
+    const [s, t] = mk([], "> [r]: javascript:alert(1)\n- [q]: data:text/html,x\n1. [z]: https://ok.example\n\n[x][r] [q]");
+    const md = buildReportMarkdown(s, t, "en");
+    expect(md).not.toMatch(/\]:\s*(javascript|data):/i);
+    expect(md).toContain("[z]: https://ok.example");
+  });
 });
