@@ -1,6 +1,6 @@
 "use client";
 import { useState, type ReactNode } from "react";
-import { Box, Drawer, IconButton, Stack } from "@mui/material";
+import { Box, Drawer, IconButton, Stack, useMediaQuery, useTheme } from "@mui/material";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import ViewSidebarOutlinedIcon from "@mui/icons-material/ViewSidebarOutlined";
 import { useHydrated } from "@/lib/history";
@@ -15,6 +15,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [drawer, setDrawer] = useState(false);
   const pref = usePrefs((s) => s.sidebarCollapsed);
   const collapsed = useHydrated() && pref;
+  const wide = useMediaQuery(useTheme().breakpoints.up("md"));
+  if (wide && drawer) setDrawer(false); // no stale modal/focus trap after resize
   const set = usePrefs((s) => s.setSidebarCollapsed);
   return (
     <Box sx={{ display: "flex", height: "100dvh", bgcolor: "background.default" }}>
@@ -27,7 +29,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <Stack component="header" direction="row" sx={{ alignItems: "center", gap: 0.5, px: 1, minHeight: 56, borderBottom: 1, borderColor: "divider" }}>
           <IconButton aria-label={t.menu} onClick={() => setDrawer(true)} sx={{ display: { md: "none" } }}><MenuRoundedIcon /></IconButton>
-          <IconButton aria-label={collapsed ? t.expandSidebar : t.collapseSidebar} aria-pressed={collapsed} onClick={() => set(!collapsed)} sx={{ display: { xs: "none", md: "inline-flex" } }}>
+          <IconButton aria-label={collapsed ? t.expandSidebar : t.collapseSidebar} aria-expanded={!collapsed} onClick={() => set(!collapsed)} sx={{ display: { xs: "none", md: "inline-flex" } }}>
             <ViewSidebarOutlinedIcon />
           </IconButton>
           <ProjectSwitcher />

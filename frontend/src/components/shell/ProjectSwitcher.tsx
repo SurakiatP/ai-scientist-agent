@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Button, Menu, MenuItem, TextField } from "@mui/material";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import { useHydrated } from "@/lib/history";
 import { PERSONAL, useChatStore, type Project } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
 import type { Strings } from "@/lib/strings";
@@ -14,11 +15,16 @@ export const selectProject = (id: string) =>
 
 export function ProjectSwitcher() {
   const t = useT();
-  const { projects, activeProjectId, addProject } = useChatStore();
+  const hydrated = useHydrated();
+  const store = useChatStore();
+  const { addProject } = store;
+  const projects = hydrated ? store.projects : store.projects.slice(0, 1); // personal is always first
+  const activeProjectId = hydrated ? store.activeProjectId : PERSONAL;
+  const [full, setFull] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [name, setName] = useState("");
   const cur = projects.find((p) => p.id === activeProjectId) ?? projects[0];
-  const close = () => { setAnchor(null); setName(""); };
+  const close = () => { setAnchor(null); setName(""); setFull(false); };
   return (
     <>
       <Button color="inherit" aria-label={`${t.switchProject}: ${projectName(cur, t)}`} aria-haspopup="menu" onClick={(e) => setAnchor(e.currentTarget)}
@@ -30,12 +36,13 @@ export function ProjectSwitcher() {
           <MenuItem key={p.id} selected={p.id === activeProjectId} onClick={() => { selectProject(p.id); close(); }} sx={{ minHeight: 44 }}>{projectName(p, t)}</MenuItem>
         ))}
         <MenuItem disableRipple sx={{ "&:hover": { bgcolor: "transparent" } }} onKeyDown={(e) => e.stopPropagation()}>
-          <TextField size="small" placeholder={t.newProject} value={name} onChange={(e) => setName(e.target.value)}
+          <TextField size="small" placeholder={t.newProject} value={name} onChange={(e) => { setName(e.target.value); setFull(false); }} error={full} helperText={full ? t.projectLimit : undefined}
             slotProps={{ htmlInput: { "aria-label": t.projectName, maxLength: 100 } }}
             onKeyDown={(e) => {
               if (e.key !== "Enter" || e.nativeEvent.isComposing || !name.trim()) return;
               const id = addProject(name);
-              if (id) selectProject(id);
+              if (!id) return setFull(true);
+              selectProject(id);
               close();
             }} />
         </MenuItem>

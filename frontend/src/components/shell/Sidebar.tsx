@@ -6,7 +6,8 @@ import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import { create } from "zustand";
-import { useChatStore } from "@/lib/chat";
+import { useHydrated } from "@/lib/history";
+import { PERSONAL, useChatStore } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
 import { projectName, selectProject } from "./ProjectSwitcher";
 import { SessionList } from "./SessionList";
@@ -24,7 +25,13 @@ const Mark = () => (
 
 export function Sidebar({ onPick }: { onPick?: () => void }) {
   const t = useT();
-  const { projects, activeProjectId, sessions, newSession, setActive, addProject } = useChatStore();
+  const hydrated = useHydrated();
+  const store = useChatStore();
+  const { newSession, setActive, addProject } = store;
+  const projects = hydrated ? store.projects : store.projects.slice(0, 1);
+  const activeProjectId = hydrated ? store.activeProjectId : PERSONAL;
+  const sessions = hydrated ? store.sessions : [];
+  const [full, setFull] = useState(false);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -52,13 +59,14 @@ export function Sidebar({ onPick }: { onPick?: () => void }) {
           <IconButton size="small" aria-label={t.newProject} onClick={() => setAdding(!adding)}><AddRoundedIcon fontSize="small" /></IconButton>
         </Stack>
         {adding && (
-          <TextField size="small" fullWidth autoFocus placeholder={t.newProject} value={name} onChange={(e) => setName(e.target.value)}
+          <TextField size="small" fullWidth autoFocus placeholder={t.newProject} value={name} onChange={(e) => { setName(e.target.value); setFull(false); }} error={full} helperText={full ? t.projectLimit : undefined}
             slotProps={{ htmlInput: { "aria-label": t.projectName, maxLength: 100 } }}
             onKeyDown={(e) => {
-              if (e.key === "Escape") { setAdding(false); setName(""); }
+              if (e.key === "Escape") { e.stopPropagation(); setAdding(false); setName(""); setFull(false); }
               if (e.key !== "Enter" || e.nativeEvent.isComposing || !name.trim()) return;
               const id = addProject(name);
-              if (id) selectProject(id);
+              if (!id) return setFull(true);
+              selectProject(id);
               setAdding(false); setName("");
             }} />
         )}

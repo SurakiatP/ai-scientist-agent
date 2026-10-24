@@ -1,6 +1,7 @@
 "use client";
 import { Box, List, ListItemButton, Typography } from "@mui/material";
 import { useChatStore, type Session } from "@/lib/chat";
+import { useHydrated } from "@/lib/history";
 import { usePrefs, useT } from "@/lib/prefs";
 import { useRunState } from "@/lib/run";
 import { projectName } from "./ProjectSwitcher";
@@ -16,7 +17,10 @@ function ago(ts: number, lang: string) {
 export function SessionList({ query, onPick }: { query: string; onPick?: () => void }) {
   const t = useT();
   const lang = usePrefs((s) => s.lang);
-  const { sessions, projects, activeId, activeProjectId, setActive } = useChatStore();
+  const hydrated = useHydrated(); // persisted store is browser-only: first render must match the server
+  const store = useChatStore();
+  const { projects, activeId, activeProjectId, setActive } = store;
+  const sessions = hydrated ? store.sessions : [];
   const { sessionId: runningId } = useRunState();
   const q = query.trim().toLowerCase();
   const match = (s: Session) => !q || (s.title || t.untitled).toLowerCase().includes(q);

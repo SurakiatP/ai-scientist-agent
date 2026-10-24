@@ -6,6 +6,9 @@ import { useChatStore, PERSONAL } from "@/lib/chat";
 import { usePrefs } from "@/lib/prefs";
 import { strings } from "@/lib/strings";
 import { useSettingsOpen } from "./Sidebar";
+import { renderToString } from "react-dom/server";
+import { hydrateRoot } from "react-dom/client";
+import { MAX_PROJECTS } from "@/lib/chat";
 
 const run = vi.hoisted(() => ({ sessionId: null as string | null }));
 vi.mock("@/lib/run", () => ({ useRunState: () => ({ sessionId: run.sessionId, turnId: run.sessionId && "t" }) }));
@@ -101,5 +104,55 @@ describe("shell", () => {
     fireEvent.change(input, { target: { value: "Lab" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(useChatStore.getState().projects.map((p) => p.name)).toContain("Lab");
+  });
+
+  it("Escape in the inline name input does not close the drawer", async () => {
+    render(<AppShell>x</AppShell>);
+    fireEvent.click(screen.getByRole("button", { name: t.menu }));
+    const dlg = await screen.findByRole("dialog");
+    fireEvent.click(within(dlg).getByRole("button", { name: t.newProject }));
+    fireEvent.keyDown(within(dlg).getByRole("textbox", { name: t.projectName }), { key: "Escape" });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(within(dlg).queryByRole("textbox", { name: t.projectName })).toBeNull();
+  });
+
+  it("drawer is operable from the focused menu button; focus returns on Escape", async () => {
+    render(<AppShell>x</AppShell>);
+    const btn = screen.getByRole("button", { name: t.menu });
+    btn.focus();
+    expect(btn).toHaveFocus();
+    fireEvent.click(btn); // jsdom has no Enter/Space activation; browsers turn both into this click
+    const dlg = await screen.findByRole("dialog");
+    fireEvent.keyDown(dlg, { key: "Escape" });
+    await vi.waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(btn).toHaveFocus();
+  });
+
+  it("at the project cap the input stays open with a limit message", () => {
+    for (let i = 1; i < MAX_PROJECTS; i++) useChatStore.getState().addProject("p" + i);
+    render(<AppShell>x</AppShell>);
+    fireEvent.click(within(sb()).getByRole("button", { name: t.newProject }));
+    const input = within(sb()).getByRole("textbox", { name: t.projectName });
+    fireEvent.change(input, { target: { value: "one more" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(within(sb()).getByText(t.projectLimit)).toBeInTheDocument();
+    expect(input).toBeInTheDocument();
+  });
+
+  it("hydrates a persisted store without mismatch; data appears after hydration", async () => {
+    seed("Persisted title");
+    useChatStore.getState().addProject("Persisted project");
+    const html = renderToString(<AppShell>x</AppShell>);
+    expect(html).not.toContain("Persisted title");
+    expect(html).not.toContain("Persisted project");
+    const el = document.createElement("div");
+    el.innerHTML = html;
+    document.body.append(el);
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    await act(async () => { hydrateRoot(el, <AppShell>x</AppShell>); });
+    expect(err).not.toHaveBeenCalled();
+    expect(el.textContent).toContain("Persisted title");
+    err.mockRestore();
+    el.remove();
   });
 });
