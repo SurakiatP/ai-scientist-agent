@@ -1,0 +1,155 @@
+import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
+import { isItem, newId, safeStorage, useHistoryStore } from "./history";
+import type { Progress } from "./progress";
+import type { Reference } from "./sse";
+
+export type Turn = {
+  id: string; question: string; createdAt: number;
+  status: "running" | "done" | "refused" | "error" | "stopped" | "interrupted";
+  progress: Progress;
+  answer?: { content: string; references: Reference[] };
+  refused?: string; error?: string;
+};
+export type Session = { id: string; projectId: string; title: string; createdAt: number; updatedAt: number; turns: Turn[] };
+export type Project = { id: string; name: string; createdAt: number }; // id "personal" is built in; name "" = localized default
+
+export const PERSONAL = "personal";
+export const MAX_SESSIONS = 200;
+export const MAX_TURNS = 50;
+export const MAX_PROJECTS = 30;
+const personal: Project = { id: PERSONAL, name: "", createdAt: 0 };
+const STATUSES = ["running", "done", "refused", "error", "stopped", "interrupted"];
+
+const isStr = (v: unknown, max = Infinity): v is string => typeof v === "string" && v.length <= max;
+const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isProgress = (v: unknown): v is Progress => {
+  const p = v as Progress | null;
+  return !!p && typeof p === "object" && Array.isArray(p.searches) && p.searches.length <= 50 && isStr(p.reasoning, 20_000) &&
+    !!p.sources && typeof p.sources === "object" && Array.isArray(p.answered) && p.answered.length <= 50 &&
+    ["waiting", "planning", "searching", "writing", "done"].includes(p.phase);
+};
+// Reuses history's item validator for the answer + references (its question/id/createdAt are filled in).
+const isTurn = (v: unknown): v is Turn => {
+  const t = v as Turn | null;
+  if (!t || !isStr(t.id, 100) || !isStr(t.question, 4000) || !isNum(t.createdAt) || !STATUSES.includes(t.status) || !isProgress(t.progress)) return false;
+  if (t.refused !== undefined && !isStr(t.refused, 20_000)) return false;
+  if (t.error !== undefined && !isStr(t.error, 2048)) return false;
+  return t.answer === undefined || (!!t.answer && isItem({ id: "x", question: "", createdAt: 0, answer: t.answer.content, references: t.answer.references }));
+};
+const isSession = (v: unknown): v is Session => {
+  const s = v as Session | null;
+  return !!s && isStr(s.id, 100) && isStr(s.projectId, 100) && isStr(s.title, 200) && isNum(s.createdAt) && isNum(s.updatedAt) &&
+    Array.isArray(s.turns) && s.turns.length <= MAX_TURNS && s.turns.every(isTurn);
+};
+const isProject = (v: unknown): v is Project => {
+  const p = v as Project | null;
+  return !!p && isStr(p.id, 100) && isStr(p.name, 100) && isNum(p.createdAt);
+};
+
+// Newest activity first; the oldest sessions past the cap are dropped.
+const capSessions = (s: Session[]) => [...s].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SESSIONS);
+const title = (q: string) => q.trim().slice(0, 60);
+
+type State = {
+  projects: Project[]; sessions: Session[]; activeId: string | null; activeProjectId: string; legacyImported: boolean;
+  newSession: (projectId?: string) => string;
+  setActive: (id: string | null) => void;
+  renameSession: (id: string, title: string) => void;
+  deleteSession: (id: string) => void;
+  moveSession: (id: string, projectId: string) => void;
+  addProject: (name: string) => string;
+  renameProject: (id: string, name: string) => void;
+  deleteProject: (id: string) => void;
+  patchTurn: (sessionId: string, turnId: string, patch: Partial<Turn>) => void;
+  addTurn: (sessionId: string, turn: Turn) => void;
+  importLegacyHistory: () => void;
+  clearAll: () => void;
+};
+
+const mapSession = (s: State, id: string, f: (x: Session) => Session) => ({ sessions: s.sessions.map((x) => (x.id === id ? f(x) : x)) });
+const hasProject = (s: State, id: string) => s.projects.some((p) => p.id === id);
+
+export const useChatStore = create<State>()(
+  persist(
+    (set, get) => ({
+      projects: [personal], sessions: [], activeId: null, activeProjectId: PERSONAL, legacyImported: false,
+      newSession: (projectId) => {
+        const id = newId(), now = Date.now();
+        set((s) => {
+          const pid = projectId && hasProject(s, projectId) ? projectId : PERSONAL;
+          return { sessions: capSessions([{ id, projectId: pid, title: "", createdAt: now, updatedAt: now, turns: [] }, ...s.sessions]), activeId: id, activeProjectId: pid };
+        });
+        return id;
+      },
+      setActive: (id) =>
+        set((s) => {
+          const sess = s.sessions.find((x) => x.id === id);
+          return sess ? { activeId: id, activeProjectId: sess.projectId } : { activeId: null };
+        }),
+      renameSession: (id, t) => set((s) => mapSession(s, id, (x) => ({ ...x, title: title(t) || x.title }))),
+      deleteSession: (id) => set((s) => ({ sessions: s.sessions.filter((x) => x.id !== id), activeId: s.activeId === id ? null : s.activeId })),
+      moveSession: (id, projectId) => set((s) => (hasProject(s, projectId) ? mapSession(s, id, (x) => ({ ...x, projectId })) : {})),
+      addProject: (name) => {
+        const id = newId();
+        set((s) => (s.projects.length >= MAX_PROJECTS ? {} : { projects: [...s.projects, { id, name: name.trim().slice(0, 100), createdAt: Date.now() }] }));
+        return id;
+      },
+      renameProject: (id, name) =>
+        set((s) => (id === PERSONAL ? {} : { projects: s.projects.map((p) => (p.id === id ? { ...p, name: name.trim().slice(0, 100) || p.name } : p)) })),
+      deleteProject: (id) =>
+        set((s) => id === PERSONAL ? {} : {
+          projects: s.projects.filter((p) => p.id !== id),
+          sessions: s.sessions.map((x) => (x.projectId === id ? { ...x, projectId: PERSONAL } : x)),
+          activeProjectId: s.activeProjectId === id ? PERSONAL : s.activeProjectId,
+        }),
+      addTurn: (sessionId, turn) =>
+        set((s) => mapSession(s, sessionId, (x) => ({
+          ...x, title: x.title || title(turn.question), updatedAt: Date.now(),
+          turns: [...x.turns, turn].slice(-MAX_TURNS), // oldest turn dropped past the cap
+        }))),
+      patchTurn: (sessionId, turnId, patch) =>
+        set((s) => mapSession(s, sessionId, (x) => ({ ...x, updatedAt: Date.now(), turns: x.turns.map((t) => (t.id === turnId ? { ...t, ...patch } : t)) }))),
+      importLegacyHistory: () => {
+        if (get().legacyImported) return;
+        const items = useHistoryStore.getState().items;
+        const imported: Session[] = items.map((i) => ({
+          id: newId(), projectId: PERSONAL, title: title(i.question), createdAt: i.createdAt, updatedAt: i.createdAt,
+          turns: [{
+            id: newId(), question: i.question, createdAt: i.createdAt, status: "done",
+            progress: { waiting: null, reasoning: "", searches: [], sources: {}, answered: [], writing: false, phase: "done" },
+            answer: { content: i.answer, references: i.references },
+          }],
+        }));
+        set((s) => ({ legacyImported: true, sessions: capSessions([...s.sessions, ...imported]) }));
+      },
+      clearAll: () => set({ projects: [personal], sessions: [], activeId: null, activeProjectId: PERSONAL }),
+    }),
+    {
+      name: "scientist-chat-v1",
+      storage: createJSONStorage(() => safeStorage),
+      version: 1,
+      migrate: (state) => state as State,
+      partialize: (s) => ({ projects: s.projects, sessions: s.sessions, activeId: s.activeId, activeProjectId: s.activeProjectId, legacyImported: s.legacyImported }),
+      // Corrupt/foreign storage: keep only well-formed items. A `running` turn cannot survive a reload.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<State>;
+        const projects = [personal, ...(Array.isArray(p.projects) ? p.projects.filter((x) => isProject(x) && x.id !== PERSONAL) : [])].slice(0, MAX_PROJECTS);
+        const ids = new Set(projects.map((x) => x.id));
+        const sessions = capSessions(
+          (Array.isArray(p.sessions) ? p.sessions.filter(isSession) : []).map((x) => ({
+            ...x,
+            projectId: ids.has(x.projectId) ? x.projectId : PERSONAL,
+            turns: x.turns.map((t) => (t.status === "running" ? { ...t, status: "interrupted" as const } : t)),
+          })),
+        );
+        const active = sessions.find((x) => x.id === p.activeId);
+        return {
+          ...current, projects, sessions, activeId: active ? active.id : null,
+          activeProjectId: typeof p.activeProjectId === "string" && ids.has(p.activeProjectId) ? p.activeProjectId : PERSONAL,
+          legacyImported: p.legacyImported === true,
+        };
+      },
+    },
+  ),
+);
