@@ -22,7 +22,9 @@ export default function ChatPage() {
     if (empty) s.setActive(empty.id); else s.newSession(s.activeProjectId);
   }, [hydrated, active]);
   const wide = useMediaQuery(useTheme().breakpoints.up("lg"));
-  const inspecting = !!useInspector((s) => s.ref);
+  const iref = useInspector((s) => s.ref);
+  const inspecting = !!iref && iref.sessionId === active?.id && !!active.turns.find((x) => x.id === iref.turnId)?.answer?.references.some((x) => x.id === iref.refId);
+  useEffect(() => { useInspector.setState({ ref: null }); }, [active?.id]); // a source from another chat never lingers
   // right panel: the source being inspected, else the running (or last) turn's real progress
   const turn = active?.turns.find((x) => x.status === "running") ?? active?.turns.at(-1);
   const progress = turn && (turn.status === "running" || turn.progress.searches.length > 0) ? <ProgressPanel turn={turn} /> : null;

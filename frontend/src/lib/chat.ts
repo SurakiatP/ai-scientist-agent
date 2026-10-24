@@ -85,6 +85,7 @@ type State = {
   clearAll: () => void;
 };
 
+export type { State as ChatState };
 const mapSession = (s: State, id: string, f: (x: Session) => Session) => ({ sessions: s.sessions.map((x) => (x.id === id ? f(x) : x)) });
 const hasProject = (s: State, id: string) => s.projects.some((p) => p.id === id);
 

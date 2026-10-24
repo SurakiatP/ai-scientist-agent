@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AnswerView } from "@/components/AnswerView";
 import { ReferenceList } from "@/components/ReferenceList";
 import { useChatStore, type Turn } from "@/lib/chat";
@@ -127,6 +127,41 @@ describe("citations and inspector", () => {
   });
 });
 
+describe("inspector guards", () => {
+  beforeEach(() => { localStorage.clear(); useChatStore.getState().clearAll(); });
+  it("pill for an unknown ref id does not open the inspector", () => {
+    render(<AnswerView content="x [1]" references={[{ id: "1" }]} scope={{ sessionId: "s", turnId: "A" }} />);
+    const a = screen.getByRole("link", { name: "[1]" });
+    a.setAttribute("href", "#ref-OTHER-1");
+    fireEvent.click(a);
+    expect(useInspector.getState().ref).toBeNull();
+  });
+  it("renders nothing and clears itself when the reference is gone", () => {
+    act(() => useInspector.getState().open({ sessionId: "gone", turnId: "t", refId: "1" }));
+    render(<SourceInspector variant="sheet" />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    render(<SourceInspector variant="panel" />);
+    expect(useInspector.getState().ref).toBeNull();
+  });
+  it("close and Open details targets are at least 44px", () => {
+    const sid = useChatStore.getState().newSession();
+    const tn = turn({ phase: "done" }, { status: "done", answer: { content: "x", references: [ref("1")] } });
+    useChatStore.getState().addTurn(sid, tn);
+    const { container } = render(<ReferenceList t={t} references={[ref("1")]} scope={{ sessionId: sid, turnId: tn.id }} />);
+    expect(getComputedStyle(container.querySelector("button")!).minHeight).toBe("44px");
+    act(() => useInspector.getState().open({ sessionId: sid, turnId: tn.id, refId: "1" }));
+    render(<SourceInspector variant="panel" />);
+    const c = screen.getByRole("button", { name: t.closeInspector });
+    expect(getComputedStyle(c).minWidth).toBe("44px");
+    expect(getComputedStyle(c).minHeight).toBe("44px");
+  });
+  it("row chips use the same check wording as the inspector", () => {
+    render(<ReferenceList t={t} references={[ref("1", { doi: "10.1/x" }, "unverified"), ref("2", {}, "unverified")]} />);
+    expect(screen.getByText(t.chkNotFound)).toBeInTheDocument();
+    expect(screen.getByText(t.chkNoId)).toBeInTheDocument();
+  });
+});
+
 describe("ReportActions", () => {
   it("PDF and DOCX are disabled with a reason; copy and download are real", () => {
     localStorage.clear(); useChatStore.getState().clearAll();
@@ -141,5 +176,3 @@ describe("ReportActions", () => {
     expect(screen.getByRole("button", { name: t.downloadMd })).toBeEnabled();
   });
 });
-
-void vi;

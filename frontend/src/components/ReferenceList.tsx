@@ -5,37 +5,8 @@ import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { useInspector } from "@/lib/inspector";
 import type { Reference } from "@/lib/sse";
+import { checkLabel, hasId, paperLink } from "@/lib/refs";
 import type { Strings } from "@/lib/strings";
-
-const ARXIV = /^https?:\/\/(www\.)?arxiv\.org\/(abs|pdf)\//i;
-const DOI = /^10\.[0-9]{4,9}\/\S+$/;
-const PMID = /^[0-9]{1,9}$/;
-
-export const doiOf = (p: Reference["paper"]) => p.doi?.trim().replace(/^(https?:\/\/(dx\.)?doi\.org\/|doi:\s*)/i, "") ?? "";
-export const httpUrl = (u: string | undefined) => {
-  try {
-    const x = new URL(u?.trim() ?? "");
-    return x.protocol === "http:" || x.protocol === "https:" ? x.href : null;
-  } catch {
-    return null;
-  }
-};
-
-// Anchors only for http(s): DOI > PMID > arXiv > any other http(s) url. javascript:/data:/ftp: never.
-export function paperLink(p: Reference["paper"]): string | null {
-  const doi = doiOf(p);
-  if (DOI.test(doi)) return `https://doi.org/${encodeURI(doi)}`;
-  const pmid = p.pmid?.trim();
-  if (pmid && PMID.test(pmid)) return `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`;
-  return httpUrl(p.url);
-}
-
-// "unverified" also covers papers with nothing to check, so word it by whether an identifier exists.
-export const hasId = (p: Reference["paper"]) => !!(doiOf(p) || p.pmid?.trim() || ARXIV.test(p.url?.trim() ?? ""));
-
-// Identifier-check wording shared by the inspector and the exported report (existence only, never "supports the claim").
-export const checkLabel = (r: Reference, t: Strings) =>
-  r.status === "verified" ? t.verified : r.status === "unknown" ? t.chkUnknown : hasId(r.paper) ? t.chkNotFound : t.chkNoId;
 
 export const anchorId = (turnId: string | undefined, refId: string) => (turnId ? `ref-${turnId}-${refId}` : `ref-${refId}`);
 
@@ -90,9 +61,9 @@ export function ReferenceList({ references, t, scope }: { references: Reference[
               )}
               {meta && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.5 }}>{meta}</Typography>}
               <Stack direction="row" spacing={0.75} useFlexGap sx={{ pt: 0.25, flexWrap: "wrap", alignItems: "center" }}>
-                {verified && <Chip size="small" variant="outlined" icon={<CheckRoundedIcon />} label={t.verified} sx={chipSx("evidence-verified")} />}
-                {r.status === "unverified" && <Chip size="small" variant="outlined" icon={hasId(r.paper) ? <WarningAmberRoundedIcon /> : <InfoOutlinedIcon />} label={hasId(r.paper) ? t.unconfirmed : t.noId} sx={chipSx("evidence-unverified")} />}
-                {r.status === "unknown" && <Chip size="small" variant="outlined" icon={<WarningAmberRoundedIcon />} label={t.unknown} sx={chipSx("evidence-unknown")} />}
+                {verified && <Chip size="small" variant="outlined" icon={<CheckRoundedIcon />} label={checkLabel(r, t)} sx={chipSx("evidence-verified")} />}
+                {r.status === "unverified" && <Chip size="small" variant="outlined" icon={hasId(r.paper) ? <WarningAmberRoundedIcon /> : <InfoOutlinedIcon />} label={checkLabel(r, t)} sx={chipSx("evidence-unverified")} />}
+                {r.status === "unknown" && <Chip size="small" variant="outlined" icon={<WarningAmberRoundedIcon />} label={checkLabel(r, t)} sx={chipSx("evidence-unknown")} />}
                 {r.paper.doi && <Chip size="small" variant="outlined" label={`${t.doi} ${r.paper.doi}`} sx={idChipSx} />}
                 {r.paper.pmid && <Chip size="small" variant="outlined" label={`${t.pmid} ${r.paper.pmid}`} sx={idChipSx} />}
               </Stack>
@@ -102,7 +73,7 @@ export function ReferenceList({ references, t, scope }: { references: Reference[
               {r.status === "unknown" && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.6 }}>{t.unknownText}</Typography>}
               {scope && (
                 <Box>
-                  <Button size="small" variant="text" aria-label={`${t.openDetails}: ${r.paper.title}`}
+                  <Button size="small" variant="text" sx={{ minHeight: 44, minWidth: 44 }} aria-label={`${t.openDetails}: ${r.paper.title}`}
                     onClick={(e) => open({ ...scope, refId: r.id }, e.currentTarget)}>{t.openDetails}</Button>
                 </Box>
               )}

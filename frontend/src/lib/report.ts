@@ -1,9 +1,18 @@
-import { checkLabel, doiOf, paperLink } from "@/components/ReferenceList";
+
 import type { Session, Turn } from "./chat";
+import { checkLabel, doiOf, paperLink } from "./refs";
 import { strings, type Lang } from "./strings";
 
-// Neutralise anything that would start an HTML tag; markdown viewers then show it as text (entity).
-const esc = (s: string) => s.replace(/<(?=[a-z!/?])/gi, "&lt;");
+// Keep the export as safe as AnswerView: outside code spans/fences, no raw HTML, no images,
+// and no link target other than http(s) or a #fragment. Code is left untouched.
+const SAFE = /^(https?:\/\/|#)/i;
+const prose = (s: string) => s
+  .replace(/!\[/g, "\\![")
+  .replace(/\]\(\s*<?([^)\s>]*)>?/g, (m, u) => (SAFE.test(u) ? m : "](#"))
+  .replace(/^(\s{0,3}\[[^\]]+\]:\s*)<?(\S+)>?/gm, (m, k, u) => (SAFE.test(u) ? m : `${k}#`))
+  .replace(/<(?=[a-z!/?])/gi, "&lt;");
+export const esc = (s: string) =>
+  s.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/).map((part, i) => (i % 2 ? part : prose(part))).join("");
 
 export function buildReportMarkdown(session: Session, turn: Turn, lang: Lang): string {
   const t = strings[lang];

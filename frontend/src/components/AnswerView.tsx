@@ -19,6 +19,7 @@ const safeUrl = (u: string) => (/^#ref-\S+$/.test(u) || /^https?:\/\//i.test(u) 
 export function AnswerView({ content, references = [], scope }: { content: string; references?: { id: string }[]; scope?: { sessionId: string; turnId: string } }) {
   const t = useT();
   const open = useInspector((s) => s.open);
+  const ids = new Set(references.map((r) => r.id));
   const prefix = scope ? `ref-${scope.turnId}-` : "ref-";
   return (
     <Box
@@ -80,7 +81,11 @@ export function AnswerView({ content, references = [], scope }: { content: strin
           img: ({ alt }) => <span>{alt}</span>,
           a: ({ href, children }) =>
             href?.startsWith("#") ? (
-              <a href={href} onClick={scope ? (e) => { e.preventDefault(); open({ ...scope, refId: href.slice(1 + prefix.length) }, e.currentTarget); } : undefined}>{children}</a>
+              <a href={href} onClick={scope ? (e) => {
+                const h = e.currentTarget.getAttribute("href") ?? "";
+                if (!h.startsWith(`#${prefix}`) || !ids.has(h.slice(1 + prefix.length))) return; // not one of this turn's refs
+                e.preventDefault(); open({ ...scope, refId: h.slice(1 + prefix.length) }, e.currentTarget);
+              } : undefined}>{children}</a>
             ) : href ? (
               <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
             ) : (
@@ -88,7 +93,7 @@ export function AnswerView({ content, references = [], scope }: { content: strin
             ),
         }}
       >
-        {cite(content, new Set(references.map((r) => r.id)), prefix)}
+        {cite(content, ids, prefix)}
       </Markdown>
     </Box>
   );

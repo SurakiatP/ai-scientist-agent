@@ -38,4 +38,17 @@ describe("buildReportMarkdown", () => {
     expect(md).not.toMatch(/<[a-z!/]/i);
     expect(md).not.toContain("javascript:");
   });
+  it("neutralises images, non-http link targets and raw html outside code only", () => {
+    const [s, t] = mk([ref("1", "unknown", { title: "[x](javascript:alert(1)) ![i](https://evil.example/p.png)", authors: ["<b>Eve</b>"] })],
+      "![x](https://evil.example/x.png?q=1) [a](javascript:alert(1)) [b](data:text/html,x) [ok](https://ok.example) <script>x</script>\n\n```\nif (a <b) { <div> }\n```\n\n`<i>`\n\n[r]: javascript:alert(1)");
+    const md = buildReportMarkdown(s, t, "en");
+    expect(md).not.toMatch(/(^|[^\\])!\[/);
+    expect(md).not.toMatch(/\]\(\s*(javascript|data):/i);
+    expect(md).not.toMatch(/^\s*\[r\]:\s*javascript/m);
+    expect(md).toContain("[ok](https://ok.example)");
+    expect(md).not.toContain("<script>");
+    expect(md).not.toContain("<b>");
+    expect(md).toContain("if (a <b) { <div> }");
+    expect(md).toContain("`<i>`");
+  });
 });
