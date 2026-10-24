@@ -15,7 +15,7 @@ import { MAX_QUESTION } from "@/lib/strings";
 // Per session, so a draft never travels into (and sends from) another session.
 export const useDraft = create<{ drafts: Record<string, string>; set: (sid: string, s: string) => void }>((set) => ({
   drafts: {},
-  set: (sid, text) => set((d) => { const { [sid]: _, ...rest } = d.drafts; return { drafts: text ? { ...rest, [sid]: text } : rest }; }),
+  set: (sid, text) => set((d) => ({ drafts: { ...d.drafts, [sid]: text } })), // ponytail: empty strings linger until reload; negligible
 }));
 export const focusComposer = () => document.getElementById("composer")?.focus();
 
