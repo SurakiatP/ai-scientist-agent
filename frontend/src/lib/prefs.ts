@@ -16,7 +16,7 @@ export const usePrefs = create<State>()(
       version: 1,
       partialize: (s) => ({ lang: s.lang }),
       // unknown/garbage values fall back to th
-      merge: (p, cur) => ({ ...cur, lang: (p as { lang?: unknown } | null)?.lang === "en" ? "en" : "th" }),
+      merge: (p, cur) => ({ ...cur, ...(p as object | null), lang: (p as { lang?: unknown } | null)?.lang === "en" ? "en" : "th" }),
     },
   ),
 );
