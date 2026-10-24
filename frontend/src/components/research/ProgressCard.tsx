@@ -63,6 +63,7 @@ function Elapsed({ since }: { since: number }) {
 export function ProgressCard({ turn }: { turn: Turn }) {
   const t = useT();
   const p = turn.progress, running = turn.status === "running";
+  const [rows0] = useState(p.searches.length); // rows present on mount never animate
   return (
     <Box sx={{ border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.raised", p: { xs: 1.5, sm: 2 } }}>
       <Stack spacing={2}>
@@ -80,7 +81,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
             {p.searches.length > 0 && (
               <Box component="ul" sx={{ m: 0, mt: 1, p: 0, listStyle: "none" }}>
                 {p.searches.map((s, i) => (
-                  <Stack component="li" key={`${s.term}#${i}`} direction="row" useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", gap: 1, py: 1, borderTop: i === 0 ? 0 : 1, borderColor: "divider", ...enterRise }}>
+                  <Stack component="li" key={`${s.term}#${i}`} direction="row" useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", gap: 1, py: 1, borderTop: i === 0 ? 0 : 1, borderColor: "divider", ...(i >= rows0 ? enterRise : {}) }}>
                     <Typography sx={{ width: 20, flexShrink: 0, fontSize: "0.6875rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{String(i + 1).padStart(2, "0")}</Typography>
                     <Typography sx={{ flex: "1 1 160px", minWidth: 0, fontSize: "0.875rem", lineHeight: 1.5, overflowWrap: "anywhere" }}>{s.term}</Typography>
                     {s.term in p.sources && <Chip size="small" variant="outlined" label={`${t.found} ${p.sources[s.term]} ${p.sources[s.term] === 1 ? t.paper : t.papers}`} />}

@@ -77,7 +77,7 @@ Flat: paper elevation 0, 1px hairlines. Radius 10px base, composer 16px, bottom 
 
 ## Motion
 
-Authored moment: the landing trace line. Supporting motion (shared in `frontend/src/lib/motion.ts`, exponential ease-out `cubic-bezier(0.16, 1, 0.3, 1)`, 150-320ms, CSS under `no-preference` only): new chat turns rise in (turns present on load never animate) with smooth scroll to them; right panel and source inspector slide in from the right; the opened reference row flashes once; the sidebar collapses by width over a fixed-width inner (animated only after a user toggle); the composer's send/stop is one button whose icon pops on swap; progress stage nodes ease colour, and the active node pulses (GSAP, one clock). `prefers-reduced-motion: reduce` removes all of it (global CSS rule in the theme; the pulse checks `matchMedia`).
+Authored moment: the landing trace line. Supporting motion (shared in `frontend/src/lib/motion.ts`, exponential ease-out `cubic-bezier(0.16, 1, 0.3, 1)`, 220-400ms, CSS under `no-preference` only): new chat turns rise in (turns present on load never animate) followed by an instant scroll (a smooth one would drop the follow mid-flight); the source inspector slides in on open (not on load); the opened reference row flashes once (400ms); the sidebar collapses by width over a fixed-width inner (animated only after a user toggle); the composer's send/stop is one button whose icon pops on swap; progress stage nodes ease colour, and the active node pulses (GSAP, one clock). `prefers-reduced-motion: reduce` removes all of it (global CSS rule in the theme; the pulse checks `matchMedia`).
 
 ## Do
 

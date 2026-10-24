@@ -29,6 +29,9 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const hasTurns = useChatStore((s) => (s.sessions.find((x) => x.id === sessionId)?.turns.length ?? 0) > 0);
   const [composing, setComposing] = useState(false);
   const busy = !!run.turnId, mine = busy && run.sessionId === sessionId;
+  // icon pops only on a send<->stop change in this session, never on mount or session switch
+  const [sw, setSw] = useState({ sid: sessionId, mine, anim: false });
+  if (sw.sid !== sessionId || sw.mine !== mine) setSw({ sid: sessionId, mine, anim: sw.sid === sessionId });
   const over = text.length > MAX_QUESTION;
   const canSend = !busy && !over && text.trim().length > 0;
   const send = () => {
@@ -81,9 +84,9 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               {text.length}/{MAX_QUESTION}
             </Typography>
           )}
-          <IconButton aria-label={mine ? t.stop : t.ask} onClick={mine ? stopRun : send} disabled={!mine && !canSend}
+          <IconButton aria-label={mine ? t.stop : t.ask} onClick={(e) => { if (!mine) send(); else if (e.detail < 2) stopRun(); }} /* a double-click on Send must not land on Stop */ disabled={!mine && !canSend}
             sx={{ bgcolor: "primary.main", color: "primary.contrastText", transition: `background-color 160ms ${ease}`, "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "action.disabledBackground" } }}>
-            <Box key={mine ? "stop" : "send"} component="span" sx={{ display: "inline-flex", ...enterPop }}>{mine ? <StopRoundedIcon /> : <SendRoundedIcon />}</Box>
+            <Box key={mine ? "stop" : "send"} component="span" sx={{ display: "inline-flex", ...(sw.anim ? enterPop : {}) }}>{mine ? <StopRoundedIcon /> : <SendRoundedIcon />}</Box>
           </IconButton>
         </Box>
       </Box>

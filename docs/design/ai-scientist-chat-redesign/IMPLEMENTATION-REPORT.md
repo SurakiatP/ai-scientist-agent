@@ -56,3 +56,5 @@ lint clean, tsc clean, vitest 135 passed (133 before), `next build` ok, backend 
 - Reference images 01-19 compared by eye for layout and feel, not pixel-diffed.
 - Real hydration warnings: none seen in dev or production console across the passes.
 - The motion commits (25a2830, a02c897) landed after this verification; only lint, tsc, vitest and build were re-run on top of them.
+
+Task 9 fix round 1: instant follow-scroll, flash 400ms, entrances only for user-driven change (aside slide removed; inspector slide, composer pop, search rows, first turn after empty state), SSR-safe `prefersReduced`, Send double-click guard, reduced motion zeroes delays; tests guard the `seen` logic and follow/release.

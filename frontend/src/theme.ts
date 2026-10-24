@@ -56,7 +56,7 @@ export const theme = createTheme({
       "::selection": { backgroundColor: "var(--mui-palette-primary-main)", color: "var(--mui-palette-primary-contrastText)" },
       "input, textarea": { caretColor: "var(--mui-palette-primary-main)" },
       ":focus-visible": { outline: "2px solid var(--mui-palette-primary-main)", outlineOffset: 2 },
-      "@media (prefers-reduced-motion: reduce)": { "*, *::before, *::after": { animationDuration: "0.001ms !important", animationIterationCount: "1 !important", transitionDuration: "0.001ms !important", scrollBehavior: "auto !important" } },
+      "@media (prefers-reduced-motion: reduce)": { "*, *::before, *::after": { animationDuration: "0.001ms !important", animationIterationCount: "1 !important", transitionDuration: "0.001ms !important", transitionDelay: "0s !important", animationDelay: "0s !important", scrollBehavior: "auto !important" } },
     } },
   },
 });

@@ -1,6 +1,8 @@
 "use client";
 import { Box, Button, Stack, Typography } from "@mui/material";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
+import { useEffect } from "react";
+import { wasEmpty } from "@/lib/motion";
 import { useT } from "@/lib/prefs";
 import { sampleQuestions } from "@/lib/strings";
 import { Composer, focusComposer, useDraft } from "./Composer";
@@ -23,6 +25,7 @@ export function Starters({ label, sessionId }: { label: string; sessionId: strin
 
 export function EmptyChat({ sessionId }: { sessionId: string }) {
   const t = useT();
+  useEffect(() => { wasEmpty.add(sessionId); }, [sessionId]);
   return (
     <Box sx={{ minHeight: "100%", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", gap: 3, px: 2, py: 4 }}>
       <Typography component="h1" sx={{ fontSize: { xs: "1.5rem", sm: "2rem" }, fontWeight: 700, textAlign: "center", textWrap: "balance" }}>{t.emptyHeading}</Typography>

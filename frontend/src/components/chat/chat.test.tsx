@@ -89,6 +89,14 @@ describe("Composer", () => {
     expect(run.stopRun).toHaveBeenCalled();
   });
 
+  it("the second click of a double-click on Send never lands on Stop", () => {
+    const id = mk();
+    run.sessionId = id; run.turnId = "x";
+    render(<Composer sessionId={id} />);
+    fireEvent.click(screen.getByRole("button", { name: t.stop }), { detail: 2 });
+    expect(run.stopRun).not.toHaveBeenCalled();
+  });
+
   it("busy start keeps the text and shows the reason", () => {
     const id = mk();
     render(<Composer sessionId={id} />);

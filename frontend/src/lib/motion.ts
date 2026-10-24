@@ -5,7 +5,7 @@ import { keyframes } from "@emotion/react";
 export const ease = "cubic-bezier(0.16, 1, 0.3, 1)";
 const NO_PREF = "@media (prefers-reduced-motion: no-preference)";
 
-export const prefersReduced = () => typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+export const prefersReduced = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const rise = keyframes`from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; }`;
 const slide = keyframes`from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; }`;
@@ -16,4 +16,7 @@ const once = (k: ReturnType<typeof keyframes>, ms: number) => ({ [NO_PREF]: { an
 export const enterRise = once(rise, 320);
 export const enterSlide = once(slide, 280);
 export const enterPop = once(pop, 220);
-export const enterFlash = once(flash, 1400);
+export const enterFlash = once(flash, 400);
+
+// Sessions whose empty state was shown: their first turn rises when the Thread mounts (EmptyChat -> Thread).
+export const wasEmpty = new Set<string>();
