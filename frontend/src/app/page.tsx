@@ -1,136 +1,125 @@
 "use client";
 import Link from "next/link";
-import { Box, Button, Chip, Paper, Stack, Typography } from "@mui/material";
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
-import { landing, strings } from "@/lib/strings";
-import { RunFigure } from "@/components/RunFigure";
-import { palette } from "@/theme";
+import { Box, Button, IconButton, Stack, Typography, useColorScheme } from "@mui/material";
+import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
+import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
+import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
+import SettingsBrightnessOutlinedIcon from "@mui/icons-material/SettingsBrightnessOutlined";
+import { useHydrated } from "@/lib/history";
+import { usePrefs } from "@/lib/prefs";
+import { landing } from "@/lib/strings";
 
-const th = landing.th;
-const en = landing.en;
-const t = strings.th;
+const gutter = { xs: 2, sm: 4, lg: 6 };
+const wrap = { maxWidth: 1180, mx: "auto", px: gutter };
+const ring = { "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 3 } };
+const next = { system: "light", light: "dark", dark: "system" } as const;
 
-// Marks Latin runs (arXiv, DOI, PMID, RAG...) inside Thai text as English, so screen readers switch voice.
-const LATIN = /(\(?[A-Za-z][\w .()/-]*[\w)])/;
-function Th({ text }: { text: string }) {
-  return text.split(LATIN).map((part, i) => (i % 2 ? <span key={i} lang="en">{part}</span> : part));
-}
-
-const focusRing = { "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 3 } };
-
-// Each statement in Thai with its English twin: the bilingual abstract, restated in the workspace voice.
-function Cta({ variant }: { variant: "contained" | "outlined" }) {
-  return (
-    <Button
-      component={Link} href="/ask" variant={variant} size="large" endIcon={<ArrowForwardIcon />}
-      sx={{ minHeight: 54, px: 2.75, py: 1, borderRadius: 1.5, alignItems: "center", textAlign: "left", ...focusRing }}
-    >
-      <Box component="span" sx={{ display: "flex", flexDirection: "column", lineHeight: 1.3 }}>
-        <Box component="span" lang="th" sx={{ fontSize: "1rem", fontWeight: 700 }}>{th.cta}</Box>
-        <Box component="span" lang="en" sx={{ fontSize: "0.75rem", fontWeight: 500, opacity: 0.85 }}>{en.cta}</Box>
-      </Box>
-    </Button>
-  );
-}
+// The one authored motion moment: the trace line draws down the path once, then each step settles in.
+// Plain CSS under no-preference only, so SSR and reduced-motion show the finished state with no script and no flash.
+const STEP = 0.5; // seconds between steps
+const trace = {
+  "@media (prefers-reduced-motion: no-preference)": {
+    "& .trace-line": { animation: "draw 1.4s cubic-bezier(0.22, 1, 0.36, 1) both" },
+    "& .trace-step": { animation: "settle 0.6s cubic-bezier(0.22, 1, 0.36, 1) both", animationDelay: "calc(var(--i) * " + STEP + "s)" },
+    "@keyframes draw": { from: { transform: "scaleY(0)" }, to: { transform: "scaleY(1)" } },
+    "@keyframes settle": { from: { opacity: 0, transform: "translateY(8px)" }, to: { opacity: 1, transform: "none" } },
+  },
+};
 
 export default function Home() {
-  return (
-    <>
-      <Box component="main">
-        <Box sx={{ maxWidth: 1080, mx: "auto", px: { xs: 2.5, sm: 4, lg: 5 }, pt: { xs: 4, md: 6 }, pb: { xs: 6, md: 8 } }}>
-          <Typography component="h1" sx={{ m: 0, maxWidth: 900, textWrap: "balance" }}>
-            <Box component="span" lang="th" sx={{ display: "block", fontSize: "clamp(1.875rem, 1.1rem + 3vw, 3.25rem)", fontWeight: 700, lineHeight: 1.28, letterSpacing: "-0.02em" }}>
-              {th.title}
-            </Box>
-            <Box component="span" lang="en" sx={{ display: "block", mt: 1.5, fontSize: "clamp(1.125rem, 1rem + 0.6vw, 1.5rem)", fontWeight: 400, lineHeight: 1.4, color: "text.secondary" }}>
-              {en.title}
-            </Box>
-          </Typography>
-
-          <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, columnGap: 7, rowGap: 2, mt: { xs: 3, md: 4 }, maxWidth: 980 }}>
-            <Typography lang="th" sx={{ fontSize: "1.0625rem", lineHeight: 1.85 }}><Th text={th.lead} /></Typography>
-            <Typography lang="en" sx={{ fontSize: "0.9375rem", lineHeight: 1.75, color: "text.secondary" }}>{en.lead}</Typography>
-          </Box>
-
-          <Stack direction="row" useFlexGap sx={{ mt: { xs: 3, md: 4 }, flexWrap: "wrap", alignItems: "center", gap: 1.5 }}>
-            <Cta variant="contained" />
-            <Button
-              component={Link} href="/saved" endIcon={<ArrowForwardIcon />}
-              sx={{ minHeight: 44, color: "text.secondary", fontWeight: 500, ...focusRing }}
-            >
-              {t.linkSaved}
-            </Button>
-          </Stack>
-
-          <Box component="figure" sx={{ m: 0, mt: { xs: 5, md: 6 } }}>
-            <Paper sx={{ borderRadius: 2, overflow: "hidden" }}>
-              <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1.5, px: { xs: 2, sm: 2.5 }, py: 1.5, borderBottom: 1, borderColor: "divider", bgcolor: palette.background }}>
-                <Typography sx={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.04em", color: "text.secondary" }}>รูปที่ 1</Typography>
-                <Chip size="small" variant="outlined" label={t.verifiedBadge} sx={{ bgcolor: palette.tealLight, borderColor: palette.tealLight, color: palette.teal }} />
-              </Stack>
-              <Box sx={{ p: { xs: 2, sm: 2.5 } }}><RunFigure /></Box>
-            </Paper>
-            <Box component="figcaption" sx={{ mt: 1.5, display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, columnGap: 7, rowGap: 0.5, fontSize: "0.8125rem", lineHeight: 1.7 }}>
-              <Box component="span" lang="th"><Th text={th.figCaption} /></Box>
-              <Box component="span" lang="en" sx={{ color: "text.secondary" }}>{en.figCaption}</Box>
-            </Box>
-          </Box>
-        </Box>
-
-        <Notes id="method" title={th.methodTitle} enTitle={en.methodTitle} items={th.method} enItems={en.method} ordered />
-        <Notes id="limits" title={th.limitsTitle} enTitle={en.limitsTitle} items={th.limits} enItems={en.limits} />
-      </Box>
-
-      <Box component="footer" sx={{ borderTop: 1, borderColor: "divider", bgcolor: palette.surface }}>
-        <Box sx={{ maxWidth: 1080, mx: "auto", px: { xs: 2.5, sm: 4, lg: 5 }, py: { xs: 5, md: 6 }, display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, alignItems: { md: "center" }, justifyContent: "space-between" }}>
-          <Box sx={{ maxWidth: 620 }}>
-            <Typography lang="th" sx={{ fontSize: "1.125rem", fontWeight: 600, lineHeight: 1.6 }}>{th.footer}</Typography>
-            <Typography lang="en" sx={{ color: "text.secondary", fontSize: "0.875rem", lineHeight: 1.7 }}>{en.footer}</Typography>
-          </Box>
-          <Box><Cta variant="outlined" /></Box>
-        </Box>
-      </Box>
-    </>
+  const hydrated = useHydrated();
+  const prefLang = usePrefs((s) => s.lang);
+  const setLang = usePrefs((s) => s.setLang);
+  const { mode, setMode } = useColorScheme();
+  const lang = hydrated ? prefLang : "th";
+  const other = lang === "th" ? "en" : "th";
+  const L = landing[lang];
+  const twin = landing[other];
+  const m = hydrated ? mode ?? "system" : "system";
+  const ModeIcon = { light: LightModeOutlinedIcon, dark: DarkModeOutlinedIcon, system: SettingsBrightnessOutlinedIcon }[m as "light"];
+  const modeName = { light: L.themeLight, dark: L.themeDark, system: L.themeSystem }[m as "light"];
+  const cta = (sx = {}) => (
+    <Button component={Link} href="/chat" variant="contained" size="large" endIcon={<ArrowForwardRoundedIcon />} sx={{ minHeight: 52, px: 3, ...ring, ...sx }}>
+      {L.cta}
+    </Button>
   );
-}
 
-// A note section: heading on the left, Thai item with its English twin on the right.
-function Notes({ id, title, enTitle, items, enItems, ordered }: {
-  id: string; title: string; enTitle: string; items: readonly string[]; enItems: readonly string[]; ordered?: boolean;
-}) {
   return (
-    <Box component="section" aria-labelledby={id} sx={{ borderTop: 1, borderColor: "divider", bgcolor: id === "limits" ? palette.background : "transparent" }}>
-      <Box sx={{ maxWidth: 1080, mx: "auto", px: { xs: 2.5, sm: 4, lg: 5 }, py: { xs: 5, md: 7 }, display: "grid", gridTemplateColumns: { xs: "1fr", md: "280px 1fr" }, gap: { xs: 2.5, md: 7 } }}>
-        <Typography id={id} component="h2" sx={{ m: 0, fontSize: "1.375rem", fontWeight: 700, lineHeight: 1.35 }}>
-          <Box component="span" lang="th" sx={{ display: "block" }}>{title}</Box>
-          <Box component="span" lang="en" sx={{ display: "block", mt: 0.25, fontSize: "0.9375rem", fontWeight: 400, color: "text.secondary" }}>{enTitle}</Box>
-        </Typography>
-        <Box
-          component={ordered ? "ol" : "ul"}
-          sx={{ m: 0, p: 0, listStyle: "none", display: "grid", maxWidth: "60ch" }}
-        >
-          {items.map((item, i) => (
-            <Box
-              component="li" key={i}
-              sx={{
-                display: "grid", gridTemplateColumns: ordered ? "40px 1fr" : "14px 1fr", gap: ordered ? 2 : 1.5,
-                py: ordered ? 2.25 : 2, borderTop: i === 0 ? 0 : 1, borderColor: "divider",
-              }}
-            >
-              {ordered ? (
-                <Typography sx={{ fontSize: "1.125rem", fontWeight: 700, lineHeight: 1.4, color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>
-                  {String(i + 1).padStart(2, "0")}
-                </Typography>
-              ) : (
-                <Box sx={{ width: 6, height: 6, mt: "0.55em", borderRadius: "2px", bgcolor: palette.clay }} />
-              )}
-              <Box>
-                <Typography lang="th" sx={{ fontSize: "0.9375rem", lineHeight: 1.8 }}><Th text={item} /></Typography>
-                <Typography lang="en" sx={{ mt: 0.5, color: "text.secondary", fontSize: "0.875rem", lineHeight: 1.7 }}>{enItems[i]}</Typography>
-              </Box>
-            </Box>
-          ))}
+    <Box lang={lang}>
+      <Box component="header" sx={{ borderBottom: 1, borderColor: "divider" }}>
+        <Stack direction="row" component="nav" aria-label={L.navLabel} sx={{ ...wrap, minHeight: 68, alignItems: "center", gap: { xs: 0.5, sm: 2 } }}>
+          <Typography component="span" sx={{ fontSize: "1.125rem", fontWeight: 700, letterSpacing: "-0.01em", mr: "auto" }}>{L.brand}</Typography>
+          <Stack direction="row" sx={{ display: { xs: "none", md: "flex" }, gap: 3, mr: 2 }}>
+            {[["#how", L.navHow], ["#check", L.navCheck]].map(([h, t]) => (
+              <Box key={h} component="a" href={h} sx={{ color: "text.secondary", textDecoration: "none", fontSize: "0.9375rem", py: 1.5, "&:hover": { color: "text.primary" }, ...ring }}>{t}</Box>
+            ))}
+          </Stack>
+          <Button color="inherit" aria-label={L.langSwitch} lang={other} onClick={() => setLang(other)} sx={{ minWidth: 44, px: 1.25, color: "text.secondary", fontWeight: 600 }}>
+            {other === "en" ? "EN" : "ไทย"}
+          </Button>
+          <IconButton aria-label={`${L.themeLabel}: ${modeName}, ${L.themeNext}`} onClick={() => setMode(next[m as "light"])} sx={{ color: "text.secondary", ...ring }}>
+            <ModeIcon fontSize="small" />
+          </IconButton>
+          {cta({ minHeight: 44, px: { xs: 1.75, sm: 2.5 }, ml: { xs: 0.5, sm: 0 }, "& .MuiButton-endIcon": { display: { xs: "none", sm: "inherit" } } })}
+        </Stack>
+      </Box>
+
+      <Box sx={{ ...wrap, pt: { xs: 5, md: 9 }, pb: { xs: 6, md: 10 }, display: "grid", gap: { xs: 6, md: 8 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1.5fr) minmax(0,1fr)" }, alignItems: "start" }}>
+        <Box>
+          <Typography component="h1" sx={{ m: 0, fontSize: "clamp(2rem, 1.1rem + 3vw, 3.5rem)", fontWeight: 700, lineHeight: 1.22, letterSpacing: "-0.015em", textWrap: "balance", overflowWrap: "break-word" }}>
+            <Box component="span" sx={{ display: "block", color: "primary.main" }}>{L.titleA}</Box>
+            <Box component="span" sx={{ display: "block" }}>{L.titleB.split("|").map((x, i) => <span key={i} style={{ display: "inline-block" }}>{x}{i === 0 ? " " : ""}</span>)}</Box>
+          </Typography>
+          <Typography lang={other} sx={{ mt: 1.5, color: "text.secondary", fontSize: "1rem", lineHeight: 1.5, textWrap: "balance" }}>
+            {`${twin.titleA} ${twin.titleB.replace("|", " ")}`}
+          </Typography>
+          <Typography sx={{ mt: 3.5, maxWidth: "36rem", fontSize: "1.0625rem", lineHeight: 1.85, textWrap: "pretty" }}>{L.lead}</Typography>
+          <Stack direction={{ xs: "column", sm: "row" }} sx={{ mt: 4, gap: 1.5, alignItems: { sm: "center" } }}>
+            {cta()}
+            <Button component="a" href="#how" variant="outlined" color="inherit" size="large" sx={{ minHeight: 52, px: 3, borderColor: "divider", ...ring }}>{L.how}</Button>
+          </Stack>
         </Box>
+
+        <Box id="how" sx={{ scrollMarginTop: 24, ...trace }}>
+          <Typography component="h2" sx={{ m: 0, mb: 1.5, fontSize: "0.9375rem", fontWeight: 600, color: "text.secondary" }}>{L.exampleLabel}</Typography>
+          <Box component={Link} href="/chat" aria-label={`${L.example}. ${L.exampleHint}`}
+            sx={{ display: "block", p: 2.5, border: 1, borderColor: "primary.main", borderRadius: 2, bgcolor: "background.paper", color: "text.primary", textDecoration: "none", ...ring, "&:hover": { bgcolor: "action.hover" } }}>
+            <Typography sx={{ fontSize: "1.125rem", lineHeight: 1.7, textWrap: "pretty" }}>“{L.example}”</Typography>
+            <Typography sx={{ mt: 1, fontSize: "0.8125rem", color: "text.secondary" }}>{L.exampleHint}</Typography>
+          </Box>
+
+          <Typography component="h2" sx={{ m: 0, mt: 5, mb: 2, fontSize: "0.9375rem", fontWeight: 600, color: "text.secondary" }}>{L.howTitle}</Typography>
+          <Box component="ol" sx={{ m: 0, p: 0, listStyle: "none", position: "relative" }}>
+            <Box aria-hidden="true" className="trace-line" sx={{ position: "absolute", left: 17, top: 18, bottom: 18, width: 2, bgcolor: "primary.main", opacity: 0.5, transformOrigin: "top" }} />
+            {L.steps.map((s, i) => (
+              <Box component="li" key={s.t} className="trace-step" style={{ "--i": i } as React.CSSProperties}
+                sx={{ position: "relative", display: "grid", gridTemplateColumns: "36px minmax(0,1fr)", columnGap: 2, pb: i < 2 ? 3 : 0 }}>
+                <Box aria-hidden="true" sx={{ width: 36, height: 36, borderRadius: "50%", border: 2, borderColor: "primary.main", bgcolor: "background.default", display: "grid", placeItems: "center", fontSize: "0.9375rem", fontWeight: 700, color: "primary.main", fontVariantNumeric: "tabular-nums" }}>{i + 1}</Box>
+                <Box>
+                  <Typography component="h3" sx={{ m: 0, fontSize: "1.125rem", fontWeight: 700, lineHeight: 1.6, color: "primary.main" }}>{s.t}</Typography>
+                  <Typography sx={{ fontSize: "0.9375rem", lineHeight: 1.8, color: "text.secondary", textWrap: "pretty" }}>{s.d}</Typography>
+                </Box>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      </Box>
+
+      <Box id="check" component="section" aria-labelledby="check-h" sx={{ borderTop: 1, borderColor: "divider", scrollMarginTop: 0 }}>
+        <Box sx={{ ...wrap, py: { xs: 6, md: 9 }, display: "grid", gap: { xs: 2.5, md: 8 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1fr) minmax(0,1.25fr)" } }}>
+          <Typography id="check-h" component="h2" sx={{ m: 0, fontSize: { xs: "1.5rem", md: "1.875rem" }, fontWeight: 700, lineHeight: 1.4, textWrap: "balance" }}>{L.checkTitle}</Typography>
+          <Box sx={{ maxWidth: "40rem" }}>
+            <Typography sx={{ fontSize: "1.0625rem", lineHeight: 1.85, textWrap: "pretty" }}>{L.checkBody}</Typography>
+            <Typography sx={{ mt: 2, fontSize: "0.9375rem", lineHeight: 1.8, color: "text.secondary", textWrap: "pretty" }}>{L.scope}</Typography>
+          </Box>
+        </Box>
+      </Box>
+
+      <Box component="footer" sx={{ borderTop: 1, borderColor: "divider", bgcolor: "background.paper" }}>
+        <Stack sx={{ ...wrap, py: { xs: 5, md: 6 }, flexDirection: { xs: "column", md: "row" }, gap: 3, alignItems: { md: "center" }, justifyContent: "space-between" }}>
+          <Typography sx={{ fontSize: "1.25rem", fontWeight: 600, lineHeight: 1.6, textWrap: "balance" }}>{L.footer}</Typography>
+          <Box>{cta()}</Box>
+        </Stack>
       </Box>
     </Box>
   );
