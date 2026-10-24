@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AnswerView } from "@/components/AnswerView";
 import { ReferenceList } from "@/components/ReferenceList";
@@ -107,7 +107,7 @@ describe("citations and inspector", () => {
     expect(screen.getByText(t.chkNoId)).toBeInTheDocument();
   });
 
-  it("unknown status wording and Esc closes, returning focus to the opener", () => {
+  it("unknown status wording and Esc closes, returning focus to the opener", async () => {
     const { sid, tn } = setup();
     render(<><button data-testid="o">o</button><SourceInspector variant="panel" /></>);
     const o = screen.getByTestId("o");
@@ -116,7 +116,18 @@ describe("citations and inspector", () => {
     expect(screen.getByText(t.chkUnknown)).toBeInTheDocument();
     fireEvent.keyDown(document, { key: "Escape" });
     expect(useInspector.getState().ref).toBeNull();
-    expect(document.activeElement).toBe(o);
+    await waitFor(() => expect(document.activeElement).toBe(o));
+  });
+
+  it("Esc returns focus to the opener's twin when the opener node was replaced", async () => {
+    const { sid, tn } = setup();
+    const { rerender } = render(<><a href="#ref-1">1</a><SourceInspector variant="panel" /></>);
+    const old = screen.getByText("1");
+    act(() => useInspector.getState().open({ sessionId: sid, turnId: tn.id, refId: "3" }, old));
+    rerender(<><span /><a href="#ref-1" data-testid="new">1</a><SourceInspector variant="panel" /></>);
+    old.remove();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId("new")));
   });
 
   it("reference rows have an Open details action", () => {
