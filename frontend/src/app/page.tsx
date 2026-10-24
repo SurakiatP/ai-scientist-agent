@@ -14,15 +14,15 @@ const wrap = { maxWidth: 1180, mx: "auto", px: gutter };
 const ring = { "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 3 } };
 const next = { system: "light", light: "dark", dark: "system" } as const;
 
-// The one authored motion moment: the trace line draws down the path once, then each step settles in.
-// Plain CSS under no-preference only, so SSR and reduced-motion show the finished state with no script and no flash.
+// The one authored motion moment: the trace line draws down the path once while the steps nudge into place.
+// Copy is never hidden (no opacity), only moved. Plain CSS under no-preference only, so SSR and reduced-motion show the finished state with no script and no flash.
 const STEP = 0.5; // seconds between steps
 const trace = {
   "@media (prefers-reduced-motion: no-preference)": {
-    "& .trace-line": { animation: "draw 1.4s cubic-bezier(0.22, 1, 0.36, 1) both" },
-    "& .trace-step": { animation: "settle 0.6s cubic-bezier(0.22, 1, 0.36, 1) both", animationDelay: "calc(var(--i) * " + STEP + "s)" },
-    "@keyframes draw": { from: { transform: "scaleY(0)" }, to: { transform: "scaleY(1)" } },
-    "@keyframes settle": { from: { opacity: 0, transform: "translateY(8px)" }, to: { opacity: 1, transform: "none" } },
+    "& .trace-line": { animation: "landing-draw 1.4s cubic-bezier(0.22, 1, 0.36, 1) both" },
+    "& .trace-step": { animation: "landing-settle 0.6s cubic-bezier(0.22, 1, 0.36, 1) both", animationDelay: "calc(var(--i) * " + STEP + "s)" },
+    "@keyframes landing-draw": { from: { transform: "scaleY(0)" }, to: { transform: "scaleY(1)" } },
+    "@keyframes landing-settle": { from: { transform: "translateY(10px)" }, to: { transform: "none" } },
   },
 };
 
@@ -48,19 +48,24 @@ export default function Home() {
     <Box lang={lang}>
       <Box component="header" sx={{ borderBottom: 1, borderColor: "divider" }}>
         <Stack direction="row" component="nav" aria-label={L.navLabel} sx={{ ...wrap, minHeight: 68, alignItems: "center", gap: { xs: 0.5, sm: 2 } }}>
-          <Typography component="span" sx={{ fontSize: "1.125rem", fontWeight: 700, letterSpacing: "-0.01em", mr: "auto" }}>{L.brand}</Typography>
+          <Typography component="span" noWrap sx={{ fontSize: "1.0625rem", fontWeight: 700, letterSpacing: "-0.01em", mr: "auto" }}>{L.brand}</Typography>
           <Stack direction="row" sx={{ display: { xs: "none", md: "flex" }, gap: 3, mr: 2 }}>
             {[["#how", L.navHow], ["#check", L.navCheck]].map(([h, t]) => (
               <Box key={h} component="a" href={h} sx={{ color: "text.secondary", textDecoration: "none", fontSize: "0.9375rem", py: 1.5, "&:hover": { color: "text.primary" }, ...ring }}>{t}</Box>
             ))}
           </Stack>
-          <Button color="inherit" aria-label={L.langSwitch} lang={other} onClick={() => setLang(other)} sx={{ minWidth: 44, px: 1.25, color: "text.secondary", fontWeight: 600 }}>
+          <Button color="inherit" aria-label={L.langSwitch} lang={other} onClick={() => setLang(other)} sx={{ minWidth: 44, px: 1.25, color: "text.secondary", fontWeight: 600, ...ring }}>
             {other === "en" ? "EN" : "ไทย"}
           </Button>
           <IconButton aria-label={`${L.themeLabel}: ${modeName}, ${L.themeNext}`} onClick={() => setMode(next[m as "light"])} sx={{ color: "text.secondary", ...ring }}>
             <ModeIcon fontSize="small" />
           </IconButton>
-          {cta({ minHeight: 44, px: { xs: 1.75, sm: 2.5 }, ml: { xs: 0.5, sm: 0 }, "& .MuiButton-endIcon": { display: { xs: "none", sm: "inherit" } } })}
+          {cta({ minHeight: 44, px: { xs: 1.5, sm: 2.5 }, whiteSpace: "nowrap", "& .MuiButton-endIcon": { display: { xs: "none", sm: "inherit" } } })}
+        </Stack>
+        <Stack direction="row" sx={{ ...wrap, display: { xs: "flex", md: "none" }, gap: 3, pb: 0.5 }}>
+          {[["#how", L.navHow], ["#check", L.navCheck]].map(([h, t]) => (
+            <Box key={h} component="a" href={h} sx={{ color: "text.secondary", textDecoration: "none", fontSize: "0.9375rem", py: 1.25, minHeight: 44, display: "flex", alignItems: "center", ...ring }}>{t}</Box>
+          ))}
         </Stack>
       </Box>
 
@@ -80,15 +85,20 @@ export default function Home() {
           </Stack>
         </Box>
 
-        <Box id="how" sx={{ scrollMarginTop: 24, ...trace }}>
-          <Typography component="h2" sx={{ m: 0, mb: 1.5, fontSize: "0.9375rem", fontWeight: 600, color: "text.secondary" }}>{L.exampleLabel}</Typography>
+        <Box>
+          <Typography sx={{ m: 0, mb: 1.5, fontSize: "0.9375rem", fontWeight: 600, color: "text.secondary" }}>{L.exampleLabel}</Typography>
           <Box component={Link} href="/chat" aria-label={`${L.example}. ${L.exampleHint}`}
             sx={{ display: "block", p: 2.5, border: 1, borderColor: "primary.main", borderRadius: 2, bgcolor: "background.paper", color: "text.primary", textDecoration: "none", ...ring, "&:hover": { bgcolor: "action.hover" } }}>
             <Typography sx={{ fontSize: "1.125rem", lineHeight: 1.7, textWrap: "pretty" }}>“{L.example}”</Typography>
             <Typography sx={{ mt: 1, fontSize: "0.8125rem", color: "text.secondary" }}>{L.exampleHint}</Typography>
           </Box>
 
-          <Typography component="h2" sx={{ m: 0, mt: 5, mb: 2, fontSize: "0.9375rem", fontWeight: 600, color: "text.secondary" }}>{L.howTitle}</Typography>
+        </Box>
+      </Box>
+
+      <Box id="how" component="section" aria-labelledby="how-h" sx={{ borderTop: 1, borderColor: "divider", ...trace }}>
+        <Box sx={{ ...wrap, py: { xs: 6, md: 9 }, display: "grid", gap: { xs: 3, md: 8 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1fr) minmax(0,1.25fr)" } }}>
+          <Typography id="how-h" component="h2" sx={{ m: 0, fontSize: { xs: "1.5rem", md: "1.875rem" }, fontWeight: 700, lineHeight: 1.4, textWrap: "balance" }}>{L.howTitle}</Typography>
           <Box component="ol" sx={{ m: 0, p: 0, listStyle: "none", position: "relative" }}>
             <Box aria-hidden="true" className="trace-line" sx={{ position: "absolute", left: 17, top: 18, bottom: 18, width: 2, bgcolor: "primary.main", opacity: 0.5, transformOrigin: "top" }} />
             {L.steps.map((s, i) => (

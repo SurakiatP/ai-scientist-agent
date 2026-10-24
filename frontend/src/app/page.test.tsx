@@ -76,6 +76,16 @@ describe("landing page", () => {
     expect(cs.setMode).toHaveBeenLastCalledWith("system");
   });
 
+  it("section headings are real h2s; the example label is not a heading", () => {
+    render(<Home />);
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([landing.th.howTitle, landing.th.checkTitle]);
+  });
+
+  it("copy states instruction, not guarantee", () => {
+    expect(landing.th.lead).toContain("ถูกสั่งให้");
+    expect(landing.en.lead).toContain("instructed to");
+  });
+
   it("has th/en parity in landing strings", () => {
     expect(Object.keys(landing.en).sort()).toEqual(Object.keys(landing.th).sort());
     expect(landing.en.steps).toHaveLength(landing.th.steps.length);
@@ -85,6 +95,8 @@ describe("landing page", () => {
     const src = readFileSync("src/app/page.tsx", "utf8");
     expect(src).toMatch(/prefers-reduced-motion: no-preference/);
     expect(src).not.toMatch(/gsap/);
+    expect(src).not.toMatch(/opacity: 0[^.]/); // copy is never hidden on first paint
+    expect(src).not.toMatch(/landing-settle[^}]*opacity/);
   });
 });
 
