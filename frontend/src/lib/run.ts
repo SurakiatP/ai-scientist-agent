@@ -20,13 +20,15 @@ export const stopRun = () => ac?.abort();
 // The one place error events become user-facing text (stored in the current language).
 export function errorText(e: Extract<AskEvent, { type: "error" }>): string {
   const t = strings[usePrefs.getState().lang];
-  return e.code === "network" ? t.network : e.code === "malformed" ? t.malformed
+  const m = e.code === "network" ? t.network : e.code === "malformed" ? t.malformed
     : e.code === "http" ? `${t.requestFailed}${e.message ? `: ${e.message}` : ""}` : e.message;
+  return m.slice(0, 2048); // chat.ts read limit for turn.error
 }
 const cutOffText = () => strings[usePrefs.getState().lang].cutOff;
 
 export async function startRun(sessionId: string, question: string): Promise<void> {
   if (!canStart().ok) throw new Error("busy");
+  if (!useChatStore.getState().sessions.some((x) => x.id === sessionId)) throw new Error("no such session"); // before any state or stream
   const turnId = newId();
   const c = (ac = new AbortController());
   const store = () => useChatStore.getState();

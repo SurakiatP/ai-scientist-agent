@@ -55,10 +55,12 @@ describe("chat store", () => {
     expect((await load()).getState().sessions).toEqual([]);
     vi.resetModules();
     localStorage.setItem(KEY, JSON.stringify({ version: 1, state: {
-      sessions: [sess("ok"), sess("bad", [{ id: 1 }]), sess("big", [], { title: "x".repeat(500) }), 7, null],
+      sessions: [sess("ok"), sess("bad", [{ id: 1 }]), sess("big", [], { title: "x".repeat(500) }), 7, null,
+        sess("g1", [turn("a", "done")], {}), ],
       projects: [{ id: "p" }, "x"], activeId: "gone" } }));
     const s = await load();
-    expect(s.getState().sessions.map((x) => x.id)).toEqual(["ok"]);
+    expect(s.getState().sessions.map((x) => x.id).sort()).toEqual(["g1", "ok"].concat(["bad"]).sort()); // "bad" keeps the session, drops its turn
+    expect(s.getState().sessions.find((x) => x.id === "bad")!.turns).toEqual([]);
     expect(s.getState().projects.map((x) => x.id)).toEqual(["personal"]);
     expect(s.getState().activeId).toBeNull();
   });
@@ -72,5 +74,33 @@ describe("chat store", () => {
     const x = s.getState().sessions[0];
     expect(x).toMatchObject({ projectId: "personal", title: "old q" });
     expect(x.turns[0]).toMatchObject({ question: "old q", status: "done", answer: { content: "old a", references: [ref] } });
+  });
+  it("drops malformed progress elements", async () => {
+    const bad = [{ searches: [null] }, { searches: [{ term: {} , instructions: "" }] }, { answered: [1] }, { sources: { a: "x" } }, { waiting: "1" }];
+    const turns = bad.map((b, i) => ({ ...turn("b" + i), progress: { ...prog, ...b } }));
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [...turns, turn("good")])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns.map((t) => t.id)).toEqual(["good"]);
+  });
+  it("one oversized turn keeps the session's good turns", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [turn("a"), { ...turn("big"), error: "x".repeat(5000) }, turn("c")])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns.map((t) => t.id)).toEqual(["a", "c"]);
+  });
+  it("clamps oversized writes so they reload", async () => {
+    const s = await load();
+    const id = s.getState().newSession();
+    s.getState().addTurn(id, turn("a", "running") as never);
+    s.getState().patchTurn(id, "a", { status: "error", error: "e".repeat(9000), progress: { ...prog, reasoning: "r".repeat(30_000), searches: Array.from({ length: 80 }, () => ({ term: "t".repeat(5000), instructions: "" })) } } as never);
+    vi.resetModules();
+    const s2 = await load();
+    expect(s2.getState().sessions[0].turns).toHaveLength(1);
+    expect(s2.getState().sessions[0].turns[0].progress.searches).toHaveLength(50);
+  });
+  it("addProject at the cap returns empty id and adds nothing", async () => {
+    const s = await load();
+    for (let i = 0; i < 29; i++) expect(s.getState().addProject("p" + i)).not.toBe("");
+    expect(s.getState().addProject("over")).toBe("");
+    expect(s.getState().projects).toHaveLength(30);
   });
 });

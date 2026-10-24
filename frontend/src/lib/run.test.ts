@@ -24,7 +24,6 @@ describe("run controller", () => {
     script = gen(evs);
     await run.startRun(sid, "q");
     expect(last(chat)).toMatchObject({ status: "done", answer: { content: "ans", references: [ref] } });
-    expect(run.useRunState).toBeDefined();
     expect(run.canStart()).toEqual({ ok: true });
   });
   it("progress equals folding reduce over events", async () => {
@@ -74,5 +73,36 @@ describe("run controller", () => {
     expect(chat.getState().sessions[0].turns).toHaveLength(1);
     release();
     await p;
+  });
+  it("unknown session rejects without streaming or busy state", async () => {
+    const { run } = await setup();
+    const spy = vi.fn(gen([{ type: "complete" }]));
+    script = spy;
+    await expect(run.startRun("nope", "q")).rejects.toThrow();
+    expect(spy).not.toHaveBeenCalled();
+    expect(run.canStart()).toEqual({ ok: true });
+  });
+  it("throwing storage does not abort a run", async () => {
+    const { chat, run, sid } = await setup();
+    script = gen([{ type: "final_answer", content: "ans", references: [] }, { type: "complete" }]);
+    const orig = chat.getState().patchTurn;
+    chat.setState({ patchTurn: () => { throw new Error("quota"); } });
+    await expect(run.startRun(sid, "q")).resolves.toBeUndefined();
+    chat.setState({ patchTurn: orig });
+    expect(run.canStart()).toEqual({ ok: true });
+  });
+  it("useRunState follows the run", async () => {
+    const { run, sid } = await setup();
+    const { renderHook, act } = await import("@testing-library/react");
+    const { result } = renderHook(() => run.useRunState());
+    expect(result.current.turnId).toBeNull();
+    let release!: () => void;
+    script = async function* () { await new Promise<void>((r) => (release = r)); yield { type: "complete" }; };
+    let p!: Promise<void>;
+    act(() => { p = run.startRun(sid, "q"); });
+    expect(result.current).toMatchObject({ sessionId: sid });
+    expect(result.current.turnId).not.toBeNull();
+    await act(async () => { release(); await p; });
+    expect(result.current.turnId).toBeNull();
   });
 });

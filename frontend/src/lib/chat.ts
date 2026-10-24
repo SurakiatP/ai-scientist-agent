@@ -23,12 +23,30 @@ const STATUSES = ["running", "done", "refused", "error", "stopped", "interrupted
 
 const isStr = (v: unknown, max = Infinity): v is string => typeof v === "string" && v.length <= max;
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const TERM = 2000, REASON = 20_000, ANSWER = 200_000, REFS = 200, N = 50;
 const isProgress = (v: unknown): v is Progress => {
   const p = v as Progress | null;
-  return !!p && typeof p === "object" && Array.isArray(p.searches) && p.searches.length <= 50 && isStr(p.reasoning, 20_000) &&
-    !!p.sources && typeof p.sources === "object" && Array.isArray(p.answered) && p.answered.length <= 50 &&
-    ["waiting", "planning", "searching", "writing", "done"].includes(p.phase);
+  return !!p && typeof p === "object" && (p.waiting === null || isNum(p.waiting)) && isStr(p.reasoning, REASON) &&
+    Array.isArray(p.searches) && p.searches.length <= N && p.searches.every((x) => !!x && isStr(x.term, TERM) && isStr(x.instructions, TERM)) &&
+    !!p.sources && typeof p.sources === "object" && !Array.isArray(p.sources) && Object.keys(p.sources).length <= N &&
+    Object.entries(p.sources).every(([k, n]) => k.length <= TERM && isNum(n)) &&
+    Array.isArray(p.answered) && p.answered.length <= N && p.answered.every((x) => isStr(x, TERM)) &&
+    typeof p.writing === "boolean" && ["waiting", "planning", "searching", "writing", "done"].includes(p.phase);
 };
+// Write side: clamp to the read limits above so a persisted turn can never fail validation on reload.
+const clampProgress = (p: Progress): Progress => ({
+  ...p, reasoning: p.reasoning.slice(0, REASON),
+  searches: p.searches.slice(0, N).map((x) => ({ term: x.term.slice(0, TERM), instructions: x.instructions.slice(0, TERM) })),
+  sources: Object.fromEntries(Object.entries(p.sources).slice(0, N).map(([k, n]) => [k.slice(0, TERM), n])),
+  answered: p.answered.slice(0, N).map((x) => x.slice(0, TERM)),
+});
+const clampPatch = (p: Partial<Turn>): Partial<Turn> => ({
+  ...p,
+  ...(p.progress && { progress: clampProgress(p.progress) }),
+  ...(p.error !== undefined && { error: p.error.slice(0, 2048) }),
+  ...(p.refused !== undefined && { refused: p.refused.slice(0, REASON) }),
+  ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS) } }),
+});
 // Reuses history's item validator for the answer + references (its question/id/createdAt are filled in).
 const isTurn = (v: unknown): v is Turn => {
   const t = v as Turn | null;
@@ -40,7 +58,7 @@ const isTurn = (v: unknown): v is Turn => {
 const isSession = (v: unknown): v is Session => {
   const s = v as Session | null;
   return !!s && isStr(s.id, 100) && isStr(s.projectId, 100) && isStr(s.title, 200) && isNum(s.createdAt) && isNum(s.updatedAt) &&
-    Array.isArray(s.turns) && s.turns.length <= MAX_TURNS && s.turns.every(isTurn);
+    Array.isArray(s.turns);
 };
 const isProject = (v: unknown): v is Project => {
   const p = v as Project | null;
@@ -70,6 +88,8 @@ type State = {
 const mapSession = (s: State, id: string, f: (x: Session) => Session) => ({ sessions: s.sessions.map((x) => (x.id === id ? f(x) : x)) });
 const hasProject = (s: State, id: string) => s.projects.some((p) => p.id === id);
 
+// ponytail: every event re-serialises the whole store (up to 200 sessions) and localStorage caps near 5MB;
+// past that setItem fails silently (safeStorage) and in-memory state stays authoritative. Debounce/IndexedDB if it bites.
 export const useChatStore = create<State>()(
   persist(
     (set, get) => ({
@@ -91,8 +111,9 @@ export const useChatStore = create<State>()(
       deleteSession: (id) => set((s) => ({ sessions: s.sessions.filter((x) => x.id !== id), activeId: s.activeId === id ? null : s.activeId })),
       moveSession: (id, projectId) => set((s) => (hasProject(s, projectId) ? mapSession(s, id, (x) => ({ ...x, projectId })) : {})),
       addProject: (name) => {
+        if (get().projects.length >= MAX_PROJECTS) return ""; // at the cap: no project made, "" is never a valid id
         const id = newId();
-        set((s) => (s.projects.length >= MAX_PROJECTS ? {} : { projects: [...s.projects, { id, name: name.trim().slice(0, 100), createdAt: Date.now() }] }));
+        set((s) => ({ projects: [...s.projects, { id, name: name.trim().slice(0, 100), createdAt: Date.now() }] }));
         return id;
       },
       renameProject: (id, name) =>
@@ -106,10 +127,10 @@ export const useChatStore = create<State>()(
       addTurn: (sessionId, turn) =>
         set((s) => mapSession(s, sessionId, (x) => ({
           ...x, title: x.title || title(turn.question), updatedAt: Date.now(),
-          turns: [...x.turns, turn].slice(-MAX_TURNS), // oldest turn dropped past the cap
+          turns: [...x.turns, { ...turn, ...clampPatch(turn) }].slice(-MAX_TURNS), // oldest turn dropped past the cap
         }))),
       patchTurn: (sessionId, turnId, patch) =>
-        set((s) => mapSession(s, sessionId, (x) => ({ ...x, updatedAt: Date.now(), turns: x.turns.map((t) => (t.id === turnId ? { ...t, ...patch } : t)) }))),
+        set((s) => mapSession(s, sessionId, (x) => ({ ...x, updatedAt: Date.now(), turns: x.turns.map((t) => (t.id === turnId ? { ...t, ...clampPatch(patch) } : t)) }))),
       importLegacyHistory: () => {
         if (get().legacyImported) return;
         const items = useHistoryStore.getState().items;
@@ -138,9 +159,9 @@ export const useChatStore = create<State>()(
         const ids = new Set(projects.map((x) => x.id));
         const sessions = capSessions(
           (Array.isArray(p.sessions) ? p.sessions.filter(isSession) : []).map((x) => ({
-            ...x,
+            ...x, // bad/excess turns are dropped individually, not the whole session
             projectId: ids.has(x.projectId) ? x.projectId : PERSONAL,
-            turns: x.turns.map((t) => (t.status === "running" ? { ...t, status: "interrupted" as const } : t)),
+            turns: x.turns.filter(isTurn).slice(-MAX_TURNS).map((t) => (t.status === "running" ? { ...t, status: "interrupted" as const } : t)),
           })),
         );
         const active = sessions.find((x) => x.id === p.activeId);
