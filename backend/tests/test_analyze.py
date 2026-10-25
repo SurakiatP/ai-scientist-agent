@@ -282,7 +282,7 @@ async def test_disabled_503_and_health(store, monkeypatch):
     async with await _client(store) as c:
         r = await c.post("/v1/async/analyze", json={"file_id": "f" * 32, "question": "x"})
         assert r.status_code == 503 and "disabled" in r.text
-        assert (await c.get("/v1/health")).json() == {"status": "ok", "files": "ok", "analysis": "disabled"}
+        assert (await c.get("/v1/health")).json() == {"status": "ok", "files": "ok", "db": "disabled", "analysis": "disabled"}
 
 
 async def test_queue_full_429_before_any_fetch_or_llm(store, fakes, monkeypatch):

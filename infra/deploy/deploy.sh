@@ -47,6 +47,10 @@ rollback() {
   exit 1
 }
 dc "$REL" "$TAG" pull
+# Safety net before the migrate service can change the schema: fresh MinIO tar + pg_dump (a failure aborts before anything is touched).
+# Migrations are FORWARD-ONLY: rollback below restarts the previous release's containers but does NOT undo schema changes. If the new
+# release migrated and the old code cannot run on that schema, restore the dump taken here (docs/deploy.md "Restore PostgreSQL").
+/usr/local/bin/ai-scientist-backup
 trap '[ "$STARTED" = 1 ] && rollback' ERR
 STARTED=1
 dc "$REL" "$TAG" up -d --remove-orphans

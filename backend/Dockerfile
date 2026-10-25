@@ -14,6 +14,8 @@ WORKDIR /app/backend
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
 COPY backend/src ./src
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/migrations ./migrations
 COPY infra/hermes /app/infra/hermes
 RUN uv sync --locked --no-dev && chown -R app:app /app
 USER 10001:10001

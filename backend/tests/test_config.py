@@ -33,7 +33,7 @@ def test_missing_api_key_raises(monkeypatch):
 async def test_health_route_returns_ok():
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app()), base_url="http://t") as c:
         r = await c.get("/v1/health")
-    assert r.json() == {"status": "ok"}
+    assert r.json() == {"status": "ok", "db": "disabled"}
 
 
 def test_empty_api_key_rejected(monkeypatch):

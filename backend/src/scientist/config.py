@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     minio_access_key_file: str = ""
     minio_secret_key_file: str = ""
     minio_bucket: str = "scientist-uploads"
+    # PostgreSQL (optional): empty database_url = no database, app behaves as before. Password may live in a Docker secret file (wins over any password in the URL).
+    database_url: str = ""
+    database_password_file: str = ""
+    db_pool_size: int = Field(5, ge=1)
+    db_max_overflow: int = Field(5, ge=0)
+    db_connect_timeout_s: int = Field(3, ge=1)
+    db_statement_timeout_ms: int = Field(15000, ge=1)
     # Presigned previews: the browser talks to MinIO directly. Public endpoint = URL the BROWSER reaches (empty = minio_endpoint).
     minio_public_endpoint: str = ""
     presign_enabled: bool = True

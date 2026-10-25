@@ -17,12 +17,13 @@ from scientist.routes_files import router as files_router
 from scientist.routes_reports import router as reports_router
 from scientist.routes_preview import router as preview_router
 from scientist.preview_store import PreviewStore
+from scientist.db import Database, open_database
 
 log = logging.getLogger(__name__)
 
 
 def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient | None = None,
-               store: ObjectStore | None = None) -> FastAPI:
+               store: ObjectStore | None = None, db: Database | None = None) -> FastAPI:
     """runner/client/store replace the real Hermes runtime, citation-check client and MinIO store (tests).
     Run a single worker: the runtime owns ~/.cache/scientist/hermes-home and the run cap is per process."""
     settings = get_settings()
@@ -44,11 +45,14 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                 yield
             finally:
                 await rt.close()
+                if app.state.db:
+                    await app.state.db.close()
                 if runner is None:
                     sweep_containers()
                 sweep_sandboxes()
 
     app = FastAPI(title="scientist", lifespan=lifespan)
+    app.state.db = db or open_database(settings)  # None = database disabled; the engine connects lazily, so a down DB cannot break boot
     app.state.settings, app.state.gate = settings, RunGate(settings.max_concurrent_runs)
     app.state.analyze_gate = RunGate(settings.sandbox_max_concurrent)
     app.state.preview_gate = RunGate(settings.preview_max_concurrent)
@@ -73,6 +77,14 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                 h["files"] = "ok"
             except Exception:
                 h["files"] = "unavailable"
+        if app.state.db is None:
+            h["db"] = "disabled"
+        else:  # never fails the endpoint; bounded so the container healthcheck (2 s) is not held by a dead DB
+            try:
+                st = await asyncio.wait_for(app.state.db.schema_state(), 1.5)
+            except Exception:
+                st = "unreachable"
+            h["db"] = {"ok": "ok", "behind": "behind"}.get(st, "unavailable")
         if not settings.sandbox_enabled:
             h["analysis"] = "disabled"
         return h

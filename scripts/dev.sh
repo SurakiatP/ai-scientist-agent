@@ -68,6 +68,26 @@ if [ -z "${DEV_NO_MINIO:-}" ]; then
   docker image inspect scientist-sandbox:latest >/dev/null 2>&1 || docker build -q -t scientist-sandbox:latest backend/sandbox >/dev/null || die "could not build the sandbox image."
 fi
 
+# Local PostgreSQL (foundation only, no app data in it yet): loopback 55433 (55432 belongs to another project), throwaway
+# dev password, data in named volume scientist-dev-pg. Skipped (database off, app behaves as before) with DEV_NO_DB=1.
+if [ -z "${DEV_NO_DB:-}" ]; then
+  export DATABASE_URL=${DATABASE_URL:-postgresql://scientist:dev-pg-not-for-prod@127.0.0.1:55433/scientist}
+  if ! docker ps --format '{{.Names}}' | grep -qx scientist-dev-postgres; then
+    port_busy 55433 && die "port 55433 is busy (not by scientist-dev-postgres). Free it or set DEV_NO_DB=1."
+    docker rm -f scientist-dev-postgres >/dev/null 2>&1 || true
+    docker run -d --name scientist-dev-postgres -p 127.0.0.1:55433:5432 -v scientist-dev-pg:/var/lib/postgresql/data \
+      -e POSTGRES_USER=scientist -e POSTGRES_PASSWORD=dev-pg-not-for-prod -e POSTGRES_DB=scientist \
+      --health-cmd 'pg_isready -U scientist -d scientist' --health-interval 2s --health-retries 15 \
+      postgres:17-alpine >/dev/null || die "could not start local Postgres container."
+  fi
+  for _ in $(seq 1 30); do
+    [ "$(docker inspect -f '{{.State.Health.Status}}' scientist-dev-postgres 2>/dev/null)" = healthy ] && break
+    sleep 1
+  done
+  [ "$(docker inspect -f '{{.State.Health.Status}}' scientist-dev-postgres 2>/dev/null)" = healthy ] || die "local Postgres not healthy after 30 s (docker logs scientist-dev-postgres)."
+  uv run --project backend alembic -c backend/alembic.ini upgrade head || die "database migration failed."
+fi
+
 set -m  # each background job gets its own process group, so we can kill the whole tree
 BACK=; FRONT=
 alive() { kill -0 "$1" 2>/dev/null; }
@@ -76,7 +96,7 @@ stop() {
   rc=$?; trap - EXIT INT TERM
   echo; echo "Stopping..."
   for pid in $FRONT $BACK; do kill -TERM -- "-$pid" 2>/dev/null || true; done
-  # backend shutdown hook removes labelled Docker containers (the dev MinIO keeps running: docker rm -f scientist-dev-minio); give it time, then force
+  # backend shutdown hook removes labelled Docker containers (the dev MinIO and Postgres keep running: docker rm -f scientist-dev-minio scientist-dev-postgres); give it time, then force
   for _ in $(seq 1 30); do
     { [ -z "$BACK" ] || ! alive "$BACK"; } && { [ -z "$FRONT" ] || ! alive "$FRONT"; } && break
     sleep 0.5

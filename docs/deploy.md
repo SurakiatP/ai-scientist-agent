@@ -21,9 +21,28 @@ Local build instead of pull: `docker compose -f infra/compose.yaml --env-file <e
 
 ## 5. Rollback
 `sudo ai-scientist-deploy <older-published-tag>` (same published-tag rules).
+Database migrations are **forward-only**. `deploy.sh` runs a backup (MinIO tar + `pg_dump`) before the one-shot `migrate` service applies Alembic migrations, and a rollback restarts the old containers but does not undo schema changes. Releases must keep the previous release working on the new schema (add columns/tables first, remove later). If that is impossible, go back only by restoring the dump (section 6).
 
 ## 6. Backup / restore
-A systemd timer runs `backup.sh` daily at 03:00: tar of the MinIO volume into `/var/backups/ai-scientist/`, 7-day retention. Copy off-site yourself (rsync). Restore: stop minio, `docker run --rm -v ai-scientist_minio_data:/data -v /var/backups/ai-scientist:/in busybox tar xzf /in/<file> -C /data`, start minio.
+A systemd timer runs `backup.sh` daily at 03:00: tar of the MinIO volume (`minio-<stamp>.tgz`) and a `pg_dump -Fc` of the database (`postgres-<stamp>.dump`, mode 0600) into `/var/backups/ai-scientist/`, 7-day retention. Copy off-site yourself (rsync). Restore: stop minio, `docker run --rm -v ai-scientist_minio_data:/data -v /var/backups/ai-scientist:/in busybox tar xzf /in/<file> -C /data`, start minio.
+
+Restore PostgreSQL (stops the app first; replaces the database contents):
+```
+cd /opt/ai-scientist/current && export APP_ENV_FILE=/etc/ai-scientist/private/app.env
+docker compose -f infra/compose.yaml --env-file $APP_ENV_FILE stop backend
+PGPASSWORD="$(cat /etc/ai-scientist/private/postgres-app-password)" docker exec -i -e PGPASSWORD ai-scientist-postgres-1 \
+  pg_restore -U app -d app --clean --if-exists --no-owner < /var/backups/ai-scientist/postgres-<stamp>.dump
+docker compose -f infra/compose.yaml --env-file $APP_ENV_FILE up -d
+```
+
+## 6b. PostgreSQL
+Foundation only: the app creates one table (`app_meta`) so far and keeps working without a database (`DATABASE_URL` empty gives `db: disabled` in `/v1/health`; `unavailable` and `behind` never fail the endpoint). Compose runs `postgres` (image pinned by the multi-arch index digest of `postgres:17-alpine`, 17.11) on the internal-only `db` network with no published port, `cap_drop ALL` plus the five capabilities its entrypoint needs, `no-new-privileges`, 1 GB / 200 pids limits, scram auth everywhere (no trust, not even on the local socket) and idle/idle-in-transaction timeouts. The backend uses a dedicated non-superuser role `app` (created once by `infra/deploy/postgres-init.sh`) with a per-connection `statement_timeout`; the superuser password (`postgres-password`) is only mounted into the postgres container. `bootstrap.sh` generates both secrets; re-run it once on an existing VM before the first deploy of a release that has Postgres. **The app has no login: never publish the database port or put it on an external network.** Migrate by hand: `docker compose -f infra/compose.yaml --env-file <env> run --rm migrate`.
 
 ## 7. Operations
 Logs: `docker compose -f /opt/ai-scientist/current/infra/compose.yaml logs -f backend`. Local TLS rehearsal: set `CADDY_TLS=tls internal` in `app.env`.
+
+## 8. Skills and prompt switches
+
+- `ENABLED_SKILLS` (app.env / `.env`) is the allowlist of K-Dense skills copied into the Hermes home when the backend starts; default `["paper-lookup"]`. Unknown names are rejected at start. Turn a skill off by removing it from the list and restarting the backend (the generated `hermes-home` is rebuilt each start).
+- `literature-review` and `citation-management` were reviewed and NOT enabled: their scripts import `requests`, which the pinned branch sandbox image does not contain, and installing it at run time is forbidden by the branch prompt. Re-evaluate only with a sandbox image that bundles it.
+- `prompts/analyze.md` has one added rule (state small samples or many missing values in the finding). Revert by deleting that sentence.
