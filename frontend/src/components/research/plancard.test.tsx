@@ -26,6 +26,21 @@ describe("PlanCard", () => {
     expect(Object.keys(strings.en).sort()).toEqual(Object.keys(strings.th).sort());
   });
 
+  it("awaiting review shows start and cancel without opening the editor", () => {
+    const onApprove = vi.fn(), onCancel = vi.fn();
+    render(<PlanCard searches={plan} editable onApprove={onApprove} onCancel={onCancel} />);
+    fireEvent.click(screen.getByRole("button", { name: t.planStart }));
+    expect(onApprove).toHaveBeenCalledWith(plan);
+    fireEvent.click(screen.getByRole("button", { name: t.cancel }));
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it("rowState puts a real status chip on every row", () => {
+    render(<PlanCard searches={plan} editable={false} rowState={(term) => (term === "alpha term" ? "done" : "wait")} onApprove={noop} onCancel={noop} />);
+    expect(screen.getByText(t.rowDone)).toBeTruthy();
+    expect(screen.getByText(t.stepPending)).toBeTruthy();
+  });
+
   it("read-only mode lists numbered rows and has no edit button", () => {
     const { container } = render(<PlanCard searches={plan} editable={false} onApprove={noop} onCancel={noop} />);
     expect(screen.getByText(t.planEditableTitle)).toBeInTheDocument();

@@ -1,6 +1,11 @@
 "use client";
-import { Box, Stack, Typography } from "@mui/material";
+import { Box, Button, Chip, IconButton, Stack, Typography } from "@mui/material";
+import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
+import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
+import { useInspector } from "@/lib/inspector";
+import { checkLabel, paperLink } from "@/lib/refs";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import LightbulbOutlinedIcon from "@mui/icons-material/LightbulbOutlined";
 import type { Turn } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
@@ -9,9 +14,50 @@ import { stageIndex, stagesDone } from "./ProgressCard";
 const card = { border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.raised", p: 2 };
 const NO_PREF = "@media (prefers-reduced-motion: no-preference)";
 
-// Right-hand panel: every state and number is derived from `turn.progress`; nothing is estimated.
-export function ProgressPanel({ turn }: { turn: Turn }) {
+const tone = (st: "verified" | "unverified" | "unknown") => (st === "verified" ? "evidence.verified" : st === "unknown" ? "evidence.unknown" : "evidence.unverified");
+
+// Finished answer: the real references as cards (status = the existence check only), mirroring the inline citations.
+function SourcesPanel({ turn, sessionId }: { turn: Turn; sessionId: string }) {
   const t = useT();
+  const open = useInspector((s) => s.open);
+  const refs = turn.answer?.references ?? [];
+  return (
+    <Stack spacing={1.5} component="section" aria-label={t.references}>
+      <Typography component="h2" sx={{ fontSize: "1.0625rem", fontWeight: 700 }}>{t.sourcesTitle.replace("{n}", String(refs.length))}</Typography>
+      {refs.map((r) => {
+        const link = paperLink(r.paper);
+        const meta = [r.paper.authors.slice(0, 2).join(", ") + (r.paper.authors.length > 2 ? ` ${t.etAl}` : ""), r.paper.year].filter(Boolean).join(", ");
+        return (
+          <Box key={r.id} data-ref={r.id} sx={{ ...card, display: "grid", gap: 1 }}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center", justifyContent: "space-between" }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center", minWidth: 0 }}>
+                <ArticleOutlinedIcon aria-hidden sx={{ color: "text.secondary" }} />
+                <Chip size="small" variant="outlined" label={`[${r.id}]`} sx={{ borderRadius: 999, color: "primary.main", borderColor: "primary.main", fontWeight: 600 }} />
+              </Stack>
+              <Chip size="small" variant="outlined" label={checkLabel(r, t)} sx={{ borderRadius: 999, color: tone(r.status), borderColor: "currentColor", maxWidth: "70%" }} />
+            </Stack>
+            <Typography sx={{ fontSize: "0.9375rem", fontWeight: 600, lineHeight: 1.5, overflowWrap: "anywhere" }}>{r.paper.title}</Typography>
+            {meta && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>{meta}</Typography>}
+            <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+              <Button size="small" variant="outlined" color="inherit" sx={{ minHeight: 44, borderColor: "divider" }} aria-label={`${t.openDetails}: ${r.paper.title}`}
+                onClick={(e) => open({ sessionId, turnId: turn.id, refId: r.id }, e.currentTarget)}>{t.openDetails}</Button>
+              {link && <IconButton component="a" href={link} target="_blank" rel="noopener noreferrer" aria-label={`${t.openSource}: ${r.paper.title}`} sx={{ width: 44, height: 44, color: "text.secondary" }}><OpenInNewRoundedIcon fontSize="small" /></IconButton>}
+            </Stack>
+          </Box>
+        );
+      })}
+      <Stack direction="row" spacing={1.25} sx={{ alignItems: "flex-start", px: 0.5 }}>
+        <InfoOutlinedIcon aria-hidden sx={{ fontSize: 20, color: "text.secondary", mt: 0.25 }} />
+        <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.6 }}>{t.idCheckNote}</Typography>
+      </Stack>
+    </Stack>
+  );
+}
+
+// Right-hand panel: every state and number is derived from `turn.progress`; nothing is estimated.
+export function ProgressPanel({ turn, sessionId }: { turn: Turn; sessionId?: string }) {
+  const t = useT();
+  if (sessionId && turn.status === "done" && !turn.analysis && (turn.answer?.references.length ?? 0) > 0) return <SourcesPanel turn={turn} sessionId={sessionId} />;
   const p = turn.progress;
   const found = Object.values(p.sources).reduce((a, b) => a + b, 0);
   const idx = stageIndex(p), done = p.phase === "done";

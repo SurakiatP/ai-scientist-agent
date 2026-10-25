@@ -31,7 +31,7 @@ export function AnswerView({ content, references = [], scope }: { content: strin
         "& > :first-of-type": { mt: 0 },
         "& > :last-child": { mb: 0 },
         "& h1, & h2, & h3, & h4": { fontWeight: 700, lineHeight: 1.35, letterSpacing: "-0.01em", mt: 2.5, mb: 1, maxWidth: "68ch" },
-        "& h1": { fontSize: "1.5rem" },
+        "& h1": { fontSize: "1.625rem" },
         "& h2": { fontSize: "1.25rem" },
         "& h3": { fontSize: "1.0625rem" },
         "& h4": { fontSize: "1rem" },
@@ -55,9 +55,10 @@ export function AnswerView({ content, references = [], scope }: { content: strin
         "& th:first-of-type": { zIndex: 2, bgcolor: "surface.shell" },
         "& tbody tr:nth-of-type(even)": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 5%, transparent)" },
         "& a[href^='#ref-']": {
-          display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 19, height: 19,
-          px: 0.5, mx: 0.15, borderRadius: 0.75, bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 16%, transparent)", color: "primary.main",
-          fontSize: "0.6875rem", fontWeight: 700, lineHeight: 1, textDecoration: "none", verticalAlign: "text-top",
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          px: 0.9, mx: 0.25, borderRadius: 999, border: 1, borderColor: "primary.main", color: "primary.main",
+          fontSize: "0.75rem", fontWeight: 600, lineHeight: 1, textDecoration: "none", verticalAlign: "middle", minWidth: 24, height: 22,
+          "&:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)" },
         },
       }}
     >
@@ -72,7 +73,7 @@ export function AnswerView({ content, references = [], scope }: { content: strin
               <Box sx={{ display: { xs: "flex", sm: "none" }, alignItems: "center", mb: 0.75, color: "text.secondary", fontSize: "0.6875rem" }}>
                 {t.tableScroll}
               </Box>
-              <Box sx={{ maxWidth: "100%", overflowX: "auto", scrollbarWidth: "thin" }}>
+              <Box sx={{ maxWidth: "100%", overflowX: "auto", scrollbarWidth: "thin", border: 1, borderColor: "divider", borderRadius: 2, "& table": { border: 0 }, "& th, & td": { borderTop: 0, borderLeft: 0 }, "& tr > :last-child": { borderRight: 0 }, "& tbody tr:last-child td": { borderBottom: 0 } }}>
                 <table>{children}</table>
               </Box>
             </Box>

@@ -92,7 +92,7 @@ describe("Composer", () => {
     fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [new File(["a,b"], "data.csv", { type: "text/csv" })] } });
     expect(await screen.findByText("data.csv")).toBeInTheDocument();
     expect(screen.getByText("2.0 KB")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: t.modeDeep })).toBeDisabled();
+    expect(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeDeep}` })).toBeDisabled();
     type("what changed?");
     expect(sendBtn()).toBeEnabled();
     fireEvent.click(sendBtn());
@@ -176,14 +176,11 @@ describe("Composer", () => {
   it("mode selector defaults to deep, toggles, and sends the selected mode", () => {
     const id = mk();
     render(<Composer sessionId={id} />);
-    expect(screen.getByRole("group", { name: t.modeLabel })).toBeInTheDocument();
-    const deep = screen.getByRole("button", { name: t.modeDeep });
-    const quick = screen.getByRole("button", { name: t.modeQuick });
-    expect(deep).toHaveAttribute("aria-pressed", "true");
-    expect(quick).toHaveAttribute("aria-pressed", "false");
-    fireEvent.click(quick);
-    expect(quick).toHaveAttribute("aria-pressed", "true");
-    expect(deep).toHaveAttribute("aria-pressed", "false");
+    const trigger = () => screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeDeep}` });
+    expect(trigger()).toBeInTheDocument();
+    fireEvent.click(trigger());
+    fireEvent.click(screen.getByRole("menuitem", { name: t.modeQuick }));
+    expect(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeQuick}` })).toBeInTheDocument();
     type("q");
     fireEvent.keyDown(box(), { key: "Enter" });
     expect(run.startRun).toHaveBeenCalledWith(id, "q", { mode: "quick" });

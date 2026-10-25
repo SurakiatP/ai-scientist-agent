@@ -1,7 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Button, Dialog, DialogContent, DialogTitle, FormControl, FormControlLabel, FormLabel, IconButton, Radio, RadioGroup, Stack, Switch, Typography, useColorScheme } from "@mui/material";
+import { Box, Button, Dialog, DialogContent, DialogTitle, IconButton, Radio, RadioGroup, Stack, Switch, Typography, useColorScheme } from "@mui/material";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
+import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
+import SettingsBrightnessOutlinedIcon from "@mui/icons-material/SettingsBrightnessOutlined";
 import { API_BASE } from "@/lib/config";
 import { useChatStore } from "@/lib/chat";
 import { useHistoryStore, useHydrated, useStorageFull } from "@/lib/history";
@@ -25,6 +28,39 @@ function useHealth(open: boolean): Health {
   return h;
 }
 
+// One selectable card: a real radio (name = title, description linked) so keyboard and screen readers behave like a plain radio group.
+function OptionCard({ id, value, title, desc, icon, checked }: { id: string; value: string; title: string; desc: string; icon?: React.ReactNode; checked: boolean }) {
+  return (
+    <Box component="label" htmlFor={id} sx={{
+      display: "flex", alignItems: "flex-start", gap: 1.25, minHeight: 44, p: 1.75, borderRadius: 2, cursor: "pointer",
+      border: 1, borderColor: checked ? "primary.main" : "divider", bgcolor: checked ? "color-mix(in srgb, var(--mui-palette-primary-main) 8%, transparent)" : "transparent",
+      boxShadow: checked ? "0 0 0 1px var(--mui-palette-primary-main) inset" : "none",
+      "&:focus-within": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 },
+      "&:hover": { borderColor: "primary.main" },
+    }}>
+      <Radio id={id} value={value} disableRipple sx={{ p: 0.5, mt: -0.25, "&.Mui-focusVisible": { outline: 0 } }}
+        slotProps={{ input: { "aria-label": title, "aria-describedby": `${id}-d` } }} />
+      {icon && <Box aria-hidden sx={{ color: "primary.main", display: "grid", mt: 0.25 }}>{icon}</Box>}
+      <Box sx={{ minWidth: 0 }}>
+        <Typography sx={{ fontWeight: 700, fontSize: "0.9375rem", lineHeight: 1.5 }}>{title}</Typography>
+        <Typography id={`${id}-d`} sx={{ fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.6 }}>{desc}</Typography>
+      </Box>
+    </Box>
+  );
+}
+
+function Section({ labelId, title, note, children, cols }: { labelId: string; title: string; note?: string; children: React.ReactNode; cols: number }) {
+  return (
+    <Box component="section" sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: "170px 1fr" }, p: 2.5, border: 1, borderColor: "divider", borderRadius: 3, bgcolor: "surface.raised" }}>
+      <Box>
+        <Typography id={labelId} component="h3" sx={{ fontSize: "1.0625rem", fontWeight: 700, lineHeight: 1.4 }}>{title}</Typography>
+        {note && <Typography sx={{ mt: 0.5, fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.6 }}>{note}</Typography>}
+      </Box>
+      <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: `repeat(${cols}, minmax(0, 1fr))` }, alignContent: "start" }}>{children}</Box>
+    </Box>
+  );
+}
+
 export function SettingsDialog() {
   const full = useStorageFull();
   const t = useT();
@@ -39,63 +75,67 @@ export function SettingsDialog() {
   const health = useHealth(open);
   const close = () => { set(false); setConfirm(false); };
   const hs = { checking: t.backendChecking, ok: t.backendOk, down: t.backendDown }[health];
+  const curLang = hydrated ? lang : "th";
+  const curMode = mode ?? "system";
   return (
-    <Dialog open={open} onClose={close} fullWidth maxWidth="xs" aria-labelledby="settings-title">
-      <DialogTitle id="settings-title" sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        {t.settingsTitle}
+    <Dialog open={open} onClose={close} fullWidth maxWidth="md" aria-labelledby="settings-title" slotProps={{ paper: { sx: { borderRadius: 3, backgroundImage: "none", bgcolor: "background.default" } } }}>
+      <DialogTitle id="settings-title" sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", pb: 0.5 }}>
+        <Box component="span">
+          <Typography component="span" sx={{ display: "block", fontSize: "1.75rem", fontWeight: 700, lineHeight: 1.3 }}>{t.settingsTitle}</Typography>
+          <Typography component="span" sx={{ display: "block", mt: 0.5, fontSize: "0.9375rem", fontWeight: 400, color: "text.secondary" }}>{t.settingsSubtitle}</Typography>
+        </Box>
         <IconButton aria-label={t.close} onClick={close} sx={{ width: 44, height: 44 }}><CloseRoundedIcon /></IconButton>
       </DialogTitle>
       <DialogContent>
-        <Stack spacing={3} sx={{ pt: 1 }}>
-          <FormControl>
-            <FormLabel id="lang-l">{t.language}</FormLabel>
-            <RadioGroup row aria-labelledby="lang-l" value={hydrated ? lang : "th"} onChange={(_, v) => setLang(v === "en" ? "en" : "th")}>
-              <FormControlLabel value="th" control={<Radio />} label="ไทย" sx={{ minHeight: 44 }} />
-              <FormControlLabel value="en" control={<Radio />} label="English" sx={{ minHeight: 44 }} />
+        <Stack spacing={2} sx={{ pt: 1.5 }}>
+          <Section labelId="lang-l" title={t.language} note={t.langNote} cols={2}>
+            <RadioGroup aria-labelledby="lang-l" value={curLang} onChange={(_, v) => setLang(v === "en" ? "en" : "th")} sx={{ display: "contents" }}>
+              <OptionCard id="lang-th" value="th" title="ไทย" desc={t.langThDesc} checked={curLang === "th"} />
+              <OptionCard id="lang-en" value="en" title="English" desc={t.langEnDesc} checked={curLang === "en"} />
             </RadioGroup>
-          </FormControl>
-          <FormControl>
-            <FormLabel id="theme-l">{t.themeLabel}</FormLabel>
-            <RadioGroup row aria-labelledby="theme-l" value={mode ?? "system"} onChange={(_, v) => setMode(v as "light" | "dark" | "system")}>
-              <FormControlLabel value="light" control={<Radio />} label={t.themeLight} sx={{ minHeight: 44 }} />
-              <FormControlLabel value="dark" control={<Radio />} label={t.themeDark} sx={{ minHeight: 44 }} />
-              <FormControlLabel value="system" control={<Radio />} label={t.themeSystem} sx={{ minHeight: 44 }} />
+          </Section>
+          <Section labelId="theme-l" title={t.themeLabel} note={t.themeNote} cols={3}>
+            <RadioGroup aria-labelledby="theme-l" value={curMode} onChange={(_, v) => setMode(v as "light" | "dark" | "system")} sx={{ display: "contents" }}>
+              <OptionCard id="theme-light" value="light" title={t.themeLight} desc={t.themeLightDesc} icon={<LightModeOutlinedIcon />} checked={curMode === "light"} />
+              <OptionCard id="theme-dark" value="dark" title={t.themeDark} desc={t.themeDarkDesc} icon={<DarkModeOutlinedIcon />} checked={curMode === "dark"} />
+              <OptionCard id="theme-system" value="system" title={t.themeSystem} desc={t.themeSystemDesc} icon={<SettingsBrightnessOutlinedIcon />} checked={curMode === "system"} />
             </RadioGroup>
-          </FormControl>
-          <FormControl>
-            <FormLabel id="reviewplan-l">{t.reviewPlan}</FormLabel>
-            <Stack direction="row" useFlexGap spacing={1.5} sx={{ alignItems: "center" }}>
+          </Section>
+          <Section labelId="reviewplan-l" title={t.reviewPlan} cols={1}>
+            <Stack direction="row" useFlexGap spacing={1.5} sx={{ alignItems: "center", p: 1.75, border: 1, borderColor: "divider", borderRadius: 2 }}>
               <Switch
                 checked={hydrated ? reviewPlan : true}
                 onChange={(_, v) => setReviewPlan(v)}
                 slotProps={{ input: { "aria-labelledby": "reviewplan-l" } }}
-                sx={{ mb: -0.75 }}
               />
               <Typography sx={{ fontSize: "0.875rem", color: "text.secondary", lineHeight: 1.7, minWidth: 0 }}>{t.reviewPlanNote}</Typography>
             </Stack>
-          </FormControl>
-          <Stack spacing={1}>
-            <Typography component="h3" sx={{ fontSize: "0.875rem", fontWeight: 700 }}>{t.dataTitle}</Typography>
-            <Typography sx={{ fontSize: "0.875rem", color: "text.secondary" }}>{t.dataNote}</Typography>
-            {full && <Typography role="status" sx={{ fontSize: "0.875rem", color: "error.main" }}>{t.storageFull}</Typography>}
-            {confirm ? (
-              <Stack role="group" aria-label={t.deleteAllConfirm} spacing={1}>
-                <Typography sx={{ fontSize: "0.875rem" }}>{t.deleteAllConfirm}</Typography>
-                <Stack direction="row" spacing={1}>
-                  <Button color="error" variant="contained" autoFocus sx={{ minHeight: 44 }} onClick={() => {
-                    stopRun(); // a live run would otherwise keep writing into a store that no longer has its chat
-                    useChatStore.getState().clearAll();
-                    useHistoryStore.getState().clear(); // old /ask history is browser data too
-                    setConfirm(false);
-                  }}>{t.confirm}</Button>
-                  <Button color="inherit" sx={{ minHeight: 44 }} onClick={() => setConfirm(false)}>{t.cancel}</Button>
+          </Section>
+          <Section labelId="data-l" title={t.dataTitle} note={t.dataNote} cols={1}>
+            <Stack spacing={1} sx={{ p: 1.75, border: 1, borderColor: "divider", borderRadius: 2 }}>
+              {full && <Typography role="status" sx={{ fontSize: "0.875rem", color: "error.main" }}>{t.storageFull}</Typography>}
+              {confirm ? (
+                <Stack role="group" aria-label={t.deleteAllConfirm} spacing={1}>
+                  <Typography sx={{ fontSize: "0.875rem" }}>{t.deleteAllConfirm}</Typography>
+                  <Stack direction="row" spacing={1}>
+                    <Button color="error" variant="contained" autoFocus sx={{ minHeight: 44 }} onClick={() => {
+                      stopRun(); // a live run would otherwise keep writing into a store that no longer has its chat
+                      useChatStore.getState().clearAll();
+                      useHistoryStore.getState().clear(); // old /ask history is browser data too
+                      setConfirm(false);
+                    }}>{t.confirm}</Button>
+                    <Button color="inherit" sx={{ minHeight: 44 }} onClick={() => setConfirm(false)}>{t.cancel}</Button>
+                  </Stack>
                 </Stack>
-              </Stack>
-            ) : (
-              <Button color="error" variant="outlined" sx={{ alignSelf: "flex-start", minHeight: 44 }} onClick={() => setConfirm(true)}>{t.deleteAllChats}</Button>
-            )}
-          </Stack>
-          <Typography role="status" sx={{ fontSize: "0.875rem" }}>{t.backend}: {hs}</Typography>
+              ) : (
+                <Button color="error" variant="outlined" sx={{ alignSelf: "flex-start", minHeight: 44 }} onClick={() => setConfirm(true)}>{t.deleteAllChats}</Button>
+              )}
+              <Typography role="status" sx={{ fontSize: "0.875rem", display: "flex", alignItems: "center", gap: 1 }}>
+                <Box component="span" aria-hidden sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: health === "ok" ? "evidence.verified" : health === "down" ? "error.main" : "text.secondary" }} />
+                {t.backend}: {hs}
+              </Typography>
+            </Stack>
+          </Section>
         </Stack>
       </DialogContent>
     </Dialog>

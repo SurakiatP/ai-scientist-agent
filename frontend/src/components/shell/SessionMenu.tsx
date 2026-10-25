@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Button, IconButton, Menu, MenuItem, Stack, TextField, Typography } from "@mui/material";
-import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
+import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
 import { useChatStore, type Session } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
 import { projectName } from "./ProjectSwitcher";
@@ -17,7 +17,7 @@ export function KebabMenu({ id, label, actions }: { id: string; label: string; a
   return (
     <>
       <IconButton id={`kebab-${id}`} aria-label={label} aria-haspopup="menu" aria-expanded={!!anchor} onClick={(e) => setAnchor(e.currentTarget)} sx={{ width: 44, height: 44, flexShrink: 0 }}>
-        <MoreVertRoundedIcon fontSize="small" />
+        <MoreHorizRoundedIcon fontSize="small" sx={{ color: "text.secondary" }} />
       </IconButton>
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
         {actions.map((a) => a.header

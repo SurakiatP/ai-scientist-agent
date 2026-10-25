@@ -64,3 +64,11 @@ describe("buildReportMarkdown", () => {
     expect(md).toContain("[z]: https://ok.example");
   });
 });
+
+import { reportSections } from "./report";
+describe("reportSections", () => {
+  it("splits on headings, ignores fenced code, falls back for headingless text", () => {
+    expect(reportSections("intro\n\n## A\none\n\ntwo\n```\n# no\n```\n## B\nx", "Ans")).toEqual([{ title: "Ans", paragraphs: 1 }, { title: "A", paragraphs: 2 }, { title: "B", paragraphs: 1 }]);
+    expect(reportSections("", "Ans")).toEqual([]);
+  });
+});

@@ -8,9 +8,9 @@ import { useHydrated } from "@/lib/history";
 import { ease } from "@/lib/motion";
 import { usePrefs, useT } from "@/lib/prefs";
 import { ProjectSwitcher } from "./ProjectSwitcher";
-import { Sidebar } from "./Sidebar";
+import { Mark, Sidebar } from "./Sidebar";
 
-const W = 280;
+const W = 300;
 
 export function AppShell({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   const t = useT();
@@ -27,18 +27,21 @@ export function AppShell({ children, aside }: { children: ReactNode; aside?: Rea
         display: { xs: "none", md: "block" }, width: collapsed ? 0 : W, flexShrink: 0, overflow: "hidden", visibility: collapsed ? "hidden" : "visible",
         ...(moved && { transition: `width 260ms ${ease}, visibility 0s linear ${collapsed ? "260ms" : "0s"}` }),
       }}>
-        <Box sx={{ width: W, height: "100%", borderRight: 1, borderColor: "divider" }}><Sidebar /></Box>
+        <Box sx={{ width: W, height: "100%", borderRight: 1, borderColor: "divider" }}><Sidebar onCollapse={() => { setMoved(true); set(true); }} /></Box>
       </Box>
       <Drawer open={drawer} onClose={() => setDrawer(false)} sx={{ display: { md: "none" } }} slotProps={{ paper: { sx: { width: W, maxWidth: "85vw" } } }}>
         <Sidebar onPick={() => setDrawer(false)} />
       </Drawer>
       <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-        <Stack component="header" direction="row" sx={{ alignItems: "center", gap: 0.5, px: 1, minHeight: 56, borderBottom: 1, borderColor: "divider" }}>
-          <IconButton aria-label={t.menu} onClick={() => setDrawer(true)} sx={{ display: { md: "none" } }}><MenuRoundedIcon /></IconButton>
-          <IconButton aria-label={collapsed ? t.expandSidebar : t.collapseSidebar} aria-expanded={!collapsed} onClick={() => { setMoved(true); set(!collapsed); }} sx={{ display: { xs: "none", md: "inline-flex" } }}>
-            <ViewSidebarOutlinedIcon />
-          </IconButton>
-          <ProjectSwitcher />
+        <Stack component="header" direction="row" sx={{ alignItems: "center", gap: 1, px: { xs: 1.5, md: 3 }, pt: { md: 2.5 }, minHeight: 56, borderBottom: { xs: 1, md: 0 }, borderColor: "divider" }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center", display: { md: "none" } }}><Mark /><Box component="span" sx={{ fontWeight: 600, fontSize: "1.0625rem", whiteSpace: "nowrap" }}>{t.brand}</Box></Stack>
+          {collapsed && (
+            <IconButton aria-label={t.expandSidebar} aria-expanded={false} onClick={() => { setMoved(true); set(false); }} sx={{ display: { xs: "none", md: "inline-flex" }, color: "text.secondary" }}>
+              <ViewSidebarOutlinedIcon />
+            </IconButton>
+          )}
+          <Box sx={{ flex: { xs: 1, md: "none" }, minWidth: 0, display: "flex", justifyContent: { xs: "flex-end", md: "flex-start" } }}><ProjectSwitcher /></Box>
+          <IconButton aria-label={t.menu} onClick={() => setDrawer(true)} sx={{ display: { md: "none" }, border: 1, borderColor: "divider", borderRadius: 1.5 }}><MenuRoundedIcon /></IconButton>
         </Stack>
         <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{children}</Box>
       </Box>

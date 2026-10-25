@@ -1,8 +1,9 @@
 "use client";
 import { useRef, useState } from "react";
-import { Box, Button, IconButton, Stack, TextField, Typography } from "@mui/material";
+import { Box, Button, Chip, IconButton, Stack, TextField, Typography } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import { useT } from "@/lib/prefs";
 import { enterRise } from "@/lib/motion";
@@ -14,20 +15,26 @@ const THAI = /[\u0E00-\u0E7F]/;
 
 type Row = { id: number; term: string; instructions: string; added?: boolean };
 
-function Badge({ n }: { n: number }) {
+export type RowState = "done" | "active" | "wait";
+
+function Badge({ n, state }: { n: number; state?: RowState }) {
+  const on = state === "done" || state === "active";
   return (
     <Box component="span" sx={{
-      flexShrink: 0, width: 24, height: 24, mt: "2px", borderRadius: "50%", border: 1, borderColor: "divider",
-      display: "grid", placeItems: "center", fontSize: "0.6875rem", color: "text.secondary", fontVariantNumeric: "tabular-nums",
-    }}>{n + 1}</Box>
+      flexShrink: 0, width: 28, height: 28, mt: "2px", borderRadius: "50%", border: 2, borderColor: on ? "primary.main" : "divider",
+      bgcolor: state === "done" ? "primary.main" : "transparent", color: state === "done" ? "primary.contrastText" : state === "active" ? "primary.main" : "text.secondary",
+      display: "grid", placeItems: "center", fontSize: "0.75rem", fontWeight: 700, fontVariantNumeric: "tabular-nums",
+    }}>{state === "done" ? <CheckRoundedIcon sx={{ fontSize: 16 }} /> : n + 1}</Box>
   );
 }
 
-export function PlanCard({ searches, editable, heading, onApprove, onCancel }: {
+export function PlanCard({ searches, editable, heading, rowState, onApprove, onCancel }: {
   searches: PlanSearch[];
   editable: boolean;
   /** Card title; defaults to the editable-plan wording. Read-only use (the approved plan) passes its own. */
   heading?: string;
+  /** Read-only use while a run is going: real per-search status (derived from progress), shown as a chip per row. */
+  rowState?: (term: string) => RowState;
   onApprove: (plan: PlanSearch[]) => void;
   onCancel: () => void;
 }) {
@@ -104,17 +111,34 @@ export function PlanCard({ searches, editable, heading, onApprove, onCancel }: {
             </Stack>
           </Stack>
         ) : (
-          <Box component="ol" sx={{ m: 0, p: 0, listStyle: "none", display: "grid" }}>
-            {searches.map((s, i) => (
-              <Stack component="li" key={`${s.term}#${i}`} direction="row" useFlexGap sx={{ alignItems: "flex-start", gap: 1.5, py: 1.25, borderTop: i === 0 ? 0 : 1, borderColor: "divider" }}>
-                <Badge n={i} />
-                <Box sx={{ minWidth: 0, flex: 1 }}>
-                  <Typography sx={{ fontSize: "0.9375rem", fontWeight: 600, lineHeight: 1.5, overflowWrap: "anywhere" }}>{s.term}</Typography>
-                  {s.instructions.trim() !== "" && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", mt: 0.25, lineHeight: 1.6, overflowWrap: "anywhere" }}>{s.instructions}</Typography>}
-                </Box>
+          <>
+            <Box component="ol" sx={{ m: 0, p: 0, listStyle: "none", display: "grid" }}>
+              {searches.map((s, i) => {
+                const st = rowState?.(s.term);
+                return (
+                  <Stack component="li" key={`${s.term}#${i}`} data-state={st} direction="row" useFlexGap sx={{ alignItems: "flex-start", gap: 1.5, py: 1.25 }}>
+                    <Badge n={i} state={st} />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography sx={{ fontSize: "0.9375rem", fontWeight: 600, lineHeight: 1.5, overflowWrap: "anywhere" }}>{s.term}</Typography>
+                      {s.instructions.trim() !== "" && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", mt: 0.25, lineHeight: 1.6, overflowWrap: "anywhere" }}>{s.instructions}</Typography>}
+                    </Box>
+                    {st && (
+                      <Chip size="small" variant="outlined" label={st === "done" ? t.rowDone : st === "active" ? t.rowSearching : t.stepPending}
+                        icon={st === "done" ? <CheckRoundedIcon /> : undefined}
+                        sx={{ flexShrink: 0, borderRadius: 999, color: st === "wait" ? "text.secondary" : "primary.main", borderColor: st === "wait" ? "divider" : "primary.main", "& .MuiChip-icon": { color: "inherit", fontSize: 16 } }} />
+                    )}
+                  </Stack>
+                );
+              })}
+            </Box>
+            {editable && (
+              // Awaiting review: the decision is always on screen, not hidden behind "edit".
+              <Stack direction="row" useFlexGap spacing={1} sx={{ justifyContent: "flex-end" }}>
+                <Button variant="outlined" onClick={() => onApprove(searches)}>{t.planStart}</Button>
+                <Button color="inherit" onClick={() => onCancel()}>{t.cancel}</Button>
               </Stack>
-            ))}
-          </Box>
+            )}
+          </>
         )}
       </Stack>
     </Box>

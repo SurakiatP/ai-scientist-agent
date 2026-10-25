@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
 import { Box, Button, Chip, CircularProgress, Stack, Tab, Tabs, Typography } from "@mui/material";
+import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import InsertDriveFileOutlinedIcon from "@mui/icons-material/InsertDriveFileOutlined";
@@ -207,6 +208,46 @@ function Tables({ a, t }: { a: TurnAnalysis; t: Strings }) {
   );
 }
 
+// Overview: first result table (5 rows) beside the first chart, both real backend output.
+function Preview({ a, t }: { a: TurnAnalysis; t: Strings }) {
+  const table = a.tables?.[0];
+  const fig = (a.artifacts ?? []).find((x) => x.kind === "figure" && artifactHref(x.url));
+  if (!table && !fig) return null;
+  const rows = table?.rows.slice(0, 5) ?? [];
+  const head = { fontSize: "0.8125rem", fontWeight: 700, mb: 0.75, overflowWrap: "anywhere" } as const;
+  return (
+    <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))" }}>
+      {table && (
+        <Box sx={{ minWidth: 0 }}>
+          <Typography component="h4" sx={head}>{table.name || t.analysisTable}</Typography>
+          <Box sx={{ maxWidth: "100%", overflowX: "auto", border: 1, borderColor: "divider", borderRadius: 1.5, scrollbarWidth: "thin" }}>
+            <Box component="table" sx={{ borderCollapse: "collapse", width: "100%", fontSize: "0.75rem" }}>
+              <Box component="thead"><Box component="tr">
+                {table.columns.map((c, ci) => <Box component="th" key={`${c}#${ci}`} scope="col" sx={{ bgcolor: "surface.shell", borderBottom: 1, borderColor: "divider", px: 1, py: 0.75, textAlign: "left", fontWeight: 700, whiteSpace: "nowrap" }}>{c}</Box>)}
+              </Box></Box>
+              <Box component="tbody">
+                {rows.map((row, ri) => (
+                  <Box component="tr" key={ri}>
+                    {table.columns.map((_, ci) => <Box component="td" key={ci} sx={{ borderTop: 1, borderColor: "divider", px: 1, py: 0.6, maxWidth: 200, overflowWrap: "anywhere", fontVariantNumeric: "tabular-nums" }}>{cellText(row?.[ci])}</Box>)}
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          </Box>
+          <Typography sx={{ mt: 0.75, fontSize: "0.75rem", color: "text.secondary" }}>{t.analysisPreviewShown.replace("{n}", String(rows.length))}</Typography>
+        </Box>
+      )}
+      {fig && (
+        <Box component="figure" sx={{ m: 0, minWidth: 0 }}>
+          <Typography component="h4" sx={head}>{fig.name}</Typography>
+          <Box component="img" src={artifactHref(fig.url)} alt={`${t.analysisChartAlt}: ${fig.name}`} loading="lazy" decoding="async"
+            sx={{ display: "block", width: "100%", height: "auto", border: 1, borderColor: "divider", borderRadius: 1.5, bgcolor: "background.paper" }} />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 function Charts({ a, t }: { a: TurnAnalysis; t: Strings }) {
   const figures = (a.artifacts ?? []).filter((x) => x.kind === "figure" && artifactHref(x.url));
   if (!figures.length) return <Empty>{t.analysisNoCharts}</Empty>;
@@ -279,15 +320,16 @@ export function AnalysisArtifact({ turn }: { turn: Turn }) {
     overview: t.analysisTabOverview, tables: t.analysisTabTables, charts: t.analysisTabCharts,
     findings: t.analysisTabFindings, code: t.analysisTabCode,
   };
+  const firstCsv = (a.artifacts ?? []).find((x) => x.kind === "csv" && artifactHref(x.url));
   const panelId = `analysis-${uid}-${tab}-panel`;
   return (
-    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.raised", overflow: "hidden" }}>
+    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 3, bgcolor: "surface.raised", overflow: "hidden", boxShadow: "0 0 0 1px color-mix(in srgb, var(--mui-palette-primary-main) 18%, transparent), 0 8px 28px color-mix(in srgb, var(--mui-palette-primary-main) 8%, transparent)" }}>
       <Box component="header" sx={{ p: { xs: 1.5, sm: 2 }, borderBottom: 1, borderColor: "divider", bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 5%, transparent)" }}>
-        <Stack direction="row" sx={{ alignItems: "flex-start", gap: 1.25 }}>
+        <Stack direction="row" useFlexGap sx={{ alignItems: "flex-start", gap: 1.25, flexWrap: "wrap" }}>
           <Box sx={{ width: 40, height: 40, flexShrink: 0, borderRadius: 1.5, border: 1, borderColor: "divider", bgcolor: "background.paper", display: "grid", placeItems: "center", color: "primary.main" }}>
             <InsertDriveFileOutlinedIcon fontSize="small" />
           </Box>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Box sx={{ flex: "1 1 200px", minWidth: 0 }}>
             <Typography sx={{ fontSize: "0.6875rem", fontWeight: 700, color: "text.secondary", letterSpacing: "0.03em" }}>{t.analysisResultTitle}</Typography>
             <Typography component="h3" sx={{ fontSize: "0.9375rem", fontWeight: 700, lineHeight: 1.5, overflowWrap: "anywhere" }}>{name}</Typography>
             <Stack direction="row" useFlexGap sx={{ mt: 0.5, alignItems: "center", flexWrap: "wrap", gap: 1 }}>
@@ -297,6 +339,12 @@ export function AnalysisArtifact({ turn }: { turn: Turn }) {
               )}
             </Stack>
           </Box>
+          {firstCsv && (
+            <Button component="a" href={artifactHref(firstCsv.url)} download={firstCsv.name} variant="outlined" color="primary" startIcon={<FileDownloadOutlinedIcon />}
+              aria-label={`${t.analysisDownloadResult}: ${firstCsv.name}`} sx={{ minHeight: 44, flexShrink: 0, alignSelf: "center" }}>
+              {t.analysisDownloadResult}
+            </Button>
+          )}
         </Stack>
       </Box>
 
@@ -307,9 +355,12 @@ export function AnalysisArtifact({ turn }: { turn: Turn }) {
 
       <Box role="tabpanel" id={panelId} aria-labelledby={`analysis-${uid}-${tab}-tab`} sx={{ p: { xs: 1.5, sm: 2 } }}>
         {tab === "overview" && (
-          <Stack spacing={2}>
-            <Steps a={a} turn={turn} t={t} />
-            <Quality a={a} t={t} />
+          <Stack spacing={2.5}>
+            <Preview a={a} t={t} />
+            <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", alignItems: "start" }}>
+              <Steps a={a} turn={turn} t={t} />
+              <Quality a={a} t={t} />
+            </Box>
             <CsvLinks artifacts={a.artifacts ?? []} t={t} />
           </Stack>
         )}

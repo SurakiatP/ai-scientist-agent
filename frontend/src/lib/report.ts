@@ -41,3 +41,17 @@ export function downloadText(name: string, text: string) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
+
+// Section outline of an answer: markdown headings (outside code fences) and their paragraph counts.
+export function reportSections(content: string, fallbackTitle: string): { title: string; paragraphs: number }[] {
+  const out: { title: string; paragraphs: number }[] = [];
+  let cur: { title: string; paragraphs: number } | null = null, fence = false, inPara = false;
+  for (const line of content.split("\n")) {
+    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; }
+    const h = !fence && /^#{1,3}\s+(.+?)\s*#*$/.exec(line);
+    if (h) { cur = { title: h[1], paragraphs: 0 }; out.push(cur); inPara = false; continue; }
+    if (!line.trim()) { inPara = false; continue; }
+    if (!inPara) { if (!cur) { cur = { title: fallbackTitle, paragraphs: 0 }; out.push(cur); } cur.paragraphs++; inPara = true; }
+  }
+  return out;
+}

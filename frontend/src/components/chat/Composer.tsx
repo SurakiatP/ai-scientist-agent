@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Box, CircularProgress, IconButton, InputBase, ToggleButton, ToggleButtonGroup, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, IconButton, InputBase, Menu, MenuItem, Typography } from "@mui/material";
 import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
-import SendRoundedIcon from "@mui/icons-material/SendRounded";
+import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
 import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import { create } from "zustand";
 import { useStorageFull } from "@/lib/history";
@@ -35,6 +37,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const run = useRunState();
   const full = useStorageFull();
   const [composing, setComposing] = useState(false);
+  const [modeAnchor, setModeAnchor] = useState<HTMLElement | null>(null);
   const [file, setFile] = useState<Attached | null>(null);
   const picker = useRef<HTMLInputElement>(null);
   const upload = useRef<AbortController | null>(null);
@@ -99,55 +102,63 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
     <Box sx={{ width: "100%" }}>
       <input ref={picker} type="file" accept={ACCEPT} hidden onChange={pick} />
       <Box sx={{
-        display: "flex", flexDirection: "column", gap: 0.5, px: 1.5, pt: large ? 1.5 : 1, pb: 1, bgcolor: "background.paper",
-        border: 1, borderColor: "divider", borderRadius: 4,
+        display: "flex", alignItems: "stretch", bgcolor: "background.paper", border: 1, borderRadius: { xs: 3, sm: 4 },
+        borderColor: large ? "color-mix(in srgb, var(--mui-palette-primary-main) 45%, var(--mui-palette-divider))" : "divider",
         transition: `border-color 180ms ${ease}, box-shadow 180ms ${ease}`,
-        "&:focus-within": { borderColor: "primary.main", boxShadow: "0 0 0 1px var(--mui-palette-primary-main)" },
+        "&:focus-within": { borderColor: "primary.main", boxShadow: "0 0 0 1px var(--mui-palette-primary-main), 0 0 28px color-mix(in srgb, var(--mui-palette-primary-main) 28%, transparent)" },
       }}>
-        {file && (
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, minHeight: 44, px: 1, border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.shell" }}>
-            <DescriptionOutlinedIcon fontSize="small" sx={{ color: file.status === "error" ? "error.main" : "primary.main", flexShrink: 0 }} />
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={file.name}>{file.name}</Typography>
-              <Typography component="span" aria-live="polite" sx={{ display: "block", fontSize: "0.6875rem", lineHeight: 1.5, color: file.status === "error" ? "error.main" : "text.secondary" }}>
-                {file.status === "uploading" ? t.uploadingFile : file.status === "error" ? t.uploadFailed : formatSize(file.size)}
-              </Typography>
+        <Box sx={{ display: "flex", alignItems: large ? "center" : "flex-end", borderRight: 1, borderColor: "divider", px: 0.75, py: 0.75, my: 0.5 }}>
+          <IconButton aria-label={t.attach} onClick={() => picker.current?.click()} disabled={busy} sx={{ minWidth: 44, minHeight: 44, color: "text.secondary" }}>
+            <AttachFileRoundedIcon sx={{ transform: "rotate(45deg)" }} />
+          </IconButton>
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 0.5, py: 0.75, pl: 1.5, pr: 1 }}>
+          {file && (
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, minHeight: 44, px: 1, border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.shell" }}>
+              <DescriptionOutlinedIcon fontSize="small" sx={{ color: file.status === "error" ? "error.main" : "primary.main", flexShrink: 0 }} />
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={file.name}>{file.name}</Typography>
+                <Typography component="span" aria-live="polite" sx={{ display: "block", fontSize: "0.6875rem", lineHeight: 1.5, color: file.status === "error" ? "error.main" : "text.secondary" }}>
+                  {file.status === "uploading" ? t.uploadingFile : file.status === "error" ? t.uploadFailed : formatSize(file.size)}
+                </Typography>
+              </Box>
+              {file.status === "uploading" && <CircularProgress size={16} sx={{ flexShrink: 0 }} aria-hidden />}
+              <IconButton aria-label={`${t.removeFile}: ${file.name}`} onClick={removeFile} size="small" sx={{ minWidth: 44, minHeight: 44, flexShrink: 0 }}>
+                <CloseRoundedIcon fontSize="small" />
+              </IconButton>
             </Box>
-            {file.status === "uploading" && <CircularProgress size={16} sx={{ flexShrink: 0 }} aria-hidden />}
-            <IconButton aria-label={`${t.removeFile}: ${file.name}`} onClick={removeFile} size="small" sx={{ minWidth: 44, minHeight: 44, flexShrink: 0 }}>
-              <CloseRoundedIcon fontSize="small" />
+          )}
+          <Box sx={{ display: "flex", flexWrap: { xs: "wrap", sm: "nowrap" }, alignItems: "flex-end", columnGap: 1, rowGap: 0.5 }}>
+            <InputBase
+              id="composer" multiline fullWidth minRows={large ? 2 : 1} maxRows={10} value={text}
+              placeholder={file ? t.analysisPlaceholder : t.askPlaceholder} onChange={(e) => { setText(e.target.value); setErr(""); }} onKeyDown={onKeyDown}
+              onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
+              slotProps={{ input: { "aria-label": t.composerLabel, "aria-describedby": "composer-note" } }}
+              sx={{ flex: { xs: "1 1 100%", sm: "1 1 0" }, minWidth: 0, px: 0.5, py: 1, fontSize: "1rem", lineHeight: 1.6, alignItems: "flex-start" }}
+            />
+            {counter && (
+              <Typography sx={{ fontSize: "0.75rem", fontVariantNumeric: "tabular-nums", color: over ? "error.main" : "text.secondary", alignSelf: "center" }}>
+                {text.length}/{MAX_QUESTION}
+              </Typography>
+            )}
+            <Box sx={{ flex: { xs: 1, sm: "none" } }} />
+            <Button color="inherit" variant="outlined" disabled={!!file} aria-haspopup="menu" aria-expanded={!!modeAnchor}
+              aria-label={`${t.modeLabel}: ${mode === "deep" ? t.modeDeep : t.modeQuick}`} onClick={(e) => setModeAnchor(e.currentTarget)}
+              startIcon={<LayersOutlinedIcon sx={{ color: "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
+              sx={{ borderRadius: 99, borderColor: "divider", fontWeight: 400, px: 1.75, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap" }}>
+              {mode === "deep" ? t.modeDeep : t.modeQuick}
+            </Button>
+            <Menu anchorEl={modeAnchor} open={!!modeAnchor} onClose={() => setModeAnchor(null)} slotProps={{ list: { "aria-label": t.chooseMode } }}>
+              {(["deep", "quick"] as const).map((m) => (
+                <MenuItem key={m} selected={m === mode} aria-current={m === mode ? "true" : undefined} sx={{ minHeight: 44 }}
+                  onClick={() => { setMode(m); setModeAnchor(null); }}>{m === "deep" ? t.modeDeep : t.modeQuick}</MenuItem>
+              ))}
+            </Menu>
+            <IconButton aria-label={mine ? t.stop : t.ask} onClick={(e) => { if (!mine) send(); else if (e.detail < 2) stopRun(); }} /* a double-click on Send must not land on Stop */ disabled={!mine && !canSend}
+              sx={{ width: 48, height: 48, alignSelf: "center", flexShrink: 0, bgcolor: "primary.main", color: "primary.contrastText", transition: `background-color 160ms ${ease}`, "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 35%, transparent)", color: "primary.contrastText" } }}>
+              <Box key={mine ? "stop" : "send"} component="span" sx={{ display: "inline-flex", ...(sw.anim ? enterPop : {}) }}>{mine ? <StopRoundedIcon /> : <SendOutlinedIcon />}</Box>
             </IconButton>
           </Box>
-        )}
-        <InputBase
-          id="composer" multiline fullWidth minRows={large ? 3 : 1} maxRows={10} value={text}
-          placeholder={file ? t.analysisPlaceholder : t.placeholder} onChange={(e) => { setText(e.target.value); setErr(""); }} onKeyDown={onKeyDown}
-          onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
-          slotProps={{ input: { "aria-label": t.composerLabel, "aria-describedby": "composer-note" } }}
-          sx={{ px: 0.5, py: 0.5, fontSize: "1rem", lineHeight: 1.6, alignItems: "flex-start" }}
-        />
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexWrap: "wrap" }}>
-          <IconButton aria-label={t.attach} onClick={() => picker.current?.click()} disabled={busy} sx={{ minWidth: 44, minHeight: 44 }}>
-            <AttachFileRoundedIcon />
-          </IconButton>
-          <ToggleButtonGroup
-            exclusive size="small" value={mode} aria-label={t.modeLabel} disabled={!!file}
-            onChange={(_, v: AskMode | null) => { if (v) setMode(v); }}
-            sx={{ "& .MuiToggleButton-root": { minHeight: 44, px: 1.5, textTransform: "none", typography: "body2" } }}
-          >
-            <ToggleButton value="deep">{t.modeDeep}</ToggleButton>
-            <ToggleButton value="quick">{t.modeQuick}</ToggleButton>
-          </ToggleButtonGroup>
-          <Box sx={{ flex: 1 }} />
-          {counter && (
-            <Typography sx={{ fontSize: "0.75rem", fontVariantNumeric: "tabular-nums", color: over ? "error.main" : "text.secondary" }}>
-              {text.length}/{MAX_QUESTION}
-            </Typography>
-          )}
-          <IconButton aria-label={mine ? t.stop : t.ask} onClick={(e) => { if (!mine) send(); else if (e.detail < 2) stopRun(); }} /* a double-click on Send must not land on Stop */ disabled={!mine && !canSend}
-            sx={{ bgcolor: "primary.main", color: "primary.contrastText", transition: `background-color 160ms ${ease}`, "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "action.disabledBackground" } }}>
-            <Box key={mine ? "stop" : "send"} component="span" sx={{ display: "inline-flex", ...(sw.anim ? enterPop : {}) }}>{mine ? <StopRoundedIcon /> : <SendRoundedIcon />}</Box>
-          </IconButton>
         </Box>
       </Box>
       <Typography id="composer-note" role="status" sx={{ mt: 0.75, px: 1, fontSize: "0.75rem", color: over || (full && !note) ? "error.main" : "text.secondary", minHeight: "1.2em" }}>

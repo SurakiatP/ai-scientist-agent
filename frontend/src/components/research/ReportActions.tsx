@@ -5,7 +5,13 @@ import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import { useChatStore, type Turn } from "@/lib/chat";
 import { usePrefs, useT } from "@/lib/prefs";
+import type { Lang } from "@/lib/strings";
 import { buildReportMarkdown, downloadText } from "@/lib/report";
+
+export function downloadReport(sessionId: string, turn: Turn, lang: Lang) {
+  const session = useChatStore.getState().sessions.find((x) => x.id === sessionId);
+  if (session) downloadText(`ai-scientist-${turn.id.replace(/[^\w-]/g, "")}.md`, buildReportMarkdown(session, turn, lang));
+}
 
 export function ReportActions({ sessionId, turn }: { sessionId: string; turn: Turn }) {
   const t = useT();
@@ -20,10 +26,7 @@ export function ReportActions({ sessionId, turn }: { sessionId: string; turn: Tu
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setCopied(null), 2000);
   };
-  const download = () => {
-    const session = useChatStore.getState().sessions.find((x) => x.id === sessionId);
-    if (session) downloadText(`ai-scientist-${turn.id.replace(/[^\w-]/g, "")}.md`, buildReportMarkdown(session, turn, lang));
-  };
+  const download = () => downloadReport(sessionId, turn, lang);
   return (
     <Stack spacing={1} sx={{ mt: 2 }}>
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>

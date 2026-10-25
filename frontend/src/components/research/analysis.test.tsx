@@ -66,7 +66,7 @@ describe("AnalysisArtifact", () => {
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("12.5%")).toBeInTheDocument();
     expect(screen.getByText(t.analysisTruncated)).toBeInTheDocument();
-    expect(screen.getByText("region")).toBeInTheDocument();
+    expect(screen.getAllByText("region").length).toBeGreaterThan(0);
     const link = screen.getByRole("link", { name: `${t.download} by_region.csv` });
     expect(link).toHaveAttribute("href", `${API_BASE}/v1/artifacts/csv1`);
     expect(link).toHaveAttribute("download", "by_region.csv");

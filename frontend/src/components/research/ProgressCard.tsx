@@ -1,12 +1,14 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Box, Chip, Stack, Typography } from "@mui/material";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import type { Turn } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
 import type { Progress } from "@/lib/progress";
 import { ease, enterRise, prefersReduced, stageCheckSx, stageDotSx, stageFillSx, stageRingSx, stageSettleSx } from "@/lib/motion";
-import { PlanCard } from "./PlanCard";
+import { PlanCard, type RowState } from "./PlanCard";
 import type { Strings } from "@/lib/strings";
 
 // Backend has no separate "check" phase: stage 4 is only reached when the run is done.
@@ -89,23 +91,33 @@ function Elapsed({ since }: { since: number }) {
   return <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{t.elapsed} {mmss(now - since)}</Typography>;
 }
 
+const tint = (pct: number) => `color-mix(in srgb, var(--mui-palette-evidence-unverified) ${pct}%, transparent)`;
+
 export function ProgressCard({ turn }: { turn: Turn }) {
   const t = useT();
   const p = turn.progress, running = turn.status === "running";
   const [rows0] = useState(p.searches.length); // rows present on mount never animate
+  const step = Math.min(4, stageIndex(p) + 1);
+  const cur = p.searches.find((s) => !p.answered.includes(s.term))?.term; // what is being worked on right now
+  const rowState = (term: string): RowState =>
+    p.answered.includes(term) || p.phase === "done" ? "done" : running && p.phase !== "waiting" && (term in p.sources || term === cur) ? "active" : "wait";
   return (
     <Box sx={{ border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.raised", p: { xs: 1.5, sm: 2 } }}>
       <Stack spacing={2}>
         <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1, flexWrap: "wrap" }}>
           {/* the only live region: announces phase changes, not every paper or tick */}
-          <Typography role="status" aria-live="polite" sx={{ fontWeight: 600, fontSize: "0.9375rem" }}>{running ? statusText(p, t) : t.progress}</Typography>
+          <Typography role="status" aria-live="polite" sx={{ display: "flex", alignItems: "center", gap: 1, fontWeight: 600, fontSize: "1rem", color: running ? "primary.main" : "text.primary" }}>
+            {running && <SearchRoundedIcon aria-hidden sx={{ fontSize: 22 }} />}
+            {running ? (p.phase === "waiting" ? statusText(p, t) : `${statusText(p, t)} (${t.stepOfN.replace("{n}", String(step))})`) : t.progress}
+          </Typography>
           {running && <Elapsed since={turn.createdAt} />}
         </Stack>
-        <Stages p={p} running={running} />
+        {/* >= lg the right-hand ProgressPanel already carries the stage list */}
+        <Box sx={{ display: { xs: "block", lg: "none" } }}><Stages p={p} running={running} /></Box>
         {turn.plan ? (
           // The run goes by the plan the user reviewed: show it read-only, in place of a model-proposed listing.
           <Box>
-            <PlanCard searches={turn.plan} editable={false} heading={t.planUsedTitle} onApprove={() => {}} onCancel={() => {}} />
+            <PlanCard searches={turn.plan} editable={false} heading={t.planUsedTitle} rowState={rowState} onApprove={() => {}} onCancel={() => {}} />
             {p.reasoning && <Typography sx={{ mt: 1.5, fontSize: "0.875rem", lineHeight: 1.7, color: "text.secondary", overflowWrap: "anywhere" }}>{p.reasoning}</Typography>}
           </Box>
         ) : (
@@ -128,6 +140,17 @@ export function ProgressCard({ turn }: { turn: Turn }) {
               )}
             </Box>
           )
+        )}
+        {running && cur && p.phase !== "waiting" && (
+          <Typography sx={{ fontSize: "0.875rem", color: "text.secondary", overflowWrap: "anywhere", border: 1, borderColor: "divider", borderRadius: 1.5, px: 1.5, py: 1 }}>
+            {t.searching}: <Box component="span" sx={{ color: "text.primary" }}>{cur}</Box>
+          </Typography>
+        )}
+        {running && (
+          <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start", px: 1.5, py: 1, borderRadius: 1.5, border: 1, borderColor: tint(45), bgcolor: tint(12), color: "evidence.unverified" }}>
+            <InfoOutlinedIcon aria-hidden sx={{ fontSize: 20, mt: "1px" }} />
+            <Typography sx={{ fontSize: "0.875rem", lineHeight: 1.6, color: "inherit" }}>{t.runIdNote}</Typography>
+          </Stack>
         )}
       </Stack>
     </Box>
