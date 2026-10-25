@@ -1,12 +1,11 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, Chip, Stack, Typography } from "@mui/material";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
-import { gsap } from "gsap";
 import type { Turn } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
 import type { Progress } from "@/lib/progress";
-import { ease, enterRise, prefersReduced } from "@/lib/motion";
+import { ease, enterRise, prefersReduced, stageCheckSx, stageDotSx, stageFillSx, stageRingSx, stageSettleSx } from "@/lib/motion";
 import type { Strings } from "@/lib/strings";
 
 // Backend has no separate "check" phase: stage 4 is only reached when the run is done.
@@ -17,35 +16,64 @@ export const statusText = (p: Progress, t: Strings) =>
 
 const mmss = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 
-// One pulse on the active node, on a single GSAP clock; never built under reduced motion.
+// Progress track: a 22px node per stage on a hairline rail whose completed segments fill with the
+// primary colour from their left origin. A completing node settles on a small damped bounce while
+// its check draws on stroke-dashoffset, the active node pings a soft expanding ring, and a dot
+// drifts along the unfilled part of the next segment. All motion is CSS inside the no-preference
+// wrapper from motion.ts (transform/opacity only; one shared 1.6s loop period). Everything already
+// complete at mount renders as the finished static state and never animates (rows0 rule).
 function Stages({ p, running }: { p: Progress; running: boolean }) {
   const t = useT();
-  const root = useRef<HTMLOListElement>(null);
   const steps = [t.stepPlan, t.stepSearch, t.stepWrite, t.stepCheck];
   const idx = stageIndex(p), done = p.phase === "done";
-  useEffect(() => {
-    const el = root.current;
-    if (!el || !running || done) return;
-    if (prefersReduced()) return;
-    const ctx = gsap.context(() => {
-      gsap.fromTo("[data-state='active'] .node", { scale: 1 }, { scale: 1.4, duration: 0.7, repeat: -1, yoyo: true, ease: "sine.inOut", transformOrigin: "50% 50%" });
-    }, el);
-    return () => ctx.revert();
-  }, [running, done, idx]);
+  const [still] = useState(prefersReduced); // reduced motion: render, but never mark anything for animation
+  const [seen, setSeen] = useState({ idx, done }); // phase state of the last committed render (render-safe baseline)
+  const [win, setWin] = useState({ from: idx, to: idx, fromDone: done, doneNow: done });
+  if (seen.idx !== idx || seen.done !== done) {
+    // This commit completes stages [from, to): capture the window and advance the baseline in the
+    // same render pass (state-from-render), so the marker set is stable across re-renders without refs.
+    setWin({ from: seen.idx, to: idx, fromDone: seen.done, doneNow: done });
+    setSeen({ idx, done });
+  }
+  // A node completes "freshly" only for stages inside the transition window; at mount from === to,
+  // so rows already complete at first paint carry no animation markers (rows0 rule).
+  const fresh = (i: number) => running && !still && !win.fromDone && i >= win.from && (win.doneNow || i < win.to);
+  const filled = (j: number) => done || j + 1 <= idx;
   return (
-    <Box component="ol" ref={root} sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 0.5 }}>
+    <Box component="ol" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", columnGap: 0.75 }}>
       {steps.map((label, i) => {
         const state = done || i < idx ? "done" : i === idx ? "active" : "todo";
+        const freshNode = fresh(i);
         return (
           <Box component="li" key={label} data-stage={i} data-state={state} aria-current={state === "active" ? "step" : undefined}
-            sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0.75 }}>
-            <Box className="node" sx={{
-              width: 10, height: 10, borderRadius: "2px",
+            sx={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", minWidth: 0 }}>
+            {i < 3 && (
+              <Box aria-hidden data-seg={i} data-fill={filled(i) ? "1" : "0"}
+                sx={{ position: "absolute", top: 10, left: "calc(50% + 14px)", right: "calc(-50% + 8px)", height: 2, borderRadius: "999px", bgcolor: "divider", overflowX: "clip", pointerEvents: "none" }}>
+                {filled(i) && (
+                  <Box data-anim={fresh(i) ? "1" : undefined}
+                    sx={{ position: "absolute", inset: 0, borderRadius: "999px", bgcolor: "primary.main", transformOrigin: "0% 50%", ...(fresh(i) ? stageFillSx : {}) }} />
+                )}
+                {running && state === "active" && (
+                  <Box sx={{ position: "absolute", top: "50%", left: 0, width: "100%", height: "6px", marginTop: "-3px", ...stageDotSx, "&::before": { content: '""', position: "absolute", left: 0, top: 0, width: "6px", height: "6px", borderRadius: "50%", bgcolor: "primary.main" } }} />
+                )}
+              </Box>
+            )}
+            <Box data-anim={freshNode ? "1" : undefined} sx={{
+              position: "relative", width: "22px", height: "22px", borderRadius: "50%", transformOrigin: "50% 50%",
               bgcolor: state === "todo" ? "surface.raised" : "primary.main",
-              border: 1, borderColor: state === "todo" ? "divider" : "primary.main",
+              border: "2px solid", borderColor: state === "todo" ? "divider" : "primary.main",
               transition: `background-color 240ms ${ease}, border-color 240ms ${ease}`,
-            }} />
-            <Typography sx={{ fontSize: "0.6875rem", lineHeight: 1.3, textAlign: "center", color: state === "todo" ? "text.secondary" : "text.primary", fontWeight: state === "active" ? 700 : 400 }}>{label}</Typography>
+              ...(freshNode ? stageSettleSx : {}),
+            }}>
+              {running && state === "active" && <Box aria-hidden sx={{ position: "absolute", inset: -3, borderRadius: "50%", border: "1.5px solid", borderColor: "primary.main", ...stageRingSx }} />}
+              {state === "done" && (
+                <Box component="svg" aria-hidden viewBox="0 0 22 22" width={22} height={22} sx={{ position: "absolute", inset: 0, display: "block" }}>
+                  <Box component="path" d="M6.4 11.4 L9.9 14.9 L15.6 8.2" pathLength={1} fill="none" stroke="var(--mui-palette-primary-contrastText)" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={1} sx={freshNode ? stageCheckSx : {}} />
+                </Box>
+              )}
+            </Box>
+            <Typography sx={{ mt: 0.75, fontSize: "0.75rem", lineHeight: 1.25, textAlign: "center", overflowWrap: "anywhere", color: state === "todo" ? "text.secondary" : state === "active" ? "primary.main" : "text.primary", fontWeight: state === "active" ? 700 : state === "done" ? 600 : 400 }}>{label}</Typography>
           </Box>
         );
       })}
