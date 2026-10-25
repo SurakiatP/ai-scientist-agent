@@ -92,4 +92,49 @@ describe("My files", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: t.filePreview }));
     expect(await screen.findByText(t.previewUnavailable)).toBeTruthy();
   });
+
+  const stubMedia = (match: (q: string) => boolean) => vi.stubGlobal("matchMedia", (q: string) => ({ matches: match(q), media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
+  it("empty state names the next action and the supported formats", () => {
+    render(<FilesPage />);
+    expect(screen.getByRole("heading", { level: 2, name: t.filesEmptyTitle })).toBeTruthy();
+    expect(screen.getByText(t.filesFormats)).toBeTruthy();
+    expect(screen.queryByText(t.filesCount.replace("{n}", "0"))).toBeNull();
+  });
+  it("long names stay on one line in the table and expose the full name", () => {
+    vi.stubGlobal("fetch", vi.fn(async () => reply(200, meta(1))));
+    const long = `${"ผลสำรวจ".repeat(12)}.csv`;
+    useFilesStore.setState({ files: [{ ...entry(1), name: long }] });
+    render(<FilesPage />);
+    expect(screen.getByTitle(long)).toBeTruthy();
+    expect(screen.getByText(t.filesCount.replace("{n}", "1"))).toBeTruthy();
+  });
+  it("narrow screens get stacked cards (a list) instead of a table, with a 44px menu button", () => {
+    stubMedia((q) => q.includes("max-width"));
+    vi.stubGlobal("fetch", vi.fn(async () => reply(200, meta(1))));
+    useFilesStore.setState({ files: [entry(1), entry(2)] });
+    render(<FilesPage />);
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(within(screen.getByRole("list", { name: t.files })).getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: `${t.fileActions}: file1.csv` })).toBeTruthy();
+  });
+  it("closing a dialog returns focus to that row's menu button", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => reply(200, meta(1))));
+    useFilesStore.setState({ files: [entry(1)] });
+    render(<FilesPage />);
+    openMenu(1);
+    fireEvent.click(screen.getByRole("menuitem", { name: t.rename }));
+    await screen.findByLabelText(t.fileNameLabel);
+    fireEvent.click(screen.getByRole("button", { name: t.cancel }));
+    await waitFor(() => expect(document.activeElement?.id).toBe(`kebab-${id(1)}`));
+  });
+  it("removing a row collapses it first under no-preference, and is instant otherwise", async () => {
+    stubMedia((q) => q.includes("no-preference"));
+    vi.stubGlobal("fetch", vi.fn(async (u: string) => (u.includes(id(1)) ? reply(404) : reply(200, meta(2)))));
+    useFilesStore.setState({ files: [entry(1), entry(2)] });
+    render(<FilesPage />);
+    fireEvent.click(await screen.findByRole("button", { name: t.fileRemoveEntry }));
+    expect(useFilesStore.getState().files).toHaveLength(2); // still there while it animates out
+    await waitFor(() => expect(useFilesStore.getState().files.map((f) => f.id)).toEqual([id(2)]));
+    expect(document.activeElement?.tagName).toBe("H1");
+  });
 });

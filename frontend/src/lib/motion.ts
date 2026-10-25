@@ -67,3 +67,12 @@ export const skeletonBar = (i: number) => ({
 export const revealStagger = {
   [NO_PREF]: Object.fromEntries(Array.from({ length: 12 }, (_, k) => [`& > :nth-child(${k + 1})`, { animation: `${rise} 360ms ${ease} ${k * 120}ms both` }])),
 };
+
+// True only when the browser positively reports no-preference, so jsdom/SSR/reduce all take the instant path.
+export const canAnimate = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
+// List row entrance: rises with a short stagger (first 8 rows only, 40ms apart).
+export const enterRow = (i: number) => ({ [NO_PREF]: { animation: `${rise} 280ms ${ease} ${Math.min(i, 8) * 40}ms backwards` } });
+// List row exit: fades and slides out before the entry is removed (see EXIT_MS).
+const leave = keyframes`to { opacity: 0; transform: translateX(-12px); }`;
+export const EXIT_MS = 200;
+export const leaveRow = { [NO_PREF]: { animation: `${leave} ${EXIT_MS}ms ${ease} forwards` }, pointerEvents: "none" } as const;

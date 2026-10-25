@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from "@mui/material";
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from "@mui/material";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import { checkName, deleteFile, fetchPreview, FileApiError, renameFile, useFilesStore, type FileEntry, type Preview } from "@/lib/files";
 import { srOnly } from "@/lib/config";
@@ -17,7 +17,7 @@ const previewMessage = (e: unknown, t: Strings) =>
 function Frame({ id, title, onClose, children, actions, maxWidth = 480 }: { id: string; title: string; onClose: () => void; children: React.ReactNode; actions?: React.ReactNode; maxWidth?: number }) {
   const t = useT();
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth={false} aria-labelledby={id} slotProps={{ paper: { sx: { maxWidth, m: { xs: 1.5, sm: 4 }, width: { xs: "calc(100% - 24px)", sm: "100%" }, borderRadius: 3, backgroundImage: "none", bgcolor: "background.default" } } }}>
+    <Dialog open onClose={onClose} fullWidth maxWidth={false} aria-labelledby={id} slotProps={{ paper: { sx: { maxWidth, m: { xs: 1.5, sm: 4 }, width: { xs: "calc(100% - 24px)", sm: "100%" }, borderRadius: 3, border: 1, borderColor: "divider", backgroundImage: "none", bgcolor: "background.default" } } }}>
       <DialogTitle id={id} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, pb: 1, fontSize: "1.125rem", fontWeight: 700 }}>
         <Box component="span" sx={{ minWidth: 0, overflowWrap: "anywhere" }}>{title}</Box>
         <IconButton aria-label={t.close} onClick={onClose} sx={{ width: 44, height: 44, flexShrink: 0 }}><CloseRoundedIcon /></IconButton>
@@ -46,7 +46,13 @@ export function PreviewDialog({ file, onClose, onMissing }: { file: FileEntry; o
       {!state && (
         <Box>
           <Box role="status" sx={srOnly}>{t.previewLoading}</Box>
-          <Stack aria-hidden spacing={1.25}>{[0, 1, 2, 3, 4, 5].map((i) => <Box key={i} sx={{ ...skeletonBar(i), height: 20, width: `${96 - (i % 3) * 8}%` }} />)}</Stack>
+          <Box aria-hidden sx={{ border: 1, borderColor: "divider", borderRadius: 2, overflow: "hidden" }}>
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <Box key={i} sx={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 3, px: 2, height: i === 0 ? 40 : 33, alignItems: "center", borderTop: i ? 1 : 0, borderColor: "divider", bgcolor: i === 0 ? "action.hover" : undefined }}>
+                {[0, 1, 2].map((c) => <Box key={c} sx={{ ...skeletonBar(i + c), height: i === 0 ? 12 : 10, width: i === 0 ? "50%" : `${90 - ((i + c) % 3) * 20}%` }} />)}
+              </Box>
+            ))}
+          </Box>
         </Box>
       )}
       {state && "err" in state && <Alert severity="info" role="status">{state.err}</Alert>}
@@ -103,7 +109,7 @@ export function RenameDialog({ file, onClose, onMissing }: { file: FileEntry; on
   );
 }
 
-export function DeleteDialog({ file, onClose }: { file: FileEntry; onClose: () => void }) {
+export function DeleteDialog({ file, onClose, onRemove = (id) => useFilesStore.getState().remove(id) }: { file: FileEntry; onClose: () => void; onRemove?: (id: string) => void }) {
   const t = useT();
   const [err, setErr] = useState(""), [busy, setBusy] = useState(false);
   const go = async () => {
@@ -113,7 +119,7 @@ export function DeleteDialog({ file, onClose }: { file: FileEntry; onClose: () =
       // 404: already gone from the server, so only the local entry is left to remove. Anything else: keep the entry and say why.
       if (!(e instanceof FileApiError && e.status === 404)) { setErr(apiMessage(e, t)); setBusy(false); return; }
     }
-    useFilesStore.getState().remove(file.id);
+    onRemove(file.id);
     onClose();
   };
   return (
