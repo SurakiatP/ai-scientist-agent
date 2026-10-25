@@ -5,12 +5,13 @@ import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import ViewSidebarOutlinedIcon from "@mui/icons-material/ViewSidebarOutlined";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { useHydrated } from "@/lib/history";
+import { UI } from "@/lib/config";
 import { ease } from "@/lib/motion";
 import { usePrefs, useT } from "@/lib/prefs";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { Mark, Sidebar } from "./Sidebar";
 
-const W = 300;
+const W = UI.sidebar;
 
 export function AppShell({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   const t = useT();
@@ -33,7 +34,7 @@ export function AppShell({ children, aside }: { children: ReactNode; aside?: Rea
         <Sidebar onPick={() => setDrawer(false)} />
       </Drawer>
       <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-        <Stack component="header" direction="row" sx={{ alignItems: "center", gap: 1, px: { xs: 1.5, md: 3 }, pt: { md: 2.5 }, minHeight: 56, borderBottom: { xs: 1, md: 0 }, borderColor: "divider" }}>
+        <Stack component="header" direction="row" sx={{ alignItems: "center", gap: 1, px: { xs: 1.5, md: 2 }, pt: { md: 1 }, minHeight: 56, borderBottom: { xs: 1, md: 0 }, borderColor: "divider" }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: "center", display: { md: "none" } }}><Mark /><Box component="span" sx={{ fontWeight: 600, fontSize: "1.0625rem", whiteSpace: "nowrap" }}>{t.brand}</Box></Stack>
           {collapsed && (
             <IconButton aria-label={t.expandSidebar} aria-expanded={false} onClick={() => { setMoved(true); set(false); }} sx={{ display: { xs: "none", md: "inline-flex" }, color: "text.secondary" }}>
@@ -45,7 +46,7 @@ export function AppShell({ children, aside }: { children: ReactNode; aside?: Rea
         </Stack>
         <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{children}</Box>
       </Box>
-      {aside && <Box component="aside" sx={{ display: { xs: "none", lg: "block" }, width: 340, flexShrink: 0, borderLeft: 1, borderColor: "divider", overflowY: "auto", p: 2.5 }}>{aside}</Box>}
+      {aside && <Box component="aside" sx={{ display: { xs: "none", lg: "block" }, width: UI.aside, flexShrink: 0, borderLeft: 1, borderColor: "divider", overflowY: "auto", p: 2 }}>{aside}</Box>}
       <SettingsDialog />
     </Box>
   );

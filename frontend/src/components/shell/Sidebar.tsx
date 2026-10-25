@@ -10,6 +10,7 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import ViewSidebarOutlinedIcon from "@mui/icons-material/ViewSidebarOutlined";
 import { create } from "zustand";
+import { UI } from "@/lib/config";
 import { useHydrated } from "@/lib/history";
 import { PERSONAL, useChatStore } from "@/lib/chat";
 import { usePrefs, useT } from "@/lib/prefs";
@@ -22,13 +23,13 @@ export const useSettingsOpen = create<{ open: boolean; set: (o: boolean) => void
 
 // Brand mark: a small node cluster (research graph). Colours follow the theme.
 export const Mark = () => (
-  <Box component="svg" viewBox="0 0 32 32" aria-hidden="true" sx={{ width: 36, height: 36, flexShrink: 0, color: "primary.main" }}>
+  <Box component="svg" viewBox="0 0 32 32" aria-hidden="true" sx={{ width: 28, height: 28, flexShrink: 0, color: "primary.main" }}>
     <g stroke="currentColor" strokeWidth="1.3" opacity=".55" fill="none"><path d="M9 20l7-9M16 11l8 4M9 20l9 5M24 15l-6 10" /></g>
     <g fill="currentColor"><circle cx="9" cy="20" r="4" /><circle cx="16" cy="11" r="3" /><circle cx="24" cy="15" r="2.4" /><circle cx="18" cy="25" r="2" opacity=".7" /><circle cx="6" cy="9" r="1.5" opacity=".5" /></g>
   </Box>
 );
 
-const rowSx = { justifyContent: "flex-start", gap: 1.5, minHeight: 44, px: 1.5, borderRadius: 1.2, fontWeight: 400, fontSize: "0.9375rem", minWidth: 0 } as const;
+const rowSx = { justifyContent: "flex-start", gap: 1.5, ...UI.row, px: 1.25, borderRadius: 1.2, fontWeight: 400, fontSize: "0.875rem", minWidth: 0, "& .MuiSvgIcon-root": { fontSize: 20 } } as const;
 
 export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollapse?: () => void }) {
   const t = useT();
@@ -53,24 +54,24 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
   }
 
   return (
-    <Stack component="nav" aria-label={t.sidebar} sx={{ height: "100%", p: 1.5, gap: 1.5, bgcolor: "surface.shell", overflowY: "auto" }}>
+    <Stack component="nav" aria-label={t.sidebar} sx={{ height: "100%", p: 1.25, gap: 1, bgcolor: "surface.shell", overflowY: "auto" }}>
       <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", px: 0.5, minHeight: 44 }}>
         <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-          <Mark /><Typography sx={{ fontWeight: 600, fontSize: "1.25rem", letterSpacing: "-0.01em" }}>{t.brand}</Typography>
+          <Mark /><Typography sx={{ fontWeight: 600, fontSize: "1.0625rem", letterSpacing: "-0.01em" }}>{t.brand}</Typography>
         </Stack>
         {onCollapse && (
           <IconButton aria-label={t.collapseSidebar} onClick={onCollapse} sx={{ color: "text.secondary" }}><ViewSidebarOutlinedIcon /></IconButton>
         )}
       </Stack>
       <Button id="new-chat" variant="outlined" startIcon={<EditSquareIcon />} onClick={newChat}
-        sx={{ justifyContent: "flex-start", gap: 0.5, px: 2, minHeight: 52, borderRadius: 1.5, fontSize: "1rem", borderColor: "primary.main", bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 12%, transparent)", "&:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 20%, transparent)", borderColor: "primary.main" } }}>
+        sx={{ justifyContent: "flex-start", gap: 0.5, px: 1.5, minHeight: { xs: 44, md: 40 }, borderRadius: 1.5, fontSize: "0.875rem", borderColor: "primary.main", bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 12%, transparent)", "&:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 20%, transparent)", borderColor: "primary.main" } }}>
         {t.newChat}
       </Button>
       <Box>
         <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", pl: 1.25, pt: 0.5 }}>
-          <Typography component="h2" sx={{ fontSize: "0.9375rem", color: "text.secondary" }}>{t.projects}</Typography>
+          <Typography component="h2" sx={{ fontSize: "0.75rem", fontWeight: 600, color: "text.secondary" }}>{t.projects}</Typography>
           <IconButton size="small" aria-label={t.newProject} aria-expanded={adding} onClick={() => setAdding(!adding)} sx={{ color: "text.primary" }}>
-            <Box sx={{ display: "grid", placeItems: "center", width: 26, height: 26, border: 1, borderColor: "divider", borderRadius: "50%" }}><AddRoundedIcon sx={{ fontSize: 18 }} /></Box>
+            <Box sx={{ display: "grid", placeItems: "center", width: 22, height: 22, border: 1, borderColor: "divider", borderRadius: "50%" }}><AddRoundedIcon sx={{ fontSize: 16 }} /></Box>
           </IconButton>
         </Stack>
         {adding && (
@@ -108,9 +109,9 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
         ))}
       </Box>
       <Box sx={{ flex: 1, minHeight: 0 }}>
-        <Typography component="h2" sx={{ px: 1.25, pb: 0.5, fontSize: "0.9375rem", color: "text.secondary" }}>{t.recentShort}</Typography>
+        <Typography component="h2" sx={{ px: 1.25, pb: 0.5, fontSize: "0.75rem", fontWeight: 600, color: "text.secondary" }}>{t.recentShort}</Typography>
         <TextField size="small" type="search" placeholder={t.searchChats} value={query} onChange={(e) => setQuery(e.target.value)} fullWidth
-          sx={{ mb: 0.5, "& .MuiOutlinedInput-root": { minHeight: 44, borderRadius: 1.5, fontSize: "0.875rem" }, "& fieldset": { borderColor: "transparent" }, "& .MuiOutlinedInput-root:hover fieldset": { borderColor: "divider" } }}
+          sx={{ mb: 0.5, "& .MuiOutlinedInput-root": { ...UI.row, borderRadius: 1.5, fontSize: "0.875rem" }, "& fieldset": { borderColor: "transparent" }, "& .MuiOutlinedInput-root:hover fieldset": { borderColor: "divider" } }}
           slotProps={{ htmlInput: { "aria-label": t.searchChats }, input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small" /></InputAdornment> } }} />
         <SessionList query={query} onPick={onPick} />
       </Box>

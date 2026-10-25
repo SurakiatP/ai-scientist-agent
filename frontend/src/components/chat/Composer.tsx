@@ -130,11 +130,11 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
           )}
           <Box sx={{ display: "flex", flexWrap: { xs: "wrap", sm: "nowrap" }, alignItems: "flex-end", columnGap: 1, rowGap: 0.5 }}>
             <InputBase
-              id="composer" multiline fullWidth minRows={large ? 2 : 1} maxRows={10} value={text}
+              id="composer" multiline fullWidth minRows={1} maxRows={10} value={text}
               placeholder={file ? t.analysisPlaceholder : t.askPlaceholder} onChange={(e) => { setText(e.target.value); setErr(""); }} onKeyDown={onKeyDown}
               onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
               slotProps={{ input: { "aria-label": t.composerLabel, "aria-describedby": "composer-note" } }}
-              sx={{ flex: { xs: "1 1 100%", sm: "1 1 0" }, minWidth: 0, px: 0.5, py: 1, fontSize: "1rem", lineHeight: 1.6, alignItems: "flex-start" }}
+              sx={{ flex: { xs: "1 1 100%", sm: "1 1 0" }, minWidth: 0, px: 0.5, py: 0.75, fontSize: "1rem", lineHeight: 1.6, alignItems: "flex-start" }}
             />
             {counter && (
               <Typography sx={{ fontSize: "0.75rem", fontVariantNumeric: "tabular-nums", color: over ? "error.main" : "text.secondary", alignSelf: "center" }}>
@@ -145,7 +145,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
             <Button color="inherit" variant="outlined" disabled={!!file} aria-haspopup="menu" aria-expanded={!!modeAnchor}
               aria-label={`${t.modeLabel}: ${mode === "deep" ? t.modeDeep : t.modeQuick}`} onClick={(e) => setModeAnchor(e.currentTarget)}
               startIcon={<LayersOutlinedIcon sx={{ color: "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
-              sx={{ borderRadius: 99, borderColor: "divider", fontWeight: 400, px: 1.75, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap" }}>
+              sx={{ borderRadius: 99, borderColor: "divider", fontWeight: 400, fontSize: "0.875rem", px: 1.5, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap" }}>
               {mode === "deep" ? t.modeDeep : t.modeQuick}
             </Button>
             <Menu anchorEl={modeAnchor} open={!!modeAnchor} onClose={() => setModeAnchor(null)} slotProps={{ list: { "aria-label": t.chooseMode } }}>
@@ -155,7 +155,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               ))}
             </Menu>
             <IconButton aria-label={mine ? t.stop : t.ask} onClick={(e) => { if (!mine) send(); else if (e.detail < 2) stopRun(); }} /* a double-click on Send must not land on Stop */ disabled={!mine && !canSend}
-              sx={{ width: 48, height: 48, alignSelf: "center", flexShrink: 0, bgcolor: "primary.main", color: "primary.contrastText", transition: `background-color 160ms ${ease}`, "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 35%, transparent)", color: "primary.contrastText" } }}>
+              sx={{ width: 44, height: 44, alignSelf: "center", flexShrink: 0, bgcolor: "primary.main", color: "primary.contrastText", transition: `background-color 160ms ${ease}`, "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 35%, transparent)", color: "primary.contrastText" } }}>
               <Box key={mine ? "stop" : "send"} component="span" sx={{ display: "inline-flex", ...(sw.anim ? enterPop : {}) }}>{mine ? <StopRoundedIcon /> : <SendOutlinedIcon />}</Box>
             </IconButton>
           </Box>

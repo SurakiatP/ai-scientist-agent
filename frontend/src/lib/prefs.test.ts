@@ -43,3 +43,15 @@ describe("prefs store", () => {
     expect((await load()).getState().reviewPlan).toBe(false);
   });
 });
+
+describe("persist migrate", () => {
+  it("loads an older stored version without logging an error and keeps valid fields", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    localStorage.setItem(KEY, JSON.stringify({ state: { lang: "en", sidebarCollapsed: true }, version: 0 }));
+    const s = await load();
+    expect(err).not.toHaveBeenCalled();
+    expect(s.getState().lang).toBe("en");
+    expect(s.getState().sidebarCollapsed).toBe(true);
+    err.mockRestore();
+  });
+});

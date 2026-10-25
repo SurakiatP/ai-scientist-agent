@@ -7,6 +7,7 @@ import { EmptyChat } from "@/components/chat/EmptyChat";
 import { Thread } from "@/components/chat/Thread";
 import { ProgressPanel } from "@/components/research/ProgressPanel";
 import { SourceInspector } from "@/components/research/SourceInspector";
+import { UI } from "@/lib/config";
 import { useInspector } from "@/lib/inspector";
 import { useChatStore } from "@/lib/chat";
 import { useHydrated } from "@/lib/history";
@@ -34,7 +35,7 @@ export default function ChatPage() {
       {hydrated && active && (active.turns.length === 0 ? <EmptyChat sessionId={active.id} /> : (
         <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
           <Thread key={active.id} sessionId={active.id} />
-          <Box sx={{ maxWidth: 820, width: "100%", mx: "auto", px: { xs: 2, sm: 3 }, pb: 1.5 }}><Composer sessionId={active.id} /></Box>
+          <Box sx={{ maxWidth: UI.content, width: "100%", mx: "auto", px: { xs: 2, sm: 3 }, pb: 1.5 }}><Composer sessionId={active.id} /></Box>
         </Box>
       ))}
     </AppShell>

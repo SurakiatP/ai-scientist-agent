@@ -9,7 +9,7 @@ export const Time = ({ ts }: { ts: number }) => {
 };
 
 // Round avatar slot shared by user and agent rows so both columns line up.
-export const avatarSx = { width: 40, height: 40, flexShrink: 0, borderRadius: "50%", display: "grid", placeItems: "center", bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 16%, transparent)", color: "primary.main", border: 1, borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 30%, transparent)" };
+export const avatarSx = { width: 32, height: 32, flexShrink: 0, borderRadius: "50%", display: "grid", placeItems: "center", bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 16%, transparent)", color: "primary.main", border: 1, borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 30%, transparent)" };
 
 export function UserMessage({ question, createdAt }: { question: string; createdAt: number }) {
   const t = useT();
@@ -18,10 +18,10 @@ export function UserMessage({ question, createdAt }: { question: string; created
       <Box aria-hidden sx={avatarSx}><PersonOutlineRoundedIcon /></Box>
       <Box sx={{ minWidth: 0, flex: 1 }}>
         <Box sx={{ display: "flex", gap: 1, alignItems: "baseline", mb: 0.25 }}>
-          <Typography sx={{ fontSize: "0.9375rem", fontWeight: 700 }}>{t.you}</Typography>
+          <Typography sx={{ fontSize: "0.875rem", fontWeight: 700 }}>{t.you}</Typography>
           <Time ts={createdAt} />
         </Box>
-        <Typography sx={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap", lineHeight: 1.7, fontSize: "1.0625rem" }}>{question}</Typography>
+        <Typography sx={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap", lineHeight: 1.7, fontSize: "1rem" }}>{question}</Typography>
       </Box>
     </Box>
   );

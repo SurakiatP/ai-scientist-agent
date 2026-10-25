@@ -51,9 +51,9 @@ function OptionCard({ id, value, title, desc, icon, checked }: { id: string; val
 
 function Section({ labelId, title, note, children, cols }: { labelId: string; title: string; note?: string; children: React.ReactNode; cols: number }) {
   return (
-    <Box component="section" sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: "170px 1fr" }, p: 2.5, border: 1, borderColor: "divider", borderRadius: 3, bgcolor: "surface.raised" }}>
+    <Box component="section" sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: "150px 1fr" }, p: 2, border: 1, borderColor: "divider", borderRadius: 3, bgcolor: "surface.raised" }}>
       <Box>
-        <Typography id={labelId} component="h3" sx={{ fontSize: "1.0625rem", fontWeight: 700, lineHeight: 1.4 }}>{title}</Typography>
+        <Typography id={labelId} component="h3" sx={{ fontSize: "0.9375rem", fontWeight: 700, lineHeight: 1.4 }}>{title}</Typography>
         {note && <Typography sx={{ mt: 0.5, fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.6 }}>{note}</Typography>}
       </Box>
       <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: `repeat(${cols}, minmax(0, 1fr))` }, alignContent: "start" }}>{children}</Box>
@@ -78,10 +78,10 @@ export function SettingsDialog() {
   const curLang = hydrated ? lang : "th";
   const curMode = mode ?? "system";
   return (
-    <Dialog open={open} onClose={close} fullWidth maxWidth="md" aria-labelledby="settings-title" slotProps={{ paper: { sx: { borderRadius: 3, backgroundImage: "none", bgcolor: "background.default" } } }}>
+    <Dialog open={open} onClose={close} fullWidth maxWidth="sm" aria-labelledby="settings-title" slotProps={{ paper: { sx: { borderRadius: 3, backgroundImage: "none", bgcolor: "background.default" } } }}>
       <DialogTitle id="settings-title" sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", pb: 0.5 }}>
         <Box component="span">
-          <Typography component="span" sx={{ display: "block", fontSize: "1.75rem", fontWeight: 700, lineHeight: 1.3 }}>{t.settingsTitle}</Typography>
+          <Typography component="span" sx={{ display: "block", fontSize: "1.375rem", fontWeight: 700, lineHeight: 1.3 }}>{t.settingsTitle}</Typography>
           <Typography component="span" sx={{ display: "block", mt: 0.5, fontSize: "0.9375rem", fontWeight: 400, color: "text.secondary" }}>{t.settingsSubtitle}</Typography>
         </Box>
         <IconButton aria-label={t.close} onClick={close} sx={{ width: 44, height: 44 }}><CloseRoundedIcon /></IconButton>

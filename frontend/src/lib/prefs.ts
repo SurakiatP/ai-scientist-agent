@@ -22,6 +22,8 @@ export const usePrefs = create<State>()(
       name: "scientist-prefs-v1",
       storage: createJSONStorage(() => safeStorage),
       version: 1,
+      // v1 is current; older/unknown versions pass through and merge() sanitises every field, so nothing is lost or logged as an error.
+      migrate: (state) => state as State,
       partialize: (s) => ({ lang: s.lang, sidebarCollapsed: s.sidebarCollapsed, reviewPlan: s.reviewPlan }),
       // unknown/garbage values fall back to defaults (th, expanded, review on)
       merge: (p, cur) => {

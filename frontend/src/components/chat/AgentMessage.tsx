@@ -43,7 +43,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
     <Box sx={{ px: 0.5 }}>
       <Box sx={{ display: "flex", gap: 1.5, alignItems: "center", flexWrap: "wrap", mb: 1.5 }}>
         <Box aria-hidden sx={avatarSx}><LogoMark size={24} /></Box>
-        <Typography sx={{ fontSize: "0.9375rem", fontWeight: 700 }}>{t.brand}</Typography>
+        <Typography sx={{ fontSize: "0.875rem", fontWeight: 700 }}>{t.brand}</Typography>
         {turn.mode === "deep" && !analysis && <Chip size="small" variant="outlined" icon={<LayersOutlinedIcon />} label={t.modeDeep} sx={{ borderRadius: 999, "& .MuiChip-icon": { color: "primary.main" } }} />}
         <Time ts={turn.createdAt} />
         {status === "done" && !analysis && turn.answer && (

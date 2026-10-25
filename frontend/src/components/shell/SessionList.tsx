@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Box, List, ListItemButton, Typography } from "@mui/material";
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
+import { UI } from "@/lib/config";
 import { useChatStore, type Session } from "@/lib/chat";
 import { useHydrated } from "@/lib/history";
 import { usePrefs, useT } from "@/lib/prefs";
@@ -50,13 +51,13 @@ export function SessionList({ query, onPick }: { query: string; onPick?: () => v
           },
         }}>
           <ListItemButton selected={s.id === activeId} onClick={() => { setActive(s.id); onPick?.(); }}
-            aria-current={s.id === activeId ? "true" : undefined} sx={{ minHeight: 44, borderRadius: 1.2, gap: 1.5, minWidth: 0, px: 1.5 }}>
-            <ChatBubbleOutlineRoundedIcon sx={{ fontSize: 20, color: "text.secondary", flexShrink: 0 }} />
-            <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: "0.9375rem" }}>{s.title || t.untitled}</Typography>
+            aria-current={s.id === activeId ? "true" : undefined} sx={{ ...UI.row, borderRadius: 1.2, gap: 1.25, minWidth: 0, px: 1.25 }}>
+            <ChatBubbleOutlineRoundedIcon sx={{ fontSize: 18, color: "text.secondary", flexShrink: 0 }} />
+            <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: "0.875rem" }}>{s.title || t.untitled}</Typography>
             {s.id === runningId && (
               <Box role="img" aria-label={t.running} sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "primary.main", flexShrink: 0 }} />
             )}
-            <Typography className="when" component="span" sx={{ fontSize: "0.8125rem", color: "text.secondary", flexShrink: 0, minWidth: 28, textAlign: "right" }}>{ago(s.updatedAt, lang)}</Typography>
+            <Typography className="when" component="span" sx={{ fontSize: "0.75rem", color: "text.secondary", flexShrink: 0, minWidth: 28, textAlign: "right" }}>{ago(s.updatedAt, lang)}</Typography>
           </ListItemButton>
           <Box className="kebab" sx={{ display: "flex" }}>
             <SessionMenu session={s} onRename={() => setEdit({ id: s.id, mode: "rename" })} onDelete={() => setEdit({ id: s.id, mode: "delete" })} />

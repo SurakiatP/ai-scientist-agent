@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Box, Stack } from "@mui/material";
+import { UI } from "@/lib/config";
 import { useChatStore } from "@/lib/chat";
 import { enterRise, wasEmpty } from "@/lib/motion";
 import { AgentMessage } from "./AgentMessage";
@@ -21,7 +22,7 @@ export function Thread({ sessionId }: { sessionId: string }) {
   return (
     <Box ref={box} onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}
       sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-      <Stack spacing={4} sx={{ maxWidth: 820, mx: "auto", px: { xs: 2, sm: 3 }, py: 3 }}>
+      <Stack spacing={3.5} sx={{ maxWidth: UI.content, mx: "auto", px: { xs: 2, sm: 3 }, py: 3 }}>
         {turns?.map((x) => (
           <Stack key={x.id} component="article" spacing={2} sx={seen.has(x.id) ? undefined : enterRise}>
             <UserMessage question={x.question} createdAt={x.createdAt} />

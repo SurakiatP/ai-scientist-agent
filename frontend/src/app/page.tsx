@@ -39,7 +39,7 @@ export default function Home() {
   const modeName = modes.find((x) => x.value === m)!.label;
   const navItems = [{ value: "why", href: "#why", label: L.navProduct }, { value: "how", href: "#how", label: L.navHow }, { value: "faq", href: "#faq", label: L.navCheck }];
   const cta = (sx = {}) => (
-    <Button component={Link} href="/chat" variant="contained" size="large" endIcon={<ArrowForwardRoundedIcon />} sx={{ minHeight: 52, px: 3.5, ...pill, ...ring, ...sx }}>
+    <Button component={Link} href="/chat" variant="contained" size="large" endIcon={<ArrowForwardRoundedIcon />} sx={{ minHeight: 48, px: 3, ...pill, ...ring, ...sx }}>
       {L.cta}
     </Button>
   );
@@ -76,22 +76,22 @@ export default function Home() {
               <Box aria-hidden="true" sx={{ width: 12, height: 12, borderRadius: "50%", bgcolor: "primary.main", boxShadow: "0 0 0 4px rgb(var(--mui-palette-primary-mainChannel) / 0.2)" }} />
               {L.badge}
             </Box>
-            <Typography component="h1" sx={{ m: 0, mt: { xs: 2.5, md: 3 }, fontSize: { xs: "2.375rem", sm: "2.75rem", lg: "3.25rem" }, fontWeight: 700, lineHeight: 1.22, letterSpacing: "-0.01em", overflowWrap: "break-word" }}>
+            <Typography component="h1" sx={{ m: 0, mt: { xs: 2.5, md: 3 }, fontSize: { xs: "2rem", sm: "2.25rem", lg: "2.625rem" }, fontWeight: 700, lineHeight: 1.22, letterSpacing: "-0.01em", overflowWrap: "break-word" }}>
               <Box component="span" sx={{ display: "block", color: "primary.main" }}>{L.titleA}</Box>
               <Box component="span" sx={{ display: "block" }}>{L.titleB.split("|").map((x, i) => <span key={i} style={{ display: "inline-block" }}>{x}{i === 0 ? " " : ""}</span>)}</Box>
             </Typography>
-            <Typography sx={{ mt: { xs: 3, md: 4 }, maxWidth: "42rem", fontSize: { xs: "1.0625rem", md: "1.1875rem" }, lineHeight: 1.85, color: "text.secondary", textWrap: "pretty" }}>{L.lead}</Typography>
+            <Typography sx={{ mt: { xs: 3, md: 4 }, maxWidth: "42rem", fontSize: { xs: "1rem", md: "1.0625rem" }, lineHeight: 1.8, color: "text.secondary", textWrap: "pretty" }}>{L.lead}</Typography>
             <Stack direction={{ xs: "column", sm: "row" }} sx={{ mt: { xs: 3.5, md: 5 }, gap: 2, alignItems: { sm: "center" } }}>
               {cta({ minHeight: 60, px: 4.5, fontSize: "1.125rem" })}
-              <Button component="a" href="#how" variant="outlined" color="inherit" size="large" sx={{ minHeight: 60, px: 4.5, fontSize: "1.0625rem", borderColor: "divider", ...pill, ...ring }}>{L.how}</Button>
+              <Button component="a" href="#how" variant="outlined" color="inherit" size="large" sx={{ minHeight: 48, px: 3.5, fontSize: "1rem", borderColor: "divider", ...pill, ...ring }}>{L.how}</Button>
             </Stack>
           </Box>
 
           <Box sx={{ pt: { md: 2 } }}>
             <Typography sx={{ m: 0, mb: 1.5, pl: 1, fontSize: "0.9375rem", color: "text.secondary" }}>{L.exampleLabel}</Typography>
             <Box component={Link} href="/chat" aria-label={`${L.example}. ${L.exampleHint}`}
-              sx={{ display: "block", px: 3.5, py: 3, border: 1, borderColor: "primary.main", borderRadius: 4, bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.06)", color: "text.primary", textDecoration: "none", ...ring, "&:hover": { bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.12)" } }}>
-              <Typography sx={{ fontSize: "1.25rem", lineHeight: 1.7, textWrap: "pretty" }}>“{L.example}”</Typography>
+              sx={{ display: "block", px: 3, py: 2.5, border: 1, borderColor: "primary.main", borderRadius: 4, bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.06)", color: "text.primary", textDecoration: "none", ...ring, "&:hover": { bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.12)" } }}>
+              <Typography sx={{ fontSize: "1.0625rem", lineHeight: 1.7, textWrap: "pretty" }}>“{L.example}”</Typography>
               <Typography sx={{ mt: 1, fontSize: "0.8125rem", color: "text.secondary" }}>{L.exampleHint}</Typography>
             </Box>
 
@@ -101,7 +101,7 @@ export default function Home() {
                 <Box component="li" key={s.t} className="trace-step" style={{ "--i": i } as React.CSSProperties} sx={{ position: "relative", display: "grid", gridTemplateColumns: "40px minmax(0,1fr)", columnGap: 2.5, pb: i < L.steps.length - 1 ? 3.5 : 0 }}>
                   <Box aria-hidden="true" sx={{ width: 40, height: 40, borderRadius: "50%", border: 2, borderColor: "primary.main", bgcolor: "background.default", display: "grid", placeItems: "center", fontWeight: 600, color: "text.primary", fontVariantNumeric: "tabular-nums" }}>{i + 1}</Box>
                   <Box>
-                    <Typography component="h2" sx={{ m: 0, fontSize: "1.375rem", fontWeight: 600, lineHeight: 1.5, color: "primary.main" }}>{s.t}</Typography>
+                    <Typography component="h2" sx={{ m: 0, fontSize: "1.125rem", fontWeight: 600, lineHeight: 1.5, color: "primary.main" }}>{s.t}</Typography>
                     <Typography sx={{ fontSize: "0.9375rem", lineHeight: 1.7, color: "text.secondary", textWrap: "pretty" }}>{s.d}</Typography>
                   </Box>
                 </Box>
