@@ -1,9 +1,10 @@
 "use client";
 import { useId, useState } from "react";
-import { Button, Menu, MenuItem } from "@mui/material";
+import { Box, Button, ListItemIcon, Menu, MenuItem } from "@mui/material";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
 
-export type DropItem = { value: string; label: string; href?: string; lang?: string };
+export type DropItem = { value: string; label: string; href?: string; lang?: string; icon?: React.ReactNode };
 
 // Small menu button used by the landing header for language, theme and the mobile nav.
 export function Dropdown({ label, ariaLabel, items, selected, onSelect, icon, sx }: {
@@ -22,16 +23,30 @@ export function Dropdown({ label, ariaLabel, items, selected, onSelect, icon, sx
       >
         {icon}{label}
       </Button>
-      <Menu id={id} anchorEl={el} open={!!el} onClose={close} slotProps={{ list: { "aria-label": ariaLabel }, paper: { sx: { mt: 0.5, minWidth: 160, borderRadius: 2, border: 1, borderColor: "divider" } } }}>
-        {items.map((it) => (
-          <MenuItem
-            key={it.value} selected={it.value === selected} lang={it.lang} sx={{ minHeight: 44 }}
-            {...(it.href ? { component: "a", href: it.href } : {})}
-            onClick={() => { onSelect?.(it.value); close(); }}
-          >
-            {it.label}
-          </MenuItem>
-        ))}
+      <Menu id={id} anchorEl={el} open={!!el} onClose={close} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}
+        slotProps={{
+          list: { "aria-label": ariaLabel, sx: { p: 0.5 } },
+          paper: { sx: { mt: 1, minWidth: 184, borderRadius: 3, border: 1, borderColor: "divider", bgcolor: "background.paper", backgroundImage: "none", boxShadow: "0 12px 32px -8px rgba(11, 22, 32, 0.28), 0 2px 6px rgba(11, 22, 32, 0.08)" } },
+        }}>
+        {items.map((it) => {
+          const on = it.value === selected;
+          return (
+            <MenuItem
+              key={it.value} selected={on} lang={it.lang} aria-checked={selected !== undefined ? on : undefined} role={selected !== undefined ? "menuitemradio" : undefined}
+              {...(it.href ? { component: "a", href: it.href } : {})}
+              onClick={() => { onSelect?.(it.value); close(); }}
+              sx={{
+                minHeight: 44, gap: 1.25, px: 1.25, borderRadius: 2, fontSize: "0.9375rem", fontWeight: on ? 600 : 400,
+                "& + &": { mt: 0.25 },
+                "&.Mui-selected, &.Mui-selected:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 12%, transparent)", color: "primary.main" },
+              }}
+            >
+              {it.icon && <ListItemIcon sx={{ minWidth: 0, color: "inherit", opacity: on ? 1 : 0.7 }}>{it.icon}</ListItemIcon>}
+              <Box component="span" sx={{ flex: 1 }}>{it.label}</Box>
+              {on && <CheckRoundedIcon aria-hidden fontSize="small" sx={{ ml: 1.5 }} />}
+            </MenuItem>
+          );
+        })}
       </Menu>
     </>
   );

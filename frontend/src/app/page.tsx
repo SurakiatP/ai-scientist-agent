@@ -4,6 +4,9 @@ import { Box, Button, Stack, Typography, useColorScheme } from "@mui/material";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
 import { Dropdown, LogoMark } from "@/components/landing/Dropdown";
+import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
+import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
+import SettingsBrightnessOutlinedIcon from "@mui/icons-material/SettingsBrightnessOutlined";
 import { useHydrated } from "@/lib/history";
 import { usePrefs } from "@/lib/prefs";
 import { landing } from "@/lib/strings";
@@ -35,7 +38,8 @@ export default function Home() {
   const lang = hydrated ? prefLang : "th";
   const L = landing[lang];
   const m = hydrated ? mode ?? "system" : "system";
-  const modes = [{ value: "light", label: L.themeLight }, { value: "dark", label: L.themeDark }, { value: "system", label: L.themeSystem }];
+  const ic = { fontSize: 20 };
+  const modes = [{ value: "light", label: L.themeLight, icon: <LightModeOutlinedIcon sx={ic} /> }, { value: "dark", label: L.themeDark, icon: <DarkModeOutlinedIcon sx={ic} /> }, { value: "system", label: L.themeSystem, icon: <SettingsBrightnessOutlinedIcon sx={ic} /> }];
   const modeName = modes.find((x) => x.value === m)!.label;
   const navItems = [{ value: "why", href: "#why", label: L.navProduct }, { value: "how", href: "#how", label: L.navHow }, { value: "faq", href: "#faq", label: L.navCheck }];
   const cta = (sx = {}) => (

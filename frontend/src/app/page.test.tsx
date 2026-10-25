@@ -59,7 +59,7 @@ describe("landing page", () => {
   it("language toggle switches prefs and the page", () => {
     render(<Home />);
     fireEvent.click(screen.getByRole("button", { name: landing.th.langLabel }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "English" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "English" }));
     expect(usePrefs.getState().lang).toBe("en");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(landing.en.titleA);
   });
@@ -68,7 +68,7 @@ describe("landing page", () => {
     render(<Home />);
     for (const [label, v] of [[landing.th.themeLight, "light"], [landing.th.themeDark, "dark"], [landing.th.themeSystem, "system"]]) {
       fireEvent.click(screen.getByRole("button", { name: new RegExp(landing.th.themeLabel) }));
-      fireEvent.click(screen.getByRole("menuitem", { name: label }));
+      fireEvent.click(screen.getByRole("menuitemradio", { name: label }));
       expect(cs.setMode).toHaveBeenLastCalledWith(v);
     }
   });
