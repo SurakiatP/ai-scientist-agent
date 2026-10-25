@@ -94,7 +94,7 @@ async def test_store_down_503(c, store):
 
 
 async def test_health_ok_and_no_endpoint_503(c, monkeypatch):
-    assert (await c.get("/v1/health")).json() == {"status": "ok"}
+    assert (await c.get("/v1/health")).json() == {"status": "ok", "files": "ok"}
     monkeypatch.setenv("MINIO_ENDPOINT", "")
     get_settings.cache_clear()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app()), base_url="http://t") as c2:
