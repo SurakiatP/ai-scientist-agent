@@ -14,6 +14,7 @@ from scientist.hermes import BranchRunner, HermesRuntime, sweep_containers
 from scientist.routes_ask import router as ask_router
 from scientist.routes_analyze import router as analyze_router
 from scientist.routes_files import router as files_router
+from scientist.routes_reports import router as reports_router
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     app.include_router(ask_router)
     app.include_router(files_router)
     app.include_router(analyze_router)
+    app.include_router(reports_router)
 
     @app.get("/v1/health")
     async def health():
