@@ -9,3 +9,6 @@ export const UI = {
   // 44px targets by default; dense 40px rows only on fine pointers (still above the WCAG 2.2 24px minimum)
   row: { minHeight: 44, "@media (pointer: fine)": { minHeight: 40 } },
 } as const;
+
+// Visually hidden but readable by screen readers. MUI `sx` reads width: 1 as 100%, so the size must be in px.
+export const srOnly = { position: "absolute", width: "1px", height: "1px", margin: "-1px", padding: 0, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 } as const;

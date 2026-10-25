@@ -1,4 +1,5 @@
 "use client";
+import { srOnly } from "@/lib/config";
 import { useEffect, useState } from "react";
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, MenuItem, Stack, Switch, TextField, Typography, useMediaQuery, useTheme } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
@@ -13,7 +14,7 @@ import { usePrefs, useT } from "@/lib/prefs";
 import type { Lang } from "@/lib/strings";
 
 const fill = (s: string, v: Record<string, number>) => Object.entries(v).reduce((a, [k, n]) => a.replace(`{${k}}`, String(n)), s);
-const hidden = { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" } as const;
+const hidden = srOnly;
 
 // Create-document form, prefilled from the real answer. Mount it only while open so each open starts from the answer again.
 export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void }) {

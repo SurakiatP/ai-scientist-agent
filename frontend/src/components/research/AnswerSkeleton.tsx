@@ -1,4 +1,5 @@
 "use client";
+import { srOnly } from "@/lib/config";
 import { Box, Stack } from "@mui/material";
 import { skeletonBar } from "@/lib/motion";
 import { useT } from "@/lib/prefs";
@@ -10,7 +11,7 @@ export function AnswerSkeleton({ phase }: { phase: "searching" | "writing" }) {
   const t = useT();
   return (
     <Box data-testid="answer-skeleton" sx={{ mt: 2 }}>
-      <Box role="status" sx={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" }}>{phase === "writing" ? t.skelWriting : t.skelSearching}</Box>
+      <Box role="status" sx={srOnly}>{phase === "writing" ? t.skelWriting : t.skelSearching}</Box>
       <Stack aria-hidden spacing={1.5}>
         <Box sx={{ ...skeletonBar(0), height: 20, width: "42%" }} />
         {WIDTHS.map((w, i) => <Box key={i} sx={{ ...skeletonBar(i + 1), width: w }} />)}

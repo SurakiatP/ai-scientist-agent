@@ -1,4 +1,5 @@
 "use client";
+import { srOnly } from "@/lib/config";
 import { Box, Typography } from "@mui/material";
 import { usePrefs, useT } from "@/lib/prefs";
 
@@ -14,7 +15,7 @@ export function UserMessage({ question, createdAt }: { question: string; created
   const t = useT();
   return (
     <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.5, px: 0.5 }}>
-      <Box component="span" sx={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" }}>{t.you}</Box>
+      <Box component="span" sx={srOnly}>{t.you}</Box>
       <Box sx={{ maxWidth: "75%", minWidth: 0, bgcolor: "surface.raised", border: 1, borderColor: "divider", borderRadius: "20px 20px 6px 20px", px: 2, py: 1.25 }}>
         <Typography sx={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap", lineHeight: 1.7, fontSize: "1rem" }}>{question}</Typography>
       </Box>

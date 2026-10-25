@@ -1,4 +1,5 @@
 "use client";
+import { srOnly } from "@/lib/config";
 import { useEffect, useRef, useState } from "react";
 import { Box, Button, Divider, Drawer, IconButton, ListItemText, Menu, MenuItem, Stack, Tab, Tabs, Typography } from "@mui/material";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
@@ -13,7 +14,7 @@ import { buildReportMarkdown, downloadText } from "@/lib/report";
 import { SourcesPanel } from "./ProgressPanel";
 import { ReportForm } from "./ReportForm";
 
-const hidden = { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" } as const;
+const hidden = srOnly;
 
 function Panel({ session, turn }: { session: Session; turn: Turn }) {
   const t = useT();
