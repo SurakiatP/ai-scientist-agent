@@ -13,9 +13,6 @@ let ac: AbortController | null = null;
 let leaving = false; // page unloading: the aborted fetch must not overwrite the stored run, so a reload reads "interrupted"
 if (typeof window !== "undefined") {
   window.addEventListener("pagehide", () => { leaving = true; });
-  window.addEventListener("storage", (e) => { // another tab wrote the chats: adopt them, unless this tab is mid-run (its own state is newer)
-    if (e.key === "scientist-chat-v1" && !state.turnId) void useChatStore.persist.rehydrate();
-  });
   window.addEventListener("pageshow", (e) => {
     leaving = false;
     if (!e.persisted || state.turnId) return; // bfcache restore with no live run: any turn still stored as running is dead

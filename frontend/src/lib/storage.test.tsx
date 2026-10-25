@@ -46,19 +46,3 @@ describe("legacy import", () => {
     expect(useChatStore.getState().legacyImported).toBe(true);
   });
 });
-
-describe("two tabs", () => {
-  it("adopts another tab's write when idle", async () => {
-    const sid = useChatStore.getState().newSession();
-    const raw = localStorage.getItem("scientist-chat-v1")!;
-    const other = JSON.parse(raw); other.state.sessions[0].title = "from-other-tab";
-    localStorage.setItem("scientist-chat-v1", JSON.stringify(other));
-    window.dispatchEvent(new StorageEvent("storage", { key: "scientist-chat-v1" }));
-    await vi.waitFor(() => expect(useChatStore.getState().sessions.find((s) => s.id === sid)?.title).toBe("from-other-tab"));
-  });
-  it("ignores other keys", async () => {
-    const spy = vi.spyOn(useChatStore.persist, "rehydrate");
-    window.dispatchEvent(new StorageEvent("storage", { key: "other" }));
-    expect(spy).not.toHaveBeenCalled();
-  });
-});
