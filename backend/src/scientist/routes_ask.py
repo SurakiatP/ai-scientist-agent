@@ -8,7 +8,8 @@ from typing import Literal
 import anyio
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, field_validator
+from fastapi import HTTPException
+from pydantic import BaseModel, Field, field_validator
 
 from scientist.config import get_settings
 from scientist.events import Error, Event, to_sse
@@ -25,15 +26,15 @@ class HistoryTurn(BaseModel):
 
 
 class PlanSearch(BaseModel):
-    term: str
-    instructions: str = ""
+    term: str = Field(max_length=200)
+    instructions: str = Field(default="", max_length=500)
 
 
 class AskRequest(BaseModel):
     question: str
     mode: Literal["deep", "quick"] = "deep"
-    history: list[HistoryTurn] = []
-    plan: list[PlanSearch] | None = None
+    history: list[HistoryTurn] = Field(default=[], max_length=20)
+    plan: list[PlanSearch] | None = Field(default=None, max_length=20)
     plan_only: bool = False
 
     @field_validator("question")
@@ -96,6 +97,8 @@ async def _sse(events: AsyncIterator[Event], ping: float) -> AsyncIterator[str]:
 @router.post("/v1/async/ask")
 async def ask_route(body: AskRequest, request: Request) -> StreamingResponse:
     st = request.app.state
+    if body.plan_only and st.gate.free == 0 and len(st.gate.queue) >= st.settings.analyze_max_queue:  # same cap as analyze
+        raise HTTPException(429, "too many requests queued; try again shortly")
     events = ask(body.question, st.runner, settings=st.settings, client=st.client, gate=st.gate, mode=body.mode,
                  history=body.history, plan=body.plan, plan_only=body.plan_only)
     return StreamingResponse(_sse(events, st.settings.sse_ping_seconds), media_type="text/event-stream",

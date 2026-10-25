@@ -167,3 +167,16 @@ def test_sweep_removes_only_labelled_containers(tmp_path, monkeypatch):
 def test_sweep_without_docker_is_a_no_op(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", str(tmp_path))
     sweep_containers()
+
+
+def test_prepare_writes_only_to_runtime_dir(settings, tmp_path, monkeypatch):
+    import scientist.hermes as h
+    cache = tmp_path / "ro"
+    (cache / "upstream/scientific-agent-skills/skills").mkdir(parents=True)
+    monkeypatch.setattr(h, "CACHE", cache)
+    monkeypatch.setattr(h, "SKILLS_SOURCE", cache / "upstream/scientific-agent-skills")
+    monkeypatch.setattr(h, "_check_pinned", lambda *a: None)
+    s = settings.model_copy(update={"hermes_runtime_dir": tmp_path / "rw/hermes-home", "enabled_skills": []})
+    env = HermesRuntime(s)._prepare()
+    assert (tmp_path / "rw/hermes-home/config.yaml").is_file() and not (cache / "hermes-home").exists()
+    assert env["HERMES_HOME"] == str(tmp_path / "rw/hermes-home")

@@ -20,12 +20,16 @@ services:
       MINIO_SECRET_KEY_FILE: /run/secrets/minio_secret_key
       CORS_ORIGINS: '["https://${DOMAIN:-localhost}"]'
       HERMES_SOURCE_PATH: /home/app/.cache/scientist/upstream/hermes
+      HERMES_RUNTIME_DIR: /home/app/hermes-home # writable; the pinned cache below stays read-only
     secrets: [minio_access_key, minio_secret_key]
     volumes:
       # Pinned Hermes + skills checkout built by bootstrap.sh (outside the repo).
       - ${SCIENTIST_CACHE_DIR:-/var/lib/ai-scientist/cache}:/home/app/.cache/scientist:ro
     read_only: true
-    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    # /tmp holds Starlette's multipart spool: must exceed the largest upload cap (100 MB csv/parquet). RAM-backed.
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+      - /home/app/hermes-home:rw,noexec,nosuid,size=64m,uid=10001,gid=10001
     expose: ["8000"]
     depends_on: { minio: { condition: service_healthy } }
     # No host Docker socket here on purpose. Branch sandboxes (hermes.py SANDBOX_IMAGE) need a separate,
@@ -53,7 +57,6 @@ services:
     volumes: [minio_data:/data]
     tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
     user: "10001:10001"
-    group_add: ["${SECRETS_GID:-0}"] # file secrets keep host owner/mode; see docs/deploy.md
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s

@@ -1,4 +1,5 @@
 """POST/GET/DELETE /v1/files: uploads proxied into MinIO under opaque ids (no presigned URLs)."""
+import errno
 import re
 import uuid
 from pathlib import PurePosixPath
@@ -32,9 +33,20 @@ def _key(file_id: str) -> str:
 @router.post("/v1/files", status_code=201)
 async def upload(request: Request):
     st, s = _store(request), request.app.state.settings
-    if int(request.headers.get("content-length") or 0) > s.upload_max_total_bytes:
+    try:
+        length = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        raise HTTPException(400, "invalid content-length")
+    if length < 0:
+        raise HTTPException(400, "invalid content-length")
+    if length > s.upload_max_total_bytes:
         raise HTTPException(413, "request too large")
-    form = await request.form(max_files=s.upload_max_files, max_fields=20)
+    try:
+        form = await request.form(max_files=s.upload_max_files, max_fields=20)
+    except OSError as e:  # spool dir (tmpfs) full
+        if e.errno == errno.ENOSPC:
+            raise HTTPException(413, "upload too large for server scratch space")
+        raise
     files = [v for v in form.values() if isinstance(v, UploadFile)]
     if len(files) != 1:
         raise HTTPException(422, "send exactly one file per request")

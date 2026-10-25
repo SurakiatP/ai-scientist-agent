@@ -144,3 +144,19 @@ async def test_history_plan_clamped_not_rejected(app, fake_complete):
     assert len(strat["searches"]) == app.state.settings.max_branches
     assert ev[-1]["type"] == "complete"
     assert (await post(app, {"question": "q", "mode": "slow"})).status_code == 422
+
+
+async def test_oversize_plan_fields_and_lists_422(app):
+    q = "What is CRISPR?"
+    assert (await post(app, {"question": q, "plan": [{"term": "t" * 201}]})).status_code == 422
+    assert (await post(app, {"question": q, "plan": [{"term": "t", "instructions": "i" * 501}]})).status_code == 422
+    assert (await post(app, {"question": q, "plan": [{"term": "t"}] * 21})).status_code == 422
+    turn = {"question": "q", "answer": "a"}
+    assert (await post(app, {"question": q, "history": [turn] * 21})).status_code == 422
+
+
+async def test_plan_only_429_when_gate_saturated_and_queue_full(app, fake_complete):
+    app.state.gate.free = 0
+    app.state.gate.queue = [object()] * app.state.settings.analyze_max_queue
+    r = await post(app, {"question": "What is CRISPR?", "plan_only": True})
+    assert r.status_code == 429

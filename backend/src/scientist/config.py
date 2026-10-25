@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     max_question_chars: int = 2000
     hermes_source_path: Path
     hermes_revision: str
+    # writable dir rebuilt at startup (compose: tmpfs); the pinned cache stays read-only
+    hermes_runtime_dir: Path = Path.home() / ".cache/scientist/hermes-home"
     enabled_skills: list[str] = []
     cors_origins: list[str] = ["http://localhost:3000"]
     sse_ping_seconds: float = 15  # comment line while a run waits, so proxies keep the stream open

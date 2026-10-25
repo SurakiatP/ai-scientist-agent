@@ -68,7 +68,7 @@ def _prompt(question: str, quality: dict, feedback: str | None) -> str:
             for c in info[:MAX_COLS]]
     head = [{_cut(k, NAME_CHARS): _cut(v, CELL_CHARS) for k, v in list(r.items())[:MAX_COLS]} for r in quality["head"]]
     data = json.dumps({"rows": quality["rows"], "columns": cols, "columns_omitted": max(0, len(info) - MAX_COLS),
-                       "sample_rows": head}, ensure_ascii=False, default=str)
+                       "sample_rows": head}, ensure_ascii=False, default=str).replace("<", "\\u003c")  # as pipeline._data_block: no early </data>
     return (f"<data>\n{data}\n</data>\n\nQuestion: {question}"
             + (f"\n\nYour previous script failed:\n{feedback}\nReturn the corrected full script." if feedback else ""))
 

@@ -5,6 +5,9 @@ FROM python:3.12.11-slim-bookworm
 COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never \
     PATH="/app/backend/.venv/bin:$PATH" HOME=/home/app PYTHONUNBUFFERED=1
+# git: HermesRuntime verifies the pinned Hermes/skills checkouts with `git rev-parse` / `git status`
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+ && rm -rf /var/lib/apt/lists/*
 RUN useradd --uid 10001 --create-home --home-dir /home/app --shell /usr/sbin/nologin app
 # Layout matters: hermes.py resolves ROOT = parents[3] of the package -> /app, and runs /app/infra/hermes/native_bridge.py
 WORKDIR /app/backend

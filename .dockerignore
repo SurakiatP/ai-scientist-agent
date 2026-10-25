@@ -1,9 +1,9 @@
 .git
 .github
 .venv
-.env
-.env.*
-!.env.example
+**/.env
+**/.env.*
+!**/.env.example
 .superpowers
 .impeccable
 .claude

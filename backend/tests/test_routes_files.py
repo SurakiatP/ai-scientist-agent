@@ -102,3 +102,19 @@ async def test_health_ok_and_no_endpoint_503(c, monkeypatch):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app()), base_url="http://t") as c2:
         assert (await up(c2, "a.csv", b"1")).status_code == 503
         assert (await c2.get("/v1/health")).status_code == 200
+
+
+async def test_malformed_content_length_is_400(c):
+    r = await c.post("/v1/files", content=b"x", headers={"content-length": "abc"})
+    assert r.status_code in (400, 422)  # server may reject the header itself; never 500
+
+
+async def test_enospc_while_spooling_is_413(c, monkeypatch):
+    import errno
+
+    from starlette.requests import Request
+
+    async def boom(self, **kw):
+        raise OSError(errno.ENOSPC, "No space left on device")
+    monkeypatch.setattr(Request, "form", boom)
+    assert (await up(c, "a.csv", b"x")).status_code == 413

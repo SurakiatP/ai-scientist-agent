@@ -9,6 +9,11 @@
 	request_body {
 		max_size 210MB
 	}
+	# Research questions/plans are small: cap before parsing. Uploads (/v1/files) keep the 210MB cap above.
+	@ask path /v1/async/*
+	request_body @ask {
+		max_size 1MB
+	}
 	# flush_interval -1: SSE stream of research events must not buffer.
 	handle /v1/* {
 		reverse_proxy backend:8000 {
