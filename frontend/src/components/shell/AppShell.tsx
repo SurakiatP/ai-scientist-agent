@@ -13,7 +13,7 @@ import { Mark, Sidebar } from "./Sidebar";
 
 const W = UI.sidebar;
 
-export function AppShell({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
+export function AppShell({ children, aside, asideWide }: { children: ReactNode; aside?: ReactNode; asideWide?: boolean }) {
   const t = useT();
   const [drawer, setDrawer] = useState(false);
   const [moved, setMoved] = useState(false); // transition only after the user toggles, never on the load-time pref hydrate
@@ -46,7 +46,7 @@ export function AppShell({ children, aside }: { children: ReactNode; aside?: Rea
         </Stack>
         <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{children}</Box>
       </Box>
-      {aside && <Box component="aside" sx={{ display: { xs: "none", lg: "block" }, width: UI.aside, flexShrink: 0, borderLeft: 1, borderColor: "divider", overflowY: "auto", p: 2 }}>{aside}</Box>}
+      {aside && <Box component="aside" sx={{ display: { xs: "none", lg: "block" }, width: asideWide ? UI.asideWide : UI.aside, flexShrink: 0, borderLeft: 1, borderColor: "divider", overflowY: "auto", p: 2 }}>{aside}</Box>}
       <SettingsDialog />
     </Box>
   );

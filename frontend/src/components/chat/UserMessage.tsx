@@ -1,6 +1,5 @@
 "use client";
 import { Box, Typography } from "@mui/material";
-import PersonOutlineRoundedIcon from "@mui/icons-material/PersonOutlineRounded";
 import { usePrefs, useT } from "@/lib/prefs";
 
 export const Time = ({ ts }: { ts: number }) => {
@@ -14,15 +13,12 @@ export const avatarSx = { width: 32, height: 32, flexShrink: 0, borderRadius: "5
 export function UserMessage({ question, createdAt }: { question: string; createdAt: number }) {
   const t = useT();
   return (
-    <Box sx={{ display: "flex", gap: 1.5, alignItems: "flex-start", px: 0.5 }}>
-      <Box aria-hidden sx={avatarSx}><PersonOutlineRoundedIcon /></Box>
-      <Box sx={{ minWidth: 0, flex: 1 }}>
-        <Box sx={{ display: "flex", gap: 1, alignItems: "baseline", mb: 0.25 }}>
-          <Typography sx={{ fontSize: "0.875rem", fontWeight: 700 }}>{t.you}</Typography>
-          <Time ts={createdAt} />
-        </Box>
+    <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.5, px: 0.5 }}>
+      <Box component="span" sx={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" }}>{t.you}</Box>
+      <Box sx={{ maxWidth: "75%", minWidth: 0, bgcolor: "surface.raised", border: 1, borderColor: "divider", borderRadius: "20px 20px 6px 20px", px: 2, py: 1.25 }}>
         <Typography sx={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap", lineHeight: 1.7, fontSize: "1rem" }}>{question}</Typography>
       </Box>
+      <Time ts={createdAt} />
     </Box>
   );
 }

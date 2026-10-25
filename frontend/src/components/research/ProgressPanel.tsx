@@ -17,7 +17,7 @@ const NO_PREF = "@media (prefers-reduced-motion: no-preference)";
 const tone = (st: "verified" | "unverified" | "unknown") => (st === "verified" ? "evidence.verified" : st === "unknown" ? "evidence.unknown" : "evidence.unverified");
 
 // Finished answer: the real references as cards (status = the existence check only), mirroring the inline citations.
-function SourcesPanel({ turn, sessionId }: { turn: Turn; sessionId: string }) {
+export function SourcesPanel({ turn, sessionId }: { turn: Turn; sessionId: string }) {
   const t = useT();
   const open = useInspector((s) => s.open);
   const refs = turn.answer?.references ?? [];

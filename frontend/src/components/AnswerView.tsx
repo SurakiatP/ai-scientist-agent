@@ -3,6 +3,7 @@ import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Box } from "@mui/material";
 import { useInspector } from "@/lib/inspector";
+import { revealStagger } from "@/lib/motion";
 import { useT } from "@/lib/prefs";
 
 // "[1]" / "[2][3]" -> link to #ref-N so a click jumps to (and :target highlights) the reference.
@@ -16,7 +17,7 @@ export function cite(s: string, ids: Set<string>, prefix = "ref-") {
 const safeUrl = (u: string) => (/^#ref-\S+$/.test(u) || /^https?:\/\//i.test(u) ? defaultUrlTransform(u) : "");
 
 // With `scope`, anchors are unique per turn (ref-<turnId>-N) and a pill opens the source inspector.
-export function AnswerView({ content, references = [], scope }: { content: string; references?: { id: string }[]; scope?: { sessionId: string; turnId: string } }) {
+export function AnswerView({ content, references = [], scope, reveal }: { content: string; references?: { id: string }[]; scope?: { sessionId: string; turnId: string }; reveal?: boolean }) {
   const t = useT();
   const open = useInspector((s) => s.open);
   const ids = new Set(references.map((r) => r.id));
@@ -24,6 +25,7 @@ export function AnswerView({ content, references = [], scope }: { content: strin
   return (
     <Box
       sx={{
+        ...(reveal ? revealStagger : {}),
         overflowWrap: "anywhere",
         fontSize: "1rem",
         lineHeight: 1.8,

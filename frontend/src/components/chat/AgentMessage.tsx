@@ -1,6 +1,7 @@
 "use client";
 import { memo, useState } from "react";
-import { Box, Button, Chip, Stack, Typography } from "@mui/material";
+import { Box, Button, Chip, IconButton, Stack, Tooltip, Typography } from "@mui/material";
+import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
@@ -13,8 +14,10 @@ import { ReferenceList } from "@/components/ReferenceList";
 import { AnalysisArtifact } from "@/components/research/AnalysisArtifact";
 import { PlanCard, type PlanSearch } from "@/components/research/PlanCard";
 import { ProgressCard } from "@/components/research/ProgressCard";
+import { AnswerSkeleton } from "@/components/research/AnswerSkeleton";
 import { ReportArtifact, reportId } from "@/components/research/ReportArtifact";
 import type { Turn } from "@/lib/chat";
+import { useReportPanel } from "@/lib/exportReport";
 import { useInspector } from "@/lib/inspector";
 import { useT } from "@/lib/prefs";
 import { strings } from "@/lib/strings";
@@ -26,11 +29,10 @@ import { avatarSx, Time } from "./UserMessage";
 
 function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }) {
   const t = useT();
-  const [reportOpen, setReportOpen] = useState(false);
-  const showReport = () => { // jump to the report card and expand it; no second download path
-    setReportOpen(true);
-    setTimeout(() => { document.getElementById(reportId(turn.id))?.scrollIntoView?.({ block: "nearest" }); document.getElementById(`${reportId(turn.id)}-toggle`)?.focus(); }, 0);
-  };
+  const openReport = useReportPanel((s) => s.open);
+  const [copied, setCopied] = useState<"ok" | "fail" | null>(null);
+  const [wasRunning] = useState(turn.status === "running"); // only an answer that arrives live is revealed part by part; reloads render at once
+  const copy = async () => { try { await navigator.clipboard.writeText(turn.answer?.content ?? ""); setCopied("ok"); } catch { setCopied("fail"); } setTimeout(() => setCopied(null), 2000); };
   const busy = !!useRunState().turnId;
   const { status } = turn;
   const analysis = turn.analysis;
@@ -67,10 +69,15 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
           <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{t.awaitPlanNote}</Typography>
           {planErr && <Typography role="status" sx={{ fontSize: "0.8125rem", color: "error.main" }}>{t.startFailed}</Typography>}
         </Stack>
-      ) : status === "running" && <ProgressCard turn={turn} />}
+      ) : status === "running" && (
+        <>
+          <ProgressCard turn={turn} />
+          {(turn.progress.phase === "searching" || turn.progress.phase === "writing") && <AnswerSkeleton phase={turn.progress.phase} />}
+        </>
+      )}
       {status === "done" && !analysis && turn.answer && (
         <>
-          <AnswerView content={turn.answer.content} references={turn.answer.references} scope={scope} />
+          <AnswerView content={turn.answer.content} references={turn.answer.references} scope={scope} reveal={wasRunning} />
           {turn.answer.references.length > 0 && (
             <Box sx={{ mt: 2, display: { xs: "block", lg: "none" } }}>{/* >= lg the sources panel on the right lists them (and owns the anchors) */}
               <Typography component="h3" sx={{ fontSize: "0.9375rem", fontWeight: 700 }}>{t.references}</Typography>
@@ -81,9 +88,16 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
             <Button variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={focusComposer}>{t.askFollowUp}</Button>
             <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={refs.length === 0} sx={{ borderColor: "divider" }}
               onClick={(e) => openInspector({ ...scope, refId: refs[0].id }, e.currentTarget)}>{t.openEvidence}</Button>
-            <Button variant="outlined" color="inherit" startIcon={<BarChartRoundedIcon />} sx={{ borderColor: "divider" }} aria-controls={reportId(turn.id)} onClick={showReport}>{t.makeReport}</Button>
+            <Button variant="outlined" color="inherit" startIcon={<BarChartRoundedIcon />} sx={{ borderColor: "divider" }} aria-controls={reportId(turn.id)} onClick={() => openReport(sessionId, turn.id)}>{t.makeReport}</Button>
+            <Tooltip title={copied === "fail" ? t.copyFailed : copied === "ok" ? t.copied : t.copyAnswer}>
+              <IconButton aria-label={t.copyAnswer} onClick={copy} sx={{ width: 44, height: 44, color: "text.secondary" }}><ContentCopyRoundedIcon fontSize="small" /></IconButton>
+            </Tooltip>
+            <Tooltip title={busy ? t.retryBusy : t.regen}>
+              <span><IconButton aria-label={t.regen} onClick={retry} disabled={busy} sx={{ width: 44, height: 44, color: "text.secondary" }}><ReplayRoundedIcon fontSize="small" /></IconButton></span>
+            </Tooltip>
           </Stack>
-          <ReportArtifact sessionId={sessionId} turn={turn} open={reportOpen} onToggle={() => setReportOpen((o) => !o)} />
+          <Box role="status" sx={{ fontSize: "0.75rem", color: "text.secondary", minHeight: copied ? undefined : 0 }}>{copied === "fail" ? t.copyFailed : copied === "ok" ? t.copied : ""}</Box>
+          <ReportArtifact sessionId={sessionId} turn={turn} />
         </>
       )}
       {text && status === "refused" ? (

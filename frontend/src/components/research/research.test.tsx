@@ -11,7 +11,6 @@ import type { Reference } from "@/lib/sse";
 import { strings } from "@/lib/strings";
 import { ProgressCard } from "./ProgressCard";
 import { ProgressPanel } from "./ProgressPanel";
-import { ReportActions } from "./ReportActions";
 import { SourceInspector } from "./SourceInspector";
 
 const t = strings.en;
@@ -195,20 +194,5 @@ describe("inspector guards", () => {
     render(<ReferenceList t={t} references={[ref("1", { doi: "10.1/x" }, "unverified"), ref("2", {}, "unverified")]} />);
     expect(screen.getByText(t.chkNotFound)).toBeInTheDocument();
     expect(screen.getByText(t.chkNoId)).toBeInTheDocument();
-  });
-});
-
-describe("ReportActions", () => {
-  it("PDF and DOCX are disabled with a reason; copy and download are real", () => {
-    localStorage.clear(); useChatStore.getState().clearAll();
-    const sid = useChatStore.getState().newSession();
-    const tn = turn({ phase: "done" }, { status: "done", answer: { content: "A", references: [] } });
-    useChatStore.getState().addTurn(sid, tn);
-    render(<ReportActions sessionId={sid} turn={tn} />);
-    expect(screen.getByRole("button", { name: t.exportPdf })).toBeDisabled();
-    expect(screen.getByRole("button", { name: t.exportDocx })).toBeDisabled();
-    expect(screen.getAllByText(new RegExp(t.exportUnsupported)).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: t.copyAnswer })).toBeEnabled();
-    expect(screen.getByRole("button", { name: t.downloadMd })).toBeEnabled();
   });
 });

@@ -6,6 +6,7 @@ import { useChatStore, type Turn } from "@/lib/chat";
 import { usePrefs } from "@/lib/prefs";
 import { emptyProgress } from "@/lib/progress";
 import { MAX_QUESTION, sampleQuestions, strings } from "@/lib/strings";
+import { useReportPanel } from "@/lib/exportReport";
 import { AgentMessage } from "./AgentMessage";
 import { Composer, useDraft, useMode } from "./Composer";
 import { EmptyChat } from "./EmptyChat";
@@ -223,7 +224,6 @@ describe("Thread", () => {
   it("copy failure shows feedback", async () => {
     Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("no")) }, configurable: true });
     render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "x", references: [] } })} />);
-    fireEvent.click(screen.getByRole("button", { name: t.makeReport })); // report card is collapsed until asked for
     fireEvent.click(await screen.findByRole("button", { name: t.copyAnswer }));
     expect(await screen.findByText(t.copyFailed)).toBeInTheDocument();
   });
@@ -393,10 +393,20 @@ describe("English starters", () => {
 });
 
 describe("report card", () => {
-  it("is collapsed by default, expands on Create report draft, and has one download path", async () => {
-    render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "A", references: [] } })} />);
+  it("is one compact card; Create report draft opens the report panel store, no inline export buttons", () => {
+    useReportPanel.setState({ ref: null });
+    render(<AgentMessage sessionId="s" turn={turn("done", { id: "t9", answer: { content: "# Title A\n\nbody", references: [] } })} />);
+    expect(screen.getAllByRole("heading", { name: "Title A" })).not.toHaveLength(0);
     expect(screen.queryByRole("button", { name: t.downloadMd })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: t.makeReport }));
-    expect(await screen.findAllByRole("button", { name: t.downloadMd })).toHaveLength(1);
+    expect(useReportPanel.getState().ref).toEqual({ sessionId: "s", turnId: "t9" });
+  });
+
+  it("a running turn shows the aria-hidden skeleton with one status line", () => {
+    const tn = turn("running"); tn.progress = { ...tn.progress, phase: "writing" };
+    render(<AgentMessage sessionId="s" turn={tn} />);
+    const sk = screen.getByTestId("answer-skeleton");
+    expect(sk.querySelector('[aria-hidden="true"]')).not.toBeNull();
+    expect(screen.getByText(t.skelWriting)).toBeInTheDocument();
   });
 });

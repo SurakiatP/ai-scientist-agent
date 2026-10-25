@@ -51,3 +51,17 @@ export const stageDotSx = { opacity: 0, [NO_PREF]: { opacity: 1, animation: `${s
 
 // Sessions whose empty state was shown: their first turn rises when the Thread mounts (EmptyChat -> Thread).
 export const wasEmpty = new Set<string>();
+
+// Skeleton wave: static grey bars by default (SSR, reduced motion); under no-preference a translucent band sweeps
+// left to right on transform only, each line a little later than the one above so the wave rolls down the block.
+const sweep = keyframes`from { transform: translateX(-100%); } to { transform: translateX(100%); }`;
+export const skeletonBar = (i: number) => ({
+  position: "relative", overflow: "hidden", borderRadius: 999, height: 12,
+  bgcolor: "color-mix(in srgb, var(--mui-palette-text-primary) 12%, transparent)",
+  [NO_PREF]: { "&::after": { content: '""', position: "absolute", inset: 0, background: "linear-gradient(90deg, transparent, color-mix(in srgb, var(--mui-palette-primary-main) 26%, transparent), transparent)", animation: `${sweep} 1600ms ${ease} ${i * 110}ms infinite` } },
+});
+
+// Finished answer: children of the markdown root rise in one after another (presentational stagger, capped).
+export const revealStagger = {
+  [NO_PREF]: Object.fromEntries(Array.from({ length: 12 }, (_, k) => [`& > :nth-child(${k + 1})`, { animation: `${rise} 360ms ${ease} ${k * 120}ms both` }])),
+};
