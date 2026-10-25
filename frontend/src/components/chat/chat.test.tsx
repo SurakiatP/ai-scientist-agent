@@ -198,7 +198,7 @@ describe("EmptyChat", () => {
     expect(screen.queryByText(/OTHER-/)).toBeNull();
     expect(screen.getByRole("heading", { name: t.emptyHeading })).toBeInTheDocument();
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
-    expect(screen.getAllByRole("button").filter((b) => sampleQuestions.includes(b.textContent as never))).toHaveLength(3);
+    expect(screen.getAllByRole("button").filter((b) => sampleQuestions.includes(b.getAttribute("aria-label") as never))).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: sampleQuestions[1] }));
     expect(box().value).toBe(sampleQuestions[1]);
     expect(run.startRun).not.toHaveBeenCalled();
@@ -408,5 +408,25 @@ describe("report card", () => {
     const sk = screen.getByTestId("answer-skeleton");
     expect(sk.querySelector('[aria-hidden="true"]')).not.toBeNull();
     expect(screen.getByText(t.skelWriting)).toBeInTheDocument();
+  });
+});
+
+describe("answer tabs", () => {
+  const refs = [{ id: "1", status: "verified" as const, paper: { title: "Paper A", authors: ["A"], year: 2023, doi: null, pmid: null, url: "https://example.org/p" } }];
+  it("shows Finished and an Answer | Sources (n) tab strip that switches panels", () => {
+    render(<AgentMessage sessionId="s" turn={turn("done", { id: "tt", answer: { content: "Body text [1]", references: refs } })} />);
+    expect(screen.getByText(t.finished)).toBeInTheDocument();
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((x) => x.textContent)).toEqual([t.tabAnswer, t.tabSources.replace("{n}", "1")]);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel", { name: t.tabAnswer })).toBeVisible();
+    fireEvent.click(tabs[1]);
+    expect(tabs[1]).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel", { name: t.tabSources.replace("{n}", "1") })).toHaveTextContent("Paper A");
+    expect(screen.queryByRole("tabpanel", { name: t.tabAnswer })).toBeNull(); // hidden panels leave the a11y tree
+  });
+  it("no tab strip when there are no references", () => {
+    render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "x", references: [] } })} />);
+    expect(screen.queryByRole("tab")).toBeNull();
   });
 });

@@ -69,7 +69,7 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
       </Button>
       <Box>
         <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", pl: 1.25, pt: 0.5 }}>
-          <Typography component="h2" sx={{ fontSize: "0.75rem", fontWeight: 600, color: "text.secondary" }}>{t.projects}</Typography>
+          <Typography component="h2" sx={{ fontSize: "0.6875rem", fontWeight: 500, color: "text.secondary" }}>{t.projects}</Typography>
           <IconButton size="small" aria-label={t.newProject} aria-expanded={adding} onClick={() => setAdding(!adding)} sx={{ color: "text.primary" }}>
             <Box sx={{ display: "grid", placeItems: "center", width: 22, height: 22, border: 1, borderColor: "divider", borderRadius: "50%" }}><AddRoundedIcon sx={{ fontSize: 16 }} /></Box>
           </IconButton>
@@ -109,7 +109,7 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
         ))}
       </Box>
       <Box sx={{ flex: 1, minHeight: 0 }}>
-        <Typography component="h2" sx={{ px: 1.25, pb: 0.5, fontSize: "0.75rem", fontWeight: 600, color: "text.secondary" }}>{t.recentShort}</Typography>
+        <Typography component="h2" sx={{ px: 1.25, pb: 0.5, fontSize: "0.6875rem", fontWeight: 500, color: "text.secondary" }}>{t.recentShort}</Typography>
         <TextField size="small" type="search" placeholder={t.searchChats} value={query} onChange={(e) => setQuery(e.target.value)} fullWidth
           sx={{ mb: 0.5, "& .MuiOutlinedInput-root": { ...UI.row, borderRadius: 1.5, fontSize: "0.875rem" }, "& fieldset": { borderColor: "transparent" }, "& .MuiOutlinedInput-root:hover fieldset": { borderColor: "divider" } }}
           slotProps={{ htmlInput: { "aria-label": t.searchChats }, input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small" /></InputAdornment> } }} />

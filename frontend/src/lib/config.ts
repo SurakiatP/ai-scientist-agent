@@ -5,7 +5,7 @@ export const BG = { light: "#F5F8F9", dark: "#0F1D26" };
 
 // Proportions scale (px). One place so shell, chat and panels stay balanced; Gemini-like: quiet sidebar, one narrow reading column.
 export const UI = {
-  sidebar: 272, aside: 300, asideWide: 460, content: 760, composer: 720,
+  sidebar: 272, aside: 300, asideWide: 460, content: 760, composer: 640,
   // 44px targets by default; dense 40px rows only on fine pointers (still above the WCAG 2.2 24px minimum)
   row: { minHeight: 44, "@media (pointer: fine)": { minHeight: 40 } },
 } as const;

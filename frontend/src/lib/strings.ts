@@ -198,6 +198,15 @@ export const strings = {
     rpTabReport: "รายงาน",
     rpTabSources: "แหล่งข้อมูล",
     rpTabs: "มุมมองแผงด้านขวา",
+    tabAnswer: "คำตอบ",
+    tabSources: "แหล่งข้อมูล ({n})",
+    tabsAria: "มุมมองคำตอบ",
+    finished: "เสร็จแล้ว",
+    citeRef: "อ้างอิง",
+    srcCardTitle: "แหล่งข้อมูล {n}",
+    fStyle: "รูปแบบเอกสาร",
+    fStyleStd: "มาตรฐาน",
+    fStyleOfficial: "แบบราชการ",
     rpContents: "สารบัญ",
     rpShare: "แชร์และส่งออก",
     rpEdit: "แก้ไขและสร้างเอกสาร",
@@ -480,6 +489,15 @@ export const strings = {
     rpTabReport: "Report",
     rpTabSources: "Sources",
     rpTabs: "Side panel view",
+    tabAnswer: "Answer",
+    tabSources: "Sources ({n})",
+    tabsAria: "Answer view",
+    finished: "Finished",
+    citeRef: "Reference",
+    srcCardTitle: "Sources {n}",
+    fStyle: "Document style",
+    fStyleStd: "Standard",
+    fStyleOfficial: "Official",
     rpContents: "Contents",
     rpShare: "Share & export",
     rpEdit: "Edit & create document",
@@ -672,3 +690,7 @@ export const sampleQuestions = [
   "วิธีตรวจจับ anomaly ในอนุกรมเวลาด้วย deep learning",
   "ข้อจำกัดของ vision transformer เทียบกับ CNN ในภาพถ่ายทางการแพทย์",
 ] as const;
+
+// One short hint per starter (static copy about the kind of question, not data).
+export const sampleHintsEn = ["Compare approaches", "Methods and techniques", "Limits and trade-offs"] as const;
+export const sampleHints = ["เปรียบเทียบแนวทาง", "วิธีการและเทคนิค", "ข้อจำกัดและข้อแลกเปลี่ยน"] as const;

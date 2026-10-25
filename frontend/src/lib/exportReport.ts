@@ -7,8 +7,9 @@ import type { Lang, Strings } from "./strings";
 // Limits of POST /v1/reports/export (backend contract).
 export const LIM = { title: 200, subtitle: 300, heading: 200, para: 5000, sections: 30, paras: 60, refs: 100 } as const;
 export type Format = "pdf" | "docx";
-export type Draft = { title: string; subtitle: string; refs: boolean; lang: Lang; sections: { heading: string; text: string }[] };
-type Payload = { format: Format; language: Lang; title: string; subtitle: string | null; sections: { heading: string; paragraphs: string[] }[]; references: unknown[] };
+export type ReportStyle = "standard" | "official";
+export type Draft = { style: ReportStyle; title: string; subtitle: string; refs: boolean; lang: Lang; sections: { heading: string; text: string }[] };
+type Payload = { format: Format; style: ReportStyle; language: Lang; title: string; subtitle: string | null; sections: { heading: string; paragraphs: string[] }[]; references: unknown[] };
 
 // Paragraph = blank-line separated block; a block over the limit is split at whitespace so no text is lost.
 export function paragraphsOf(text: string): string[] {
@@ -42,7 +43,7 @@ export function draftSections(content: string, fallback: string): { heading: str
 export const docTitle = (turn: Turn) => ((/^#{1,3}\s+(.+?)\s*#*$/m.exec(turn.answer?.content ?? "")?.[1]) || turn.question).slice(0, LIM.title);
 
 export function initialDraft(turn: Turn, lang: Lang, t: Strings): Draft {
-  return { title: docTitle(turn), subtitle: turn.answer ? turn.question.slice(0, LIM.subtitle) : "", refs: true, lang, sections: draftSections(turn.answer?.content ?? "", t.reportAnswerSection) };
+  return { style: "standard", title: docTitle(turn), subtitle: turn.answer ? turn.question.slice(0, LIM.subtitle) : "", refs: true, lang, sections: draftSections(turn.answer?.content ?? "", t.reportAnswerSection) };
 }
 
 export const draftIssue = (d: Draft): "title" | "limits" | null =>
@@ -54,7 +55,7 @@ export function toPayload(d: Draft, format: Format, turn: Turn): Payload {
     id: r.id, title: r.paper.title, authors: r.paper.authors, year: r.paper.year ?? null,
     doi: doiOf(r.paper) || null, url: httpUrl(paperLink(r.paper) ?? r.paper.url) ?? null, status: r.status,
   })) : [];
-  return { format, language: d.lang, title: d.title.trim().slice(0, LIM.title), subtitle: d.subtitle.trim().slice(0, LIM.subtitle) || null, sections: d.sections.map((s) => ({ heading: s.heading.trim() || " ", paragraphs: paragraphsOf(s.text) })), references: refs };
+  return { format, style: d.style, language: d.lang, title: d.title.trim().slice(0, LIM.title), subtitle: d.subtitle.trim().slice(0, LIM.subtitle) || null, sections: d.sections.map((s) => ({ heading: s.heading.trim() || " ", paragraphs: paragraphsOf(s.text) })), references: refs };
 }
 
 export type ExportError = "413" | "422" | "503" | "net" | "other";

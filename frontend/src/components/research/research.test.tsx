@@ -109,7 +109,7 @@ describe("citations and inspector", () => {
   it("clicking a citation pill opens the inspector for that reference", () => {
     const { sid, tn } = setup();
     render(<><AnswerView content={tn.answer!.content} references={refs} scope={{ sessionId: sid, turnId: tn.id }} /><SourceInspector variant="sheet" /></>);
-    fireEvent.click(screen.getByRole("link", { name: "[1]" }));
+    fireEvent.click(screen.getByRole("link", { name: "Reference 1: Paper 1" }));
     expect(useInspector.getState().ref).toEqual({ sessionId: sid, turnId: tn.id, refId: "1" });
     const dlg = screen.getByRole("dialog");
     expect(within(dlg).getByText("Paper 1")).toBeInTheDocument();
@@ -166,7 +166,7 @@ describe("inspector guards", () => {
   beforeEach(() => { localStorage.clear(); useChatStore.getState().clearAll(); });
   it("pill for an unknown ref id does not open the inspector", () => {
     render(<AnswerView content="x [1]" references={[{ id: "1" }]} scope={{ sessionId: "s", turnId: "A" }} />);
-    const a = screen.getByRole("link", { name: "[1]" });
+    const a = screen.getByRole("link", { name: "Reference 1" });
     a.setAttribute("href", "#ref-OTHER-1");
     fireEvent.click(a);
     expect(useInspector.getState().ref).toBeNull();

@@ -1,9 +1,11 @@
 "use client";
-import { Box, Button, Chip, IconButton, Stack, Typography } from "@mui/material";
+import { useState } from "react";
+import { Box, Button, ButtonBase, Chip, IconButton, Stack, Typography } from "@mui/material";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import { useInspector } from "@/lib/inspector";
-import { checkLabel, paperLink } from "@/lib/refs";
+import { checkLabel, paperLink, sourceHost } from "@/lib/refs";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import LightbulbOutlinedIcon from "@mui/icons-material/LightbulbOutlined";
@@ -17,13 +19,36 @@ const NO_PREF = "@media (prefers-reduced-motion: no-preference)";
 const tone = (st: "verified" | "unverified" | "unknown") => (st === "verified" ? "evidence.verified" : st === "unknown" ? "evidence.unknown" : "evidence.unverified");
 
 // Finished answer: the real references as cards (status = the existence check only), mirroring the inline citations.
-export function SourcesPanel({ turn, sessionId }: { turn: Turn; sessionId: string }) {
+// Collapsed by default: one small card with the source domains stacked as chips; expands to the full list.
+function SourcesCompact({ turn, sessionId }: { turn: Turn; sessionId: string }) {
+  const t = useT();
+  const [openList, setOpenList] = useState(false);
+  const refs = turn.answer?.references ?? [];
+  const hosts = [...new Set(refs.map((r) => sourceHost(r.paper)).filter(Boolean))];
+  return (
+    <Box sx={{ ...card, p: 0 }}>
+      <ButtonBase aria-expanded={openList} aria-controls={`srcs-${turn.id}`} onClick={() => setOpenList(!openList)}
+        sx={{ width: "100%", minHeight: 44, display: "flex", justifyContent: "space-between", textAlign: "left", px: 2, py: 1.25, borderRadius: 2 }}>
+        <Typography component="span" sx={{ fontSize: "0.9375rem", fontWeight: 700 }}>{t.srcCardTitle.replace("{n}", String(refs.length))}</Typography>
+        <ExpandMoreRoundedIcon aria-hidden sx={{ color: "text.secondary", transform: openList ? "rotate(180deg)" : "none" }} />
+      </ButtonBase>
+      {!openList && hosts.length > 0 && (
+        <Stack aria-hidden direction="row" useFlexGap sx={{ gap: 0.75, flexWrap: "wrap", px: 2, pb: 1.5 }}>
+          {hosts.slice(0, 6).map((h) => <Chip key={h} size="small" variant="outlined" label={h} sx={{ maxWidth: "100%", fontSize: "0.6875rem", "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" } }} />)}
+        </Stack>
+      )}
+      <Box id={`srcs-${turn.id}`} hidden={!openList} sx={{ px: 2, pb: 2 }}>{openList && <SourcesPanel turn={turn} sessionId={sessionId} bare />}</Box>
+    </Box>
+  );
+}
+
+export function SourcesPanel({ turn, sessionId, bare }: { turn: Turn; sessionId: string; bare?: boolean }) {
   const t = useT();
   const open = useInspector((s) => s.open);
   const refs = turn.answer?.references ?? [];
   return (
     <Stack spacing={1.5} component="section" aria-label={t.references}>
-      <Typography component="h2" sx={{ fontSize: "1.0625rem", fontWeight: 700 }}>{t.sourcesTitle.replace("{n}", String(refs.length))}</Typography>
+      {!bare && <Typography component="h2" sx={{ fontSize: "1.0625rem", fontWeight: 700 }}>{t.sourcesTitle.replace("{n}", String(refs.length))}</Typography>}
       {refs.map((r) => {
         const link = paperLink(r.paper);
         const meta = [r.paper.authors.slice(0, 2).join(", ") + (r.paper.authors.length > 2 ? ` ${t.etAl}` : ""), r.paper.year].filter(Boolean).join(", ");
@@ -57,7 +82,7 @@ export function SourcesPanel({ turn, sessionId }: { turn: Turn; sessionId: strin
 // Right-hand panel: every state and number is derived from `turn.progress`; nothing is estimated.
 export function ProgressPanel({ turn, sessionId }: { turn: Turn; sessionId?: string }) {
   const t = useT();
-  if (sessionId && turn.status === "done" && !turn.analysis && (turn.answer?.references.length ?? 0) > 0) return <SourcesPanel turn={turn} sessionId={sessionId} />;
+  if (sessionId && turn.status === "done" && !turn.analysis && (turn.answer?.references.length ?? 0) > 0) return <SourcesCompact turn={turn} sessionId={sessionId} />;
   const p = turn.progress;
   const found = Object.values(p.sources).reduce((a, b) => a + b, 0);
   const idx = stageIndex(p), done = p.phase === "done";

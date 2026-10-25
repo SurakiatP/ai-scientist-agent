@@ -45,6 +45,10 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
                 <MenuItem value="th">ไทย</MenuItem>
                 <MenuItem value="en">English</MenuItem>
               </TextField>
+              <TextField select label={t.fStyle} value={d.style} onChange={(e) => set({ style: e.target.value as Draft["style"] })} sx={{ minWidth: 180 }}>
+                <MenuItem value="standard">{t.fStyleStd}</MenuItem>
+                <MenuItem value="official">{t.fStyleOfficial}</MenuItem>
+              </TextField>
               <FormControlLabel control={<Switch checked={d.refs} onChange={(e) => set({ refs: e.target.checked })} />} label={t.fRefs} sx={{ minHeight: 44 }} />
             </Stack>
             <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>{fill(t.fLimits, { s: LIM.sections, p: LIM.paras, c: LIM.para })}</Typography>

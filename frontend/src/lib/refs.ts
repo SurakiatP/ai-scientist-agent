@@ -31,3 +31,11 @@ export const hasId = (p: Reference["paper"]) => !!(doiOf(p) || p.pmid?.trim() ||
 export const checkLabel = (r: Reference, t: Strings) =>
   r.status === "verified" ? t.verified : r.status === "unknown" ? t.chkUnknown : hasId(r.paper) ? t.chkNotFound : t.chkNoId;
 
+
+// Domain for a citation chip: the paper's own http(s) url, else the resolver we link to (doi.org / pubmed). "" when there is none.
+// URL() lowercases and drops the port; we also drop "www." and a trailing dot.
+export function sourceHost(p: Reference["paper"]): string {
+  const u = httpUrl(p.url) ?? paperLink(p);
+  if (!u) return "";
+  return new URL(u).hostname.replace(/\.$/, "").replace(/^www\./, "");
+}

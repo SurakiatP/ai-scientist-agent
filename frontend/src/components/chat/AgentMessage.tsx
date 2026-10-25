@@ -1,6 +1,6 @@
 "use client";
 import { memo, useState } from "react";
-import { Box, Button, Chip, IconButton, Stack, Tooltip, Typography } from "@mui/material";
+import { Box, Button, Chip, IconButton, Stack, Tab, Tabs, Tooltip, Typography } from "@mui/material";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
@@ -45,6 +45,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   // the backend reason is English-only; Thai UI shows the localized scope message instead
   const text = status === "refused" ? (t === strings.th ? t.refused : turn.refused) : status === "error" ? turn.error : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
   const refs = turn.answer?.references ?? [];
+  const [tab, setTab] = useState<"answer" | "sources">("answer");
   const openInspector = useInspector((x) => x.open);
   return (
     <Box sx={{ px: 0.5 }}>
@@ -53,10 +54,6 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
         <Typography sx={{ fontSize: "0.875rem", fontWeight: 700 }}>{t.brand}</Typography>
         {turn.mode === "deep" && !analysis && <Chip size="small" variant="outlined" icon={<LayersOutlinedIcon />} label={t.modeDeep} sx={{ borderRadius: 999, "& .MuiChip-icon": { color: "primary.main" } }} />}
         <Time ts={turn.createdAt} />
-        {status === "done" && !analysis && turn.answer && (
-          <Chip size="small" variant="outlined" icon={<CheckRoundedIcon />} label={t.researchComplete}
-            sx={{ ml: "auto", borderRadius: 999, color: "primary.main", borderColor: "primary.main", "& .MuiChip-icon": { color: "inherit", fontSize: 16 } }} />
-        )}
       </Box>
       {analysis ? <AnalysisArtifact turn={turn} /> : status === "awaiting_plan" && !!turn.plan ? (
         // Plan review holds the turn: the plan card stands in for the progress strip until the user decides.
@@ -77,11 +74,21 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
       )}
       {status === "done" && !analysis && turn.answer && (
         <>
-          <AnswerView content={turn.answer.content} references={turn.answer.references} scope={scope} reveal={wasRunning} />
-          {turn.answer.references.length > 0 && (
-            <Box sx={{ mt: 2, display: { xs: "block", lg: "none" } }}>{/* >= lg the sources panel on the right lists them (and owns the anchors) */}
-              <Typography component="h3" sx={{ fontSize: "0.9375rem", fontWeight: 700 }}>{t.references}</Typography>
-              <ReferenceList references={turn.answer.references} t={t} scope={scope} />
+          <Typography sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 0.5, fontSize: "0.8125rem", color: "text.secondary" }}>
+            <CheckRoundedIcon aria-hidden sx={{ fontSize: 16 }} />{t.finished}
+          </Typography>
+          {refs.length > 0 && (
+            <Tabs value={tab} onChange={(_, v) => setTab(v)} aria-label={t.tabsAria} sx={{ minHeight: 44, mb: 1.5, borderBottom: 1, borderColor: "divider" }}>
+              <Tab value="answer" id={`tab-answer-${turn.id}`} aria-controls={`panel-answer-${turn.id}`} label={t.tabAnswer} sx={{ minHeight: 44 }} />
+              <Tab value="sources" id={`tab-sources-${turn.id}`} aria-controls={`panel-sources-${turn.id}`} label={t.tabSources.replace("{n}", String(refs.length))} sx={{ minHeight: 44 }} />
+            </Tabs>
+          )}
+          <Box role={refs.length ? "tabpanel" : undefined} id={`panel-answer-${turn.id}`} aria-labelledby={refs.length ? `tab-answer-${turn.id}` : undefined} hidden={tab !== "answer"}>
+            <AnswerView content={turn.answer.content} references={turn.answer.references} scope={scope} reveal={wasRunning} />
+          </Box>
+          {refs.length > 0 && (
+            <Box role="tabpanel" id={`panel-sources-${turn.id}`} aria-labelledby={`tab-sources-${turn.id}`} hidden={tab !== "sources"}>
+              <ReferenceList references={refs} t={t} scope={scope} />
             </Box>
           )}
           <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 2, flexWrap: "wrap" }}>

