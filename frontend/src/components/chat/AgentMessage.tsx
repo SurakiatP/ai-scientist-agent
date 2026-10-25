@@ -1,6 +1,6 @@
 "use client";
 import { memo, useState } from "react";
-import { Box, Button, Chip, IconButton, Stack, Tab, Tabs, Tooltip, Typography } from "@mui/material";
+import { Box, Button, IconButton, Stack, Tab, Tabs, Tooltip, Typography } from "@mui/material";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
@@ -52,8 +52,15 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
       <Box sx={{ display: "flex", gap: 1.5, alignItems: "center", flexWrap: "wrap", mb: 1.5 }}>
         <Box aria-hidden sx={avatarSx}><LogoMark size={24} /></Box>
         <Typography sx={{ fontSize: "0.875rem", fontWeight: 700 }}>{t.brand}</Typography>
-        {turn.mode === "chat" && !analysis && <Chip size="small" variant="outlined" icon={<ChatBubbleOutlineRoundedIcon />} label={t.modeChat} sx={{ borderRadius: 999, borderColor: "primary.main", "& .MuiChip-icon": { color: "primary.main" } }} />}
-        {turn.mode === "deep" && !analysis && <Chip size="small" variant="outlined" icon={<LayersOutlinedIcon />} label={t.modeDeep} sx={{ borderRadius: 999, "& .MuiChip-icon": { color: "primary.main" } }} />}
+        {/* the mode is metadata, not an action: quiet muted text with a small icon, no outlined pill */}
+        {!analysis && (turn.mode === "chat" || turn.mode === "deep" || turn.mode === "quick") && (
+          <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, color: "text.secondary", fontSize: "0.8125rem" }}>
+            <Box component="span" aria-hidden sx={{ opacity: 0.6 }}>·</Box>
+            {turn.mode === "chat" ? <ChatBubbleOutlineRoundedIcon sx={{ fontSize: 15 }} /> : <LayersOutlinedIcon sx={{ fontSize: 15 }} />}
+            {turn.mode === "chat" ? t.modeChat : turn.mode === "deep" ? t.modeDeep : t.modeQuick}
+            <Box component="span" aria-hidden sx={{ opacity: 0.6 }}>·</Box>
+          </Box>
+        )}
         <Time ts={turn.createdAt} />
       </Box>
       {analysis ? <AnalysisArtifact turn={turn} /> : status === "awaiting_plan" && !!turn.plan ? (

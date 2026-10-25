@@ -22,8 +22,9 @@ export function AppShell({ children, aside, asideWide }: { children: ReactNode; 
   const wide = useMediaQuery(useTheme().breakpoints.up("md"));
   if (wide && drawer) setDrawer(false); // no stale modal/focus trap after resize
   const set = usePrefs((s) => s.setSidebarCollapsed);
+  // position + overflow: absolutely positioned helpers (screen-reader-only labels) deep inside the scrolling thread must not stretch the document, or the whole page scrolls and leaves blank space
   return (
-    <Box sx={{ display: "flex", height: "100dvh", bgcolor: "background.default" }}>
+    <Box sx={{ display: "flex", height: "100dvh", position: "relative", overflow: "hidden", bgcolor: "background.default" }}>
       <Box sx={{
         display: { xs: "none", md: "block" }, width: collapsed ? 0 : W, flexShrink: 0, overflow: "hidden", visibility: collapsed ? "hidden" : "visible",
         ...(moved && { transition: `width 260ms ${ease}, visibility 0s linear ${collapsed ? "260ms" : "0s"}` }),
