@@ -54,6 +54,19 @@ for p in 8000 3000; do
   ! port_busy "$p" || die "port $p is already in use (not touching it)."
 done
 
+# Local MinIO for uploads/artifacts: loopback only, throwaway dev credentials, data in a named volume.
+# Skipped (uploads answer 503) with DEV_NO_MINIO=1. The sandbox image is built once for analysis.
+if [ -z "${DEV_NO_MINIO:-}" ]; then
+  export MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://127.0.0.1:59100} MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-devaccess} MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-dev-secret-not-for-prod}
+  if ! docker ps --format '{{.Names}}' | grep -qx scientist-dev-minio; then
+    docker rm -f scientist-dev-minio >/dev/null 2>&1 || true
+    docker run -d --name scientist-dev-minio -p 127.0.0.1:59100:9000 -v scientist-dev-minio:/data \
+      -e MINIO_ROOT_USER="$MINIO_ACCESS_KEY" -e MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \
+      quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data >/dev/null || die "could not start the local MinIO container."
+  fi
+  docker image inspect scientist-sandbox:latest >/dev/null 2>&1 || docker build -q -t scientist-sandbox:latest backend/sandbox >/dev/null || die "could not build the sandbox image."
+fi
+
 set -m  # each background job gets its own process group, so we can kill the whole tree
 BACK=; FRONT=
 alive() { kill -0 "$1" 2>/dev/null; }
@@ -62,7 +75,7 @@ stop() {
   rc=$?; trap - EXIT INT TERM
   echo; echo "Stopping..."
   for pid in $FRONT $BACK; do kill -TERM -- "-$pid" 2>/dev/null || true; done
-  # backend shutdown hook removes labelled Docker containers; give it time, then force
+  # backend shutdown hook removes labelled Docker containers (the dev MinIO keeps running: docker rm -f scientist-dev-minio); give it time, then force
   for _ in $(seq 1 30); do
     { [ -z "$BACK" ] || ! alive "$BACK"; } && { [ -z "$FRONT" ] || ! alive "$FRONT"; } && break
     sleep 0.5
