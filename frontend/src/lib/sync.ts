@@ -12,7 +12,7 @@ import { runningTurnId } from "./run";
 // behaves exactly like the browser-only version.
 export type SyncStatus = "disabled" | "connecting" | "online" | "offline" | "conflict";
 type Kind = "project" | "session" | "file" | "turn";
-type Op = { k: Kind; id: string; sid?: string; a: "put" | "del" | "restore" };
+type Op = { k: Kind; id: string; sid?: string; idx?: number; a: "put" | "del" | "restore" }; // a turn "del" = remove from position `idx` on (edited message)
 type Row = Record<string, unknown>;
 export type Notice = "conflict" | "remote" | "queueFull" | null;
 
@@ -54,7 +54,7 @@ const save = () => {
 const load = () => {
   try {
     const q = JSON.parse(sessionStorage.getItem(QUEUE_KEY) ?? "[]");
-    if (Array.isArray(q)) queue = q.filter((o): o is Op => !!o && ["project", "session", "file", "turn"].includes(o.k) && ["put", "del", "restore"].includes(o.a) && typeof o.id === "string" && validId(o.k, o.id)).slice(0, QUEUE_MAX);
+    if (Array.isArray(q)) queue = q.filter((o): o is Op => !!o && ["project", "session", "file", "turn"].includes(o.k) && ["put", "del", "restore"].includes(o.a) && typeof o.id === "string" && validId(o.k, o.id) && (o.idx === undefined || (Number.isInteger(o.idx) && o.idx >= 0 && o.idx <= 100000))).slice(0, QUEUE_MAX);
   } catch {}
 };
 
@@ -182,6 +182,11 @@ type Out = "ok" | "drop" | "retry";
 async function send(o: Op, keepalive = false): Promise<Out> {
   if (!validId(o.k, o.id) || (o.sid && !isUuid(o.sid))) return "drop";
   try {
+    if (o.a === "del" && o.k === "turn") { // the server has one route: remove this position and everything after it
+      if (o.idx === undefined) return "ok"; // it never reached the server
+      await call("DELETE", `/v1/store/sessions/${o.sid}/turns/from/${o.idx}`);
+      return "ok";
+    }
     if (o.a === "del") { await call("DELETE", path(o)); versions.delete(vkey(o.k, o.id)); return "ok"; }
     if (o.a === "restore") { await call("POST", `${path(o)}/restore`); return "ok"; }
     const body = build(o);
@@ -292,9 +297,17 @@ function mirrorChat(s: ReturnType<typeof useChatStore.getState>, p: ReturnType<t
     if (o === x) continue;
     if (!o || o.title !== x.title || o.projectId !== x.projectId) { if (x.title || x.turns.length) enqueue({ k: "session", id: x.id, a: "put" }); }
     const ot = new Map((o?.turns ?? []).map((t) => [t.id, t]));
-    for (const t of x.turns) if (ot.get(t.id) !== t) { if (!queue.some((q) => q.k === "session" && q.id === x.id) && !versions.has(vkey("session", x.id))) enqueue({ k: "session", id: x.id, a: "put" }); enqueue({ k: "turn", id: t.id, sid: x.id, a: "put" }); }
     const xt = new Set(x.turns.map((t) => t.id));
-    for (const t of o?.turns ?? []) if (!xt.has(t.id)) { tombstones.add(t.id); enqueue({ k: "turn", id: t.id, sid: x.id, a: "del" }); }
+    const dropped = (o?.turns ?? []).filter((t) => !xt.has(t.id));
+    if (dropped.length) { // an edit: one truncate call, queued BEFORE the replacing turn is written, which then reuses the freed position
+      const at = dropped.map((t) => idxOf.get(t.id)).filter((n): n is number => n !== undefined);
+      const first = dropped.find((t) => idxOf.get(t.id) === (at.length ? Math.min(...at) : undefined));
+      for (const t of dropped) { tombstones.add(t.id); idxOf.delete(t.id); versions.delete(vkey("turn", t.id)); }
+      const kept = x.turns.map((t) => idxOf.get(t.id)).filter((n): n is number => n !== undefined);
+      maxIdx.set(x.id, kept.length ? Math.max(...kept) : -1);
+      if (first && at.length) enqueue({ k: "turn", id: first.id, sid: x.id, idx: Math.min(...at), a: "del" });
+    }
+    for (const t of x.turns) if (ot.get(t.id) !== t) { if (!queue.some((q) => q.k === "session" && q.id === x.id) && !versions.has(vkey("session", x.id))) enqueue({ k: "session", id: x.id, a: "put" }); enqueue({ k: "turn", id: t.id, sid: x.id, a: "put" }); }
   }
   for (const x of p.sessions) if (!sIds.has(x.id) && (x.title || x.turns.length)) removed.push({ k: "session", id: x.id, a: "del" });
   removed.forEach(enqueue);

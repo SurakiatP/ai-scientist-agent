@@ -266,6 +266,22 @@ class Store:
         self._changed("turn", out, session_id=sid)
         return out
 
+    async def truncate_turns(self, sid: str, from_idx: int) -> dict:
+        """Remove the turn at `from_idx` and every later one (an edited question replaces them). Idempotent."""
+        async with self.tx() as s:
+            sess = await self._get(s, m.sessions, sid)
+            if sess is None or sess.deleted_at is not None:
+                raise NotFound("session")
+            gone = (await s.execute(sa.delete(m.turns).where(m.turns.c.session_id == sid, m.turns.c.idx >= from_idx)
+                                    .returning(m.turns.c.id))).all()
+            if gone:
+                await s.execute(sa.update(m.sessions).where(m.sessions.c.id == sid)
+                                .values(updated_at=sa.func.now(), sort_ts=sa.func.now(), version=m.sessions.c.version + 1))
+                sess = await self._get(s, m.sessions, sid)
+        if gone:
+            self._changed("session", _row(sess))  # others refetch the session (and its remaining turns)
+        return {"removed": len(gone)}
+
     # --- reads ---------------------------------------------------------------------------------------------------------
     async def snapshot(self, limit_sessions: int) -> dict:
         await self.purge()

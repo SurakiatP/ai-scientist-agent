@@ -119,6 +119,11 @@ async def put_turn(sid: Uid, tid: Uid, request: Request, st: Store = Depends(dat
     return await run(st.put_turn(sid, tid, await parse(request, TurnIn, st)))
 
 
+@router.delete("/store/sessions/{sid}/turns/from/{idx}", dependencies=W)
+async def truncate_turns(sid: Uid, idx: Annotated[int, Path(ge=0, le=100_000)], st: Store = Depends(data)):
+    return await run(st.truncate_turns(sid, idx))
+
+
 @router.put("/store/files/{fid}", dependencies=W)
 async def put_file(fid: Fid, request: Request, st: Store = Depends(data)):
     b = await parse(request, FileIn, st)

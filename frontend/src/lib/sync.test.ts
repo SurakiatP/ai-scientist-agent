@@ -99,16 +99,29 @@ describe("mirror", () => {
     expect(calls.filter((c) => c.method === "DELETE").map((c) => c.url)).toEqual([`/v1/store/sessions/${blank}`, `/v1/store/projects/${pid}`]);
   });
 
-  it("assigns increasing turn idx and never reuses one after a truncate", async () => {
+  it("an edit truncates from the removed position BEFORE writing the replacing turn, which reuses that position", async () => {
     await online();
     const id = useChatStore.getState().newSession();
     useChatStore.getState().addTurn(id, turn(U(60)));
     useChatStore.getState().addTurn(id, turn(U(61)));
     await done();
+    calls.length = 0;
     useChatStore.getState().truncateFrom(id, U(61));
     useChatStore.getState().addTurn(id, turn(U(62)));
     await done();
-    expect(puts(/\/turns\//).map((c) => c.body!.idx)).toEqual([0, 1, 2]);
+    const seq = calls.filter((c) => /\/turns\//.test(c.url)).map((c) => `${c.method} ${c.url.replace(/^.*\/turns\//, "")}`);
+    // one truncate call from position 1 first, then the new turn written at position 1
+    expect(seq).toEqual(["DELETE from/1", `PUT ${U(62)}`]);
+    expect(puts(/\/turns\//).map((c) => c.body!.idx)).toEqual([1]);
+  });
+
+  it("a turn that never reached the server is dropped locally without any delete call", async () => {
+    await online();
+    const id = useChatStore.getState().newSession();
+    useChatStore.getState().addTurn(id, turn(U(63)));
+    useChatStore.getState().truncateFrom(id, U(63));
+    await done();
+    expect(calls.some((c) => c.method === "DELETE" && /\/turns\//.test(c.url))).toBe(false);
   });
 
   it("mirrors files (rename, move, remove)", async () => {

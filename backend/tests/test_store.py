@@ -113,6 +113,34 @@ async def test_session_turn_roundtrip_and_snapshot(api):
     assert snap["server_time"] and snap["projects"] == [] and snap["files"] == []
 
 
+async def test_truncate_turns_from_index(api):
+    """Editing a message drops that turn and every later one, atomically (the edited question replaces them)."""
+    sid = await mk_session(api)
+    ids = [u() for _ in range(4)]
+    for i, tid in enumerate(ids):
+        assert (await api.put(f"/v1/store/sessions/{sid}/turns/{tid}", json=turn(i))).status_code == 200
+    r = await api.delete(f"/v1/store/sessions/{sid}/turns/from/2")
+    assert r.status_code == 200 and r.json() == {"removed": 2}
+    snap = (await api.get("/v1/store/snapshot")).json()
+    s = next(x for x in snap["sessions"] if x["id"] == sid)
+    assert [t["id"] for t in s["turns"]] == ids[:2]
+    # idempotent: nothing left to remove, still 200
+    assert (await api.delete(f"/v1/store/sessions/{sid}/turns/from/2")).json() == {"removed": 0}
+    # the freed position can be used again by the edited question
+    assert (await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(2, question="edited"))).status_code == 200
+
+
+async def test_truncate_turns_validation(api):
+    sid = await mk_session(api)
+    assert (await api.delete(f"/v1/store/sessions/{sid}/turns/from/-1")).status_code == 422
+    assert (await api.delete(f"/v1/store/sessions/{sid}/turns/from/abc")).status_code == 422
+    assert (await api.delete(f"/v1/store/sessions/{u()}/turns/from/0")).status_code == 404
+    assert (await api.delete("/v1/store/sessions/not-a-uuid/turns/from/0")).status_code == 422
+    trashed = await mk_session(api)
+    assert (await api.delete(f"/v1/store/sessions/{trashed}")).status_code == 200
+    assert (await api.delete(f"/v1/store/sessions/{trashed}/turns/from/0")).status_code == 404
+
+
 async def test_turn_conflicts_and_limits(api):
     sid, tid = await mk_session(api), u()
     put = lambda t, b, s=sid: api.put(f"/v1/store/sessions/{s}/turns/{t}", json=b)  # noqa: E731
