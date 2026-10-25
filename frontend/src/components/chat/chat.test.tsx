@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { UploadError } from "@/lib/sse";
 import { useChatStore, type Turn } from "@/lib/chat";
 import { usePrefs } from "@/lib/prefs";
 import { emptyProgress } from "@/lib/progress";
@@ -10,13 +11,16 @@ import { Composer, useDraft } from "./Composer";
 import { EmptyChat } from "./EmptyChat";
 import { Thread } from "./Thread";
 
-const run = vi.hoisted(() => ({ sessionId: null as string | null, turnId: null as string | null, startRun: vi.fn(async () => {}), stopRun: vi.fn() }));
+const run = vi.hoisted(() => ({ sessionId: null as string | null, turnId: null as string | null, startRun: vi.fn(async () => {}), startAnalysis: vi.fn(async () => {}), stopRun: vi.fn() }));
 vi.mock("@/lib/run", () => ({
   useRunState: () => ({ sessionId: run.sessionId, turnId: run.turnId }),
   startRun: run.startRun,
+  startAnalysis: run.startAnalysis,
   stopRun: run.stopRun,
   canStart: () => (run.turnId ? { ok: false, reason: "busy" } : { ok: true }),
 }));
+const upload = vi.hoisted(() => ({ fn: vi.fn() }));
+vi.mock("@/lib/sse", async (orig) => ({ ...(await orig<typeof import("@/lib/sse")>()), uploadFile: upload.fn }));
 
 const t = strings.th;
 const turn = (status: Turn["status"], p: Partial<Turn> = {}): Turn => ({ id: `t${Math.random()}`, question: "Q1", createdAt: Date.now(), status, progress: emptyProgress, ...p });
@@ -34,7 +38,8 @@ beforeEach(() => {
   useChatStore.getState().clearAll();
   usePrefs.setState({ lang: "th" });
   run.sessionId = run.turnId = null;
-  run.startRun.mockReset(); run.startRun.mockImplementation(async () => {}); run.stopRun.mockClear();
+  run.startRun.mockReset(); run.startRun.mockImplementation(async () => {}); run.startAnalysis.mockReset(); run.startAnalysis.mockImplementation(async () => {}); run.stopRun.mockClear();
+  upload.fn.mockReset();
   useDraft.setState({ drafts: {} });
 });
 afterEach(cleanup);
@@ -70,9 +75,54 @@ describe("Composer", () => {
     expect(run.startRun).not.toHaveBeenCalled();
   });
 
-  it("disabled attach exposes its reason", () => {
+  it("attach accepts the analysis formats", () => {
     render(<Composer sessionId={mk()} />);
-    expect(screen.getByRole("button", { name: new RegExp(t.attachReason) })).toBeDisabled();
+    expect(screen.getByRole("button", { name: t.attach })).toBeEnabled();
+    expect(document.querySelector('input[type="file"]')).toHaveAttribute("accept", ".csv,.xlsx,.parquet,.json");
+  });
+
+  it("uploads one file, shows its name and size, then sends an analysis", async () => {
+    upload.fn.mockResolvedValue({ id: "f1", name: "data.csv", size: 2048, kind: "csv" });
+    const id = mk();
+    render(<Composer sessionId={id} />);
+    fireEvent.click(screen.getByRole("button", { name: t.attach }));
+    fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [new File(["a,b"], "data.csv", { type: "text/csv" })] } });
+    expect(await screen.findByText("data.csv")).toBeInTheDocument();
+    expect(screen.getByText("2.0 KB")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t.modeDeep })).toBeDisabled();
+    type("what changed?");
+    expect(sendBtn()).toBeEnabled();
+    fireEvent.click(sendBtn());
+    expect(run.startAnalysis).toHaveBeenCalledWith(id, "what changed?", "f1", "data.csv");
+    expect(run.startRun).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByText("data.csv")).toBeNull());
+  });
+
+  it("upload failure keeps an error chip and blocks Send until removed", async () => {
+    upload.fn.mockRejectedValueOnce(new UploadError("http", "too large"));
+    render(<Composer sessionId={mk()} />);
+    fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [new File(["x"], "big.csv")] } });
+    expect(await screen.findByText(t.uploadFailed)).toBeInTheDocument();
+    expect(screen.getByText("too large")).toBeInTheDocument();
+    type("q");
+    expect(sendBtn()).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: `${t.removeFile}: big.csv` }));
+    expect(screen.queryByText("big.csv")).toBeNull();
+    expect(sendBtn()).toBeEnabled();
+  });
+
+  it("removing an upload aborts it and disables Send while it is in flight", () => {
+    let signal: AbortSignal | undefined;
+    upload.fn.mockImplementation((_file: File, s: AbortSignal) => { signal = s; return new Promise(() => {}); });
+    render(<Composer sessionId={mk()} />);
+    type("q");
+    fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [new File(["x"], "slow.csv")] } });
+    expect(screen.getByText(t.uploadingFile)).toBeInTheDocument();
+    expect(sendBtn()).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: `${t.removeFile}: slow.csv` }));
+    expect(signal!.aborted).toBe(true);
+    expect(screen.queryByText(t.uploadingFile)).toBeNull();
+    expect(sendBtn()).toBeEnabled();
   });
 
   it("busy elsewhere disables send with a reason; busy here shows Stop", () => {
@@ -199,6 +249,37 @@ describe("Thread", () => {
     expect(container.querySelector('[aria-live="polite"]')).not.toBeNull();
     expect(container.querySelector("strong")?.textContent).toBe("bold");
     expect(container.querySelector("script")).toBeNull();
+  });
+});
+
+describe("Analysis messages", () => {
+  const analysis: NonNullable<Turn["analysis"]> = {
+    fileId: "f".repeat(32), fileName: "data.csv", steps: ["profiling", "running"], script: "print(1)",
+    quality: { rows: 4, columns: 1, truncated: false, columns_info: [{ name: "a", dtype: "int", null_pct: 0 }] },
+    tables: [{ name: "result", columns: ["a"], rows: [[1]], truncated: false }],
+    findings: ["a finding"], timings: { total_s: 2 }, artifacts: [{ id: "a1", name: "chart.png", kind: "figure", url: "/v1/artifacts/a1" }],
+  };
+
+  it("renders the analysis artifact instead of the research progress card", () => {
+    render(<AgentMessage sessionId="s" turn={turn("running", { kind: "analysis", analysis })} />);
+    expect(screen.getByText("data.csv")).toBeInTheDocument();
+    expect(screen.getByText(t.analysisRunning)).toBeInTheDocument();
+    expect(screen.getByText(t.analysisStepProfiling)).toBeInTheDocument();
+    expect(screen.queryByText(t.elapsed)).toBeNull();
+  });
+
+  it("analysis Retry resumes the same file instead of a research run", () => {
+    render(<AgentMessage sessionId="s" turn={turn("error", { question: "why?", error: "boom", kind: "analysis", analysis })} />);
+    fireEvent.click(screen.getByRole("button", { name: t.retry }));
+    expect(run.startAnalysis).toHaveBeenCalledWith("s", "why?", "f".repeat(32), "data.csv");
+    expect(run.startRun).not.toHaveBeenCalled();
+  });
+
+  it("a finished analysis has no research follow-up or report actions", () => {
+    render(<AgentMessage sessionId="s" turn={turn("done", { kind: "analysis", analysis })} />);
+    expect(screen.getByText("data.csv")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t.askFollowUp })).toBeNull();
+    expect(screen.queryByText(t.references)).toBeNull();
   });
 });
 

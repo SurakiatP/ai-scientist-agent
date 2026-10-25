@@ -104,3 +104,63 @@ describe("chat store", () => {
     expect(s.getState().projects).toHaveLength(30);
   });
 });
+
+describe("analysis turns", () => {
+  const analysis = (over: Record<string, unknown> = {}) => ({
+    fileId: "f".repeat(32), fileName: "data.csv", steps: ["profiling", "writing_script"],
+    script: "finding('x')", quality: { rows: 2, columns: 1, columns_info: [{ name: "a", dtype: "int64", null_pct: 0 }] },
+    tables: [{ name: "t", columns: ["a"], rows: [[1], [2]] }], findings: ["f"], timings: { total_s: 0.1 },
+    artifacts: [{ id: "a1", name: "fig-1.png", kind: "figure", url: "/v1/artifacts/a1" }],
+    ...over,
+  });
+
+  it("round-trips a valid analysis turn and keeps kind", async () => {
+    const s = await load();
+    const id = s.getState().newSession();
+    s.getState().addTurn(id, { ...turn("a"), kind: "analysis", analysis: analysis() } as never);
+    vi.resetModules();
+    const s2 = await load();
+    expect(s2.getState().sessions[0].turns[0]).toMatchObject({ kind: "analysis", analysis: { fileId: "f".repeat(32), steps: ["profiling", "writing_script"] } });
+  });
+
+  it("clamps script, rows, findings, artifacts and steps on write", async () => {
+    const s = await load();
+    const id = s.getState().newSession();
+    s.getState().addTurn(id, { ...turn("a"), kind: "analysis", analysis: analysis({
+      steps: ["profiling", "profiling", ...Array.from({ length: 30 }, () => "running")],
+      script: "x".repeat(25_000),
+      tables: [{ name: "t", columns: ["a"], rows: Array.from({ length: 300 }, (_, i) => [i]), truncated: true }],
+      findings: Array.from({ length: 60 }, () => "f"),
+      artifacts: Array.from({ length: 25 }, (_, i) => ({ id: `a${i}`, name: "x", kind: "figure", url: "/v1/artifacts/x" })),
+      timings: Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`t${i}`, 0.1])),
+    }) } as never);
+    vi.resetModules();
+    const t = (await load()).getState().sessions[0].turns[0];
+    expect(t.analysis!.steps).toHaveLength(2);
+    expect(t.analysis!.script).toHaveLength(20_000);
+    expect(t.analysis!.tables![0].rows).toHaveLength(200);
+    expect(t.analysis!.findings).toHaveLength(50);
+    expect(t.analysis!.artifacts).toHaveLength(20);
+    expect(Object.keys(t.analysis!.timings!)).toHaveLength(50);
+  });
+
+  it("drops a turn whose persisted analysis is malformed, keeps its siblings", async () => {
+    const sid = "s";
+    const bad = [
+      { ...turn("a"), kind: "analysis", analysis: analysis({ steps: ["nope"] }) },
+      { ...turn("b"), kind: "analysis", analysis: analysis({ tables: [{ name: "t", columns: ["a"], rows: "no" }] }) },
+      { ...turn("c"), kind: "nope", analysis: analysis() },
+      { ...turn("d"), kind: "analysis", analysis: analysis({ timings: { x: "slow" } }) },
+      { ...turn("e"), kind: "analysis", analysis: analysis({ fileId: "" }) },
+    ];
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess(sid, [...bad, { ...turn("good"), kind: "analysis", analysis: analysis() }])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns.map((t) => t.id)).toEqual(["good"]);
+  });
+
+  it("rehydrates a running analysis as interrupted with its data", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [{ ...turn("t", "running"), kind: "analysis", analysis: analysis({ steps: ["running"] }) }])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns[0]).toMatchObject({ status: "interrupted", analysis: { steps: ["running"] } });
+  });
+});

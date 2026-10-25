@@ -1,9 +1,9 @@
 import { useSyncExternalStore } from "react";
-import { useChatStore } from "./chat";
+import { useChatStore, type TurnAnalysis } from "./chat";
 import { newId } from "./history";
 import { usePrefs } from "./prefs";
 import { emptyProgress, reduce, type Progress } from "./progress";
-import { streamAsk, type AskEvent, type AskMode, type HistoryTurn, type Reference } from "./sse";
+import { streamAnalyze, streamAsk, type AnalyzeEvent, type ApiError, type AskMode, type HistoryTurn, type Reference } from "./sse";
 import { strings } from "./strings";
 
 type RunState = { sessionId: string | null; turnId: string | null };
@@ -27,7 +27,7 @@ export const canStart = (): { ok: true } | { ok: false; reason: "busy" } => (sta
 export const stopRun = () => ac?.abort();
 
 // The one place error events become user-facing text (stored in the current language).
-export function errorText(e: Extract<AskEvent, { type: "error" }>): string {
+export function errorText(e: ApiError): string {
   const t = strings[usePrefs.getState().lang];
   const m = e.code === "network" ? t.network : e.code === "malformed" ? t.malformed
     : e.code === "http" ? `${t.requestFailed}${e.message ? `: ${e.message}` : ""}` : e.message;
@@ -64,6 +64,50 @@ export async function startRun(sessionId: string, question: string, opts: { mode
     patch({ progress, ...(outcome ?? (c.signal.aborted ? { status: "stopped" as const } : { status: "error" as const, error: cutOffText() })) });
   } catch {
     patch({ progress, status: c.signal.aborted ? "stopped" : "error", ...(c.signal.aborted ? {} : { error: cutOffText() }) });
+  } finally {
+    ac = null;
+    setState(idle);
+  }
+}
+
+const analysisFrom = (fileId: string, fileName?: string): TurnAnalysis => ({ fileId, ...(fileName ? { fileName } : {}), steps: [] });
+
+function reduceAnalysis(a: TurnAnalysis, e: AnalyzeEvent): TurnAnalysis {
+  switch (e.type) {
+    case "analysis_step": return a.steps.includes(e.step) ? a : { ...a, steps: [...a.steps, e.step] };
+    case "analysis_script": return { ...a, script: e.code };
+    case "analysis_result": return {
+      ...a, quality: e.quality, tables: e.tables, findings: e.findings, timings: e.timings, artifacts: e.artifacts,
+    };
+    default: return a;
+  }
+}
+
+// Same single-run controller as startRun: one active turn, Stop aborts it, a reload reads the stored turn as interrupted.
+export async function startAnalysis(sessionId: string, question: string, fileId: string, fileName?: string): Promise<void> {
+  if (!canStart().ok) throw new Error("busy");
+  const session = useChatStore.getState().sessions.find((x) => x.id === sessionId);
+  if (!session) throw new Error("no such session"); // before any state or stream
+  if (!fileId) throw new Error("no file"); // before any state or stream
+  const turnId = newId();
+  const c = (ac = new AbortController());
+  const store = () => useChatStore.getState();
+  let analysis = analysisFrom(fileId, fileName);
+  store().addTurn(sessionId, { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, kind: "analysis", analysis });
+  setState({ sessionId, turnId });
+  const patch = (p: Parameters<ReturnType<typeof store>["patchTurn"]>[2]) => { if (leaving) return; try { store().patchTurn(sessionId, turnId, p); } catch {} };
+  let outcome: Parameters<typeof patch>[0] | null = null;
+  try {
+    for await (const e of streamAnalyze(fileId, question, c.signal)) {
+      analysis = reduceAnalysis(analysis, e);
+      if (e.type === "analysis_result" || e.type === "complete") outcome = outcome ?? { status: "done" };
+      else if (e.type === "refused") outcome = { status: "refused", refused: e.reason };
+      else if (e.type === "error") outcome = { status: "error", error: errorText(e) };
+      patch({ analysis, ...(outcome ?? {}) });
+    }
+    patch({ analysis, ...(outcome ?? (c.signal.aborted ? { status: "stopped" as const } : { status: "error" as const, error: cutOffText() })) });
+  } catch {
+    patch({ analysis, status: c.signal.aborted ? "stopped" : "error", ...(c.signal.aborted ? {} : { error: cutOffText() }) });
   } finally {
     ac = null;
     setState(idle);

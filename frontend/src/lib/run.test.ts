@@ -2,16 +2,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyProgress } from "./progress";
 import type { Turn } from "./chat";
-import type { AskEvent, AskOptions } from "./sse";
+import type { AnalyzeEvent, AskEvent, AskOptions } from "./sse";
 
 let script: (signal: AbortSignal) => AsyncGenerator<AskEvent>;
+let analyzeScript: (signal: AbortSignal) => AsyncGenerator<AnalyzeEvent>;
 let asks: { question: string; opts: AskOptions | undefined }[] = [];
+let analyzes: { fileId: string; question: string }[] = [];
 vi.mock("./sse", () => ({
   streamAsk: (question: string, signal: AbortSignal, opts?: AskOptions) => { asks.push({ question, opts }); return script(signal); },
+  streamAnalyze: (fileId: string, question: string, signal: AbortSignal) => { analyzes.push({ fileId, question }); return analyzeScript(signal); },
 }));
 
 const ref = { id: "R1", status: "verified", paper: { title: "P", authors: [], year: null, doi: null, pmid: null, url: "u" } } as never;
 const gen = (evs: AskEvent[]) => async function* () { for (const e of evs) yield e; };
+const agen = (evs: AnalyzeEvent[]) => async function* () { for (const e of evs) yield e; };
 async function setup() {
   localStorage.clear(); vi.resetModules();
   const chat = (await import("./chat")).useChatStore;
@@ -20,7 +24,7 @@ async function setup() {
 }
 const last = (chat: Awaited<ReturnType<typeof setup>>["chat"]) => chat.getState().sessions[0].turns.at(-1)!;
 
-beforeEach(() => { script = gen([]); asks = []; });
+beforeEach(() => { script = gen([]); analyzeScript = agen([]); asks = []; analyzes = []; });
 
 describe("run controller", () => {
   it("done run stores answer and references", async () => {
@@ -153,5 +157,126 @@ describe("run controller", () => {
     expect(result.current.turnId).not.toBeNull();
     await act(async () => { release(); await p; });
     expect(result.current.turnId).toBeNull();
+  });
+});
+
+describe("analysis controller", () => {
+  const result = {
+    type: "analysis_result" as const,
+    quality: { rows: 2, columns: 1, columns_info: [{ name: "a", dtype: "int64", null_pct: 0 }] },
+    tables: [{ name: "t", columns: ["a"], rows: [[1], [2]] }],
+    findings: ["mean 1.5"],
+    timings: { load_s: 0.1, script_s: 0.2, total_s: 0.3 },
+    artifacts: [{ id: "a1", name: "fig-1.png", kind: "figure" as const, url: "/v1/artifacts/a1" }],
+  };
+
+  it("stores steps, script and result on a kind=analysis turn", async () => {
+    const { chat, run, sid } = await setup();
+    analyzeScript = agen([
+      { type: "waiting", position: 1 },
+      { type: "analysis_step", step: "profiling" },
+      { type: "analysis_step", step: "writing_script" },
+      { type: "analysis_script", code: "finding('x')" },
+      { type: "analysis_step", step: "running" },
+      result,
+      { type: "complete" },
+    ]);
+    await run.startAnalysis(sid, "what?", "f".repeat(32), "data.csv");
+    expect(analyzes).toEqual([{ fileId: "f".repeat(32), question: "what?" }]);
+    expect(last(chat)).toMatchObject({
+      kind: "analysis", status: "done",
+      analysis: {
+        fileId: "f".repeat(32), fileName: "data.csv",
+        steps: ["profiling", "writing_script", "running"], script: "finding('x')",
+        findings: ["mean 1.5"], artifacts: [{ id: "a1", name: "fig-1.png", kind: "figure", url: "/v1/artifacts/a1" }],
+      },
+    });
+    expect(last(chat).answer).toBeUndefined();
+    expect(run.canStart()).toEqual({ ok: true });
+  });
+
+  it("deduplicates repeated steps and keeps a repaired step", async () => {
+    const { chat, run, sid } = await setup();
+    analyzeScript = agen([
+      { type: "analysis_step", step: "profiling" }, { type: "analysis_step", step: "profiling" },
+      { type: "analysis_step", step: "repairing" }, { type: "complete" },
+    ]);
+    await run.startAnalysis(sid, "q", "f".repeat(32));
+    expect(last(chat).analysis!.steps).toEqual(["profiling", "repairing"]);
+    expect(last(chat).analysis!.fileName).toBeUndefined();
+  });
+
+  it("a complete without a result still finishes honestly with empty data", async () => {
+    const { chat, run, sid } = await setup();
+    analyzeScript = agen([{ type: "complete" }]);
+    await run.startAnalysis(sid, "q", "f".repeat(32));
+    expect(last(chat)).toMatchObject({ status: "done", analysis: { steps: [] } });
+    expect(last(chat).analysis!.tables).toBeUndefined();
+  });
+
+  it("refused and error store their text and keep partial analysis", async () => {
+    const { chat, run, sid } = await setup();
+    analyzeScript = agen([{ type: "analysis_step", step: "profiling" }, { type: "refused", reason: "off topic" }]);
+    await run.startAnalysis(sid, "q", "f".repeat(32));
+    expect(last(chat)).toMatchObject({ status: "refused", refused: "off topic", analysis: { steps: ["profiling"] } });
+
+    analyzeScript = agen([{ type: "analysis_step", step: "profiling" }, { type: "error", message: "too big" }]);
+    await run.startAnalysis(sid, "q", "f".repeat(32));
+    expect(last(chat)).toMatchObject({ status: "error", error: "too big", analysis: { steps: ["profiling"] } });
+  });
+
+  it("a stream that ends without a terminal event is cut off", async () => {
+    const { chat, run, sid } = await setup();
+    analyzeScript = agen([{ type: "analysis_step", step: "running" }]);
+    await run.startAnalysis(sid, "q", "f".repeat(32));
+    expect(last(chat)).toMatchObject({ status: "error", error: "การเชื่อมต่อสิ้นสุดก่อนที่คำตอบจะเสร็จสมบูรณ์" });
+  });
+
+  it("shares the single-run controller with research runs", async () => {
+    const { chat, run, sid } = await setup();
+    let release!: () => void;
+    analyzeScript = async function* () { await new Promise<void>((r) => (release = r)); yield { type: "complete" }; };
+    const p = run.startAnalysis(sid, "q1", "f".repeat(32));
+    expect(run.canStart()).toEqual({ ok: false, reason: "busy" });
+    await expect(run.startRun(sid, "q2")).rejects.toThrow("busy");
+    expect(chat.getState().sessions[0].turns).toHaveLength(1);
+    release();
+    await p;
+  });
+
+  it("stop aborts the analysis and stores stopped", async () => {
+    const { chat, run, sid } = await setup();
+    analyzeScript = async function* (signal) { yield { type: "analysis_step", step: "running" }; await new Promise((r) => (signal.aborted ? r(0) : signal.addEventListener("abort", r))); };
+    const p = run.startAnalysis(sid, "q", "f".repeat(32));
+    await Promise.resolve();
+    run.stopRun();
+    await p;
+    expect(last(chat)).toMatchObject({ status: "stopped", analysis: { steps: ["running"] } });
+  });
+
+  it("rejects an unknown session or missing file before state", async () => {
+    const { run, sid } = await setup();
+    const spy = vi.fn(agen([{ type: "complete" }]));
+    analyzeScript = spy;
+    await expect(run.startAnalysis("nope", "q", "f".repeat(32))).rejects.toThrow();
+    await expect(run.startAnalysis(sid, "q", "")).rejects.toThrow();
+    expect(spy).not.toHaveBeenCalled();
+    expect(run.canStart()).toEqual({ ok: true });
+  });
+
+  it("page unload leaves the stored analysis running for a reload to read as interrupted", async () => {
+    const { chat, run, sid } = await setup();
+    analyzeScript = async function* (signal) { yield { type: "analysis_step", step: "running" }; await new Promise((r) => signal.addEventListener("abort", r)); throw new Error("network"); };
+    const p = run.startAnalysis(sid, "q", "f".repeat(32));
+    await vi.waitFor(() => expect(last(chat).analysis?.steps).toEqual(["running"]));
+    window.dispatchEvent(new Event("pagehide"));
+    run.stopRun();
+    await p;
+    try {
+      expect(last(chat).status).toBe("running");
+      const ev = new Event("pageshow"); Object.assign(ev, { persisted: true });
+      window.dispatchEvent(ev);
+      expect(last(chat)).toMatchObject({ status: "interrupted", analysis: { steps: ["running"] } });
+    } finally { window.dispatchEvent(new Event("pageshow")); }
   });
 });

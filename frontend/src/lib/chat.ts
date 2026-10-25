@@ -2,14 +2,29 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { isItem, newId, safeStorage, storageFull, useHistoryStore } from "./history";
 import type { Progress } from "./progress";
-import type { AskMode, Reference } from "./sse";
+import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, Reference } from "./sse";
+
+// What the analyze stream taught us about this turn. Every field is optional because events arrive one at a time.
+export type TurnAnalysis = {
+  fileId: string;
+  fileName?: string;
+  steps: AnalysisStep[];
+  script?: string;
+  quality?: AnalysisQuality;
+  tables?: AnalysisTable[];
+  findings?: string[];
+  timings?: Record<string, number>;
+  artifacts?: AnalysisArtifact[];
+};
 
 export type Turn = {
   id: string; question: string; createdAt: number;
   status: "running" | "done" | "refused" | "error" | "stopped" | "interrupted";
   progress: Progress;
   mode?: AskMode;
+  kind?: "analysis";
   answer?: { content: string; references: Reference[] };
+  analysis?: TurnAnalysis;
   refused?: string; error?: string;
 };
 export type Session = { id: string; projectId: string; title: string; createdAt: number; updatedAt: number; turns: Turn[] };
@@ -48,20 +63,98 @@ const clampRef = (r: Reference): Reference => ({
     doi: r.paper.doi?.slice(0, 2048) ?? null, pmid: r.paper.pmid?.slice(0, 2048) ?? null, url: (r.paper.url ?? "").slice(0, 2048),
   },
 });
+
+const STEPS: readonly AnalysisStep[] = ["profiling", "writing_script", "running", "repairing", "storing"];
+const FILE = 100, FILE_NAME = 500, STEP_MAX = 20, SCRIPT = 20_000, TABLE_MAX = 20, TABLE_ROWS = 200,
+  COLUMNS = 200, COL = 200, CELL = 2000, FINDINGS = 50, FINDING = 1000, TIMINGS = 50, ARTIFACTS = 20;
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+const isStep = (v: unknown): v is AnalysisStep => typeof v === "string" && (STEPS as readonly string[]).includes(v);
+const isCell = (v: unknown): v is string | number | boolean | null =>
+  v === null || typeof v === "string" && v.length <= CELL || typeof v === "boolean" || isNum(v);
+const isColumn = (v: unknown) => {
+  const c = v as Record<string, unknown> | null;
+  return isObj(c) && isStr(c.name, COL) && isStr(c.dtype, 100) && isNum(c.null_pct) && c.null_pct >= 0 && c.null_pct <= 100;
+};
+const isQuality = (v: unknown): v is AnalysisQuality => {
+  const q = v as Record<string, unknown> | null;
+  return isObj(q) && isNum(q.rows) && q.rows >= 0 && isNum(q.columns) && q.columns >= 0 &&
+    (q.truncated === undefined || typeof q.truncated === "boolean") &&
+    (q.columns_info === undefined || (Array.isArray(q.columns_info) && q.columns_info.length <= COLUMNS && q.columns_info.every(isColumn)));
+};
+const isTable = (v: unknown): v is AnalysisTable => {
+  const t = v as Record<string, unknown> | null;
+  return isObj(t) && isStr(t.name, 80) && (t.truncated === undefined || typeof t.truncated === "boolean") &&
+    Array.isArray(t.columns) && t.columns.length <= COLUMNS && t.columns.every((c) => isStr(c, COL)) &&
+    Array.isArray(t.rows) && t.rows.length <= TABLE_ROWS &&
+    t.rows.every((r) => Array.isArray(r) && r.length <= COLUMNS && r.every(isCell));
+};
+const isArtifact = (v: unknown): v is AnalysisArtifact => {
+  const a = v as Record<string, unknown> | null;
+  return isObj(a) && isStr(a.id, FILE) && isStr(a.name, 300) && (a.kind === "figure" || a.kind === "csv") && isStr(a.url, 2048);
+};
+const isTimings = (v: unknown): v is Record<string, number> =>
+  isObj(v) && Object.keys(v).length <= TIMINGS && Object.entries(v).every(([k, n]) => k.length <= 100 && isNum(n) && n >= 0);
+const isAnalysis = (v: unknown): v is TurnAnalysis => {
+  const a = v as TurnAnalysis | null;
+  return isObj(a) && isStr(a.fileId, FILE) && a.fileId.length > 0 && (a.fileName === undefined || isStr(a.fileName, FILE_NAME)) &&
+    Array.isArray(a.steps) && a.steps.length <= STEP_MAX && a.steps.every(isStep) &&
+    (a.script === undefined || isStr(a.script, SCRIPT)) &&
+    (a.quality === undefined || isQuality(a.quality)) &&
+    (a.tables === undefined || (Array.isArray(a.tables) && a.tables.length <= TABLE_MAX && a.tables.every(isTable))) &&
+    (a.findings === undefined || (Array.isArray(a.findings) && a.findings.length <= FINDINGS && a.findings.every((f) => isStr(f, FINDING)))) &&
+    (a.timings === undefined || isTimings(a.timings)) &&
+    (a.artifacts === undefined || (Array.isArray(a.artifacts) && a.artifacts.length <= ARTIFACTS && a.artifacts.every(isArtifact)));
+};
+// Write side: clamp every analysis field to the read limits above (a persisted turn must always reload).
+const clampCell = (v: unknown): string | number | boolean | null => {
+  if (v === null) return null;
+  if (typeof v === "string") return v.slice(0, CELL);
+  if (isNum(v)) return v;
+  if (typeof v === "boolean") return v;
+  try {
+    return (JSON.stringify(v) ?? "").slice(0, CELL);
+  } catch {
+    return String(v).slice(0, CELL);
+  }
+};
+const clampAnalysis = (a: TurnAnalysis): TurnAnalysis => ({
+  fileId: a.fileId.slice(0, FILE),
+  ...(a.fileName !== undefined && { fileName: a.fileName.slice(0, FILE_NAME) }),
+  steps: a.steps.filter(isStep).slice(0, STEP_MAX).filter((s, i, all) => all.indexOf(s) === i),
+  ...(a.script !== undefined && { script: a.script.slice(0, SCRIPT) }),
+  ...(a.quality && { quality: {
+    rows: Math.max(0, Math.trunc(a.quality.rows)),
+    columns: Math.max(0, Math.trunc(a.quality.columns)),
+    ...(a.quality.truncated !== undefined && { truncated: a.quality.truncated }),
+    ...(a.quality.columns_info && { columns_info: a.quality.columns_info.slice(0, COLUMNS).map((c) => ({ name: c.name.slice(0, COL), dtype: c.dtype.slice(0, 100), null_pct: Math.min(100, Math.max(0, c.null_pct)) })) }),
+  } }),
+  ...(a.tables && { tables: a.tables.slice(0, TABLE_MAX).map((t) => ({
+    name: t.name.slice(0, 80),
+    columns: t.columns.slice(0, COLUMNS).map((c) => c.slice(0, COL)),
+    rows: t.rows.slice(0, TABLE_ROWS).map((r) => r.slice(0, COLUMNS).map(clampCell)),
+    ...(t.truncated !== undefined && { truncated: t.truncated }),
+  })) }),
+  ...(a.findings && { findings: a.findings.slice(0, FINDINGS).map((f) => f.slice(0, FINDING)) }),
+  ...(a.timings && { timings: Object.fromEntries(Object.entries(a.timings).slice(0, TIMINGS).filter(([, n]) => isNum(n) && n >= 0).map(([k, n]) => [k.slice(0, 100), n])) }),
+  ...(a.artifacts && { artifacts: a.artifacts.slice(0, ARTIFACTS).map((x) => ({ id: x.id.slice(0, FILE), name: x.name.slice(0, 300), kind: x.kind, url: x.url.slice(0, 2048) })) }),
+});
 const clampPatch = (p: Partial<Turn>): Partial<Turn> => ({
   ...p,
   ...(p.progress && { progress: clampProgress(p.progress) }),
   ...(p.error !== undefined && { error: p.error.slice(0, 2048) }),
   ...(p.refused !== undefined && { refused: p.refused.slice(0, REASON) }),
   ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef) } }),
+  ...(p.analysis && { analysis: clampAnalysis(p.analysis) }),
 });
 // Reuses history's item validator for the answer + references (its question/id/createdAt are filled in).
 const isTurn = (v: unknown): v is Turn => {
   const t = v as Turn | null;
   if (!t || !isStr(t.id, 100) || !isStr(t.question, 4000) || !isNum(t.createdAt) || !STATUSES.includes(t.status) || !isProgress(t.progress)) return false;
   if (t.mode !== undefined && t.mode !== "deep" && t.mode !== "quick") return false;
+  if (t.kind !== undefined && t.kind !== "analysis") return false;
   if (t.refused !== undefined && !isStr(t.refused, 20_000)) return false;
   if (t.error !== undefined && !isStr(t.error, 2048)) return false;
+  if (t.analysis !== undefined && !isAnalysis(t.analysis)) return false;
   return t.answer === undefined || (!!t.answer && isItem({ id: "x", question: "", createdAt: 0, answer: t.answer.content, references: t.answer.references }));
 };
 const isSession = (v: unknown): v is Session => {
