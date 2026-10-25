@@ -1,6 +1,7 @@
 """Shared-data repository (projects, sessions, turns, files, trash, import) and the change broadcaster.
 No login: one dataset for everyone who reaches the server. Writes are optimistic: `version` must match or 409."""
 import asyncio
+import json
 import logging
 import re
 import uuid as uuidlib
@@ -10,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 
 import sqlalchemy as sa
-from pydantic import BaseModel, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError, model_validator
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 
@@ -25,6 +26,8 @@ FILE_RE = r"^[0-9a-f]{32}$"
 OptUid = Field(None, pattern=UUID_RE)
 MAX_TURNS, MAX_IDX, MAX_FILES, MAX_PROJECTS = 500, 999, 1000, 200
 MAX_VERSION = 2_000_000_000
+MAX_JSON_BYTES = [200_000]  # per-JSON-field cap; main.py sets it from settings
+MIN_WHEN = datetime(2000, 1, 1, tzinfo=timezone.utc)
 Mode = Literal["deep", "quick", "chat", "analysis"]
 Status = Literal["running", "done", "refused", "error", "stopped", "interrupted", "awaiting_plan"]
 TABLES = {"project": m.projects, "session": m.sessions, "file": m.files}
@@ -36,6 +39,14 @@ class NotFound(Exception):
 
 class Invalid(Exception):
     """A well-formed request that refers to something that does not exist (422)."""
+
+
+class Gone(Exception):
+    """The thing was removed on purpose (an edit truncated it): the client must drop its copy (410)."""
+
+
+class TooMany(Exception):
+    """A per-session cap was hit (409)."""
 
 
 class Busy(Exception):
@@ -62,7 +73,7 @@ class SessionIn(BaseModel):
 
 class FileIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
-    size: int = Field(0, ge=0)
+    size: int = Field(0, ge=0, le=2**53)
     kind: str = Field("", max_length=40)
     project_id: str | None = OptUid
     version: int | None = Field(None, ge=1, le=MAX_VERSION)
@@ -86,6 +97,14 @@ class TurnIn(BaseModel):
     error: str | None = Field(None, max_length=4000)
     version: int | None = Field(None, ge=1, le=MAX_VERSION)
 
+    @model_validator(mode="after")
+    def _json_caps(self):
+        cap = MAX_JSON_BYTES[0]
+        for k in ("progress", "plan", "analysis", "answer"):
+            if (v := getattr(self, k)) is not None and len(json.dumps(v.model_dump() if hasattr(v, "model_dump") else v)) > cap:
+                raise ValueError(f"{k} is larger than {cap} bytes")
+        return self
+
 
 def _clip(d: dict, **limits: int) -> dict:
     return {**d, **{k: v[:n] for k, n in limits.items() if isinstance((v := d.get(k)), str)}}
@@ -93,9 +112,12 @@ def _clip(d: dict, **limits: int) -> dict:
 
 def _when(v: Any) -> datetime | None:
     try:
-        return TypeAdapter(datetime).validate_python(v)
+        d = TypeAdapter(datetime).validate_python(v)
     except ValidationError:
         return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return _now() if d < MIN_WHEN else min(d, _now())  # imported stamps must not outrank real sessions
 
 
 def _row(r) -> dict:
@@ -246,17 +268,23 @@ class Store:
             if sess is None or sess.deleted_at is not None:
                 raise NotFound("session")
             r = await self._get(s, m.turns, tid)
+            if r is None:
+                if (await s.execute(sa.select(m.turn_tombstones.c.id).where(m.turn_tombstones.c.id == tid))).first():
+                    raise Gone("turn was removed by an edit")
+                n = (await s.execute(sa.select(sa.func.count()).select_from(m.turns).where(m.turns.c.session_id == sid))).scalar_one()
+                if n >= self.settings.store_max_turns:
+                    raise TooMany("session is full")
             try:
                 if r is None:
-                    ins = pg_insert(m.turns).values(id=tid, session_id=sid, version=body.version or 1, **vals)
+                    ins = pg_insert(m.turns).values(id=tid, session_id=sid, version=1, **vals)
                     async with s.begin_nested():  # a clash on (session, idx) rolls back only this insert
                         out = _row((await s.execute(ins.returning(m.turns))).one())
                 else:
                     if r.session_id != sid:
                         raise Conflict("turn belongs to another session")
-                    if body.version is not None and body.version < r.version:
+                    if body.version is not None and body.version != r.version:  # the version the client last saw
                         raise Conflict("version conflict", _row(r))
-                    upd = {**vals, "version": body.version or r.version + 1, "updated_at": sa.func.now()}
+                    upd = {**vals, "version": r.version + 1, "updated_at": sa.func.now()}
                     async with s.begin_nested():
                         out = _row((await s.execute(sa.update(m.turns).where(m.turns.c.id == tid).values(**upd).returning(m.turns))).one())
             except IntegrityError:
@@ -275,6 +303,8 @@ class Store:
             gone = (await s.execute(sa.delete(m.turns).where(m.turns.c.session_id == sid, m.turns.c.idx >= from_idx)
                                     .returning(m.turns.c.id))).all()
             if gone:
+                await s.execute(pg_insert(m.turn_tombstones).values([{"id": g.id, "session_id": sid} for g in gone])
+                                .on_conflict_do_nothing())
                 await s.execute(sa.update(m.sessions).where(m.sessions.c.id == sid)
                                 .values(updated_at=sa.func.now(), sort_ts=sa.func.now(), version=m.sessions.c.version + 1))
                 sess = await self._get(s, m.sessions, sid)
@@ -284,17 +314,22 @@ class Store:
 
     # --- reads ---------------------------------------------------------------------------------------------------------
     async def snapshot(self, limit_sessions: int) -> dict:
-        await self.purge()
         limit = max(1, min(limit_sessions, self.settings.store_max_sessions))
         async with self.db.session() as s:
             alive = lambda t: t.c.deleted_at.is_(None)  # noqa: E731
             projects = [_row(r) for r in await s.execute(sa.select(m.projects).where(alive(m.projects)).order_by(m.projects.c.created_at).limit(MAX_PROJECTS))]
             sessions = [_row(r) for r in await s.execute(sa.select(m.sessions).where(alive(m.sessions)).order_by(m.sessions.c.updated_at.desc()).limit(limit))]
-            by_id = {x["id"]: {**x, "turns": []} for x in sessions}
+            by_id = {x["id"]: {**x, "turns": [], "turn_count": 0, "has_more_turns": False} for x in sessions}
             if by_id:
-                q = sa.select(m.turns).where(m.turns.c.session_id.in_(list(by_id))).order_by(m.turns.c.session_id, m.turns.c.idx)
+                ids = list(by_id)
+                for r in await s.execute(sa.select(m.turns.c.session_id, sa.func.count()).where(m.turns.c.session_id.in_(ids)).group_by(m.turns.c.session_id)):
+                    by_id[str(r[0])]["turn_count"] = r[1]
+                    by_id[str(r[0])]["has_more_turns"] = r[1] > self.settings.max_turns_per_session
+                rn = sa.func.row_number().over(partition_by=m.turns.c.session_id, order_by=m.turns.c.idx.desc()).label("rn")
+                sub_q = sa.select(m.turns, rn).where(m.turns.c.session_id.in_(ids)).subquery()
+                q = sa.select(*sub_q.c).where(sub_q.c.rn <= self.settings.max_turns_per_session).order_by(sub_q.c.session_id, sub_q.c.idx)
                 for r in await s.execute(q):
-                    by_id[str(r.session_id)]["turns"].append(_row(r))
+                    by_id[str(r.session_id)]["turns"].append({k: v for k, v in _row(r).items() if k != "rn"})
             files = [_row(r) for r in await s.execute(sa.select(m.files).where(alive(m.files)).order_by(m.files.c.added_at.desc()).limit(MAX_FILES))]
             now = (await s.execute(sa.select(sa.func.now()))).scalar_one()
         return {"projects": projects, "sessions": list(by_id.values()), "files": files, "server_time": now}
@@ -319,8 +354,14 @@ class Store:
                 out[key] = len(ids)
                 if key == "files":
                     fids = ids
+            out["tombstones"] = len((await s.execute(sa.delete(m.turn_tombstones).where(m.turn_tombstones.c.created_at < cut).returning(m.turn_tombstones.c.id))).all())
         await self._drop_objects(fids)
         return out
+
+    async def purge_usage(self) -> int:
+        cut = sa.func.now() - sa.func.make_interval(0, 0, 0, self.settings.usage_retention_days)
+        async with self.tx() as s:
+            return (await s.execute(sa.delete(m.usage_events).where(m.usage_events.c.at < cut))).rowcount
 
     # --- one-shot import of the browser's old data ---------------------------------------------------------------------
     async def import_all(self, raw: dict) -> dict:

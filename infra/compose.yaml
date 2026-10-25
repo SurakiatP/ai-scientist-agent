@@ -21,6 +21,8 @@ services:
       DATABASE_URL: postgresql://app@postgres:5432/app  # password comes from the secret file, never from the URL
       DATABASE_PASSWORD_FILE: /run/secrets/postgres_app_password
       CORS_ORIGINS: '["https://${DOMAIN:-localhost}"]'
+      ALLOWED_ORIGINS: '["https://${DOMAIN:-localhost}"]' # store writes carrying another Origin get 403
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1} # uvicorn reads this itself; set to Caddy's address/CIDR so the rate limit is per real client
       HERMES_SOURCE_PATH: /home/app/.cache/scientist/upstream/hermes
       HERMES_RUNTIME_DIR: /home/app/hermes-home # writable; the pinned cache below stays read-only
     secrets: [minio_access_key, minio_secret_key, postgres_app_password]

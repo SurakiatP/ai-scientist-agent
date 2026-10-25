@@ -6,7 +6,7 @@ import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import InsertDriveFileOutlinedIcon from "@mui/icons-material/InsertDriveFileOutlined";
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
-import type { Turn, TurnAnalysis } from "@/lib/chat";
+import { ARTIFACT_URL, type Turn, type TurnAnalysis } from "@/lib/chat";
 import { API_BASE } from "@/lib/config";
 import { useT } from "@/lib/prefs";
 import type { AnalysisArtifact as AnalysisArtifactItem, AnalysisStep } from "@/lib/sse";
@@ -49,7 +49,7 @@ export function missingPercent(a: TurnAnalysis): number | null {
   return cols.reduce((sum, c) => sum + c.null_pct, 0) / cols.length;
 }
 
-const artifactHref = (url: string) => (/^\/[^/]/.test(url) ? API_BASE + url : "");
+export const artifactHref = (url: string) => (ARTIFACT_URL.test(url) ? API_BASE + url : "");
 // Display only (CSV downloads keep the stored values): integers as-is, other numbers max 2 decimals, thousands separators.
 export const cellText = (v: unknown) => (v === null || v === undefined ? "—" : typeof v === "number" && Number.isFinite(v) ? v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : typeof v === "string" ? v : typeof v === "object" ? JSON.stringify(v) : String(v));
 const numericCols = (table: { columns: unknown[]; rows: unknown[][] }) => table.columns.map((_, ci) => { const vals = table.rows.map((r) => r?.[ci]).filter((v) => v !== null && v !== undefined); return vals.length > 0 && vals.every((v) => typeof v === "number"); });

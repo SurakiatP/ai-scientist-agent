@@ -123,7 +123,7 @@ describe("analysis turns", () => {
     fileId: "f".repeat(32), fileName: "data.csv", steps: ["profiling", "writing_script"],
     script: "finding('x')", quality: { rows: 2, columns: 1, columns_info: [{ name: "a", dtype: "int64", null_pct: 0 }] },
     tables: [{ name: "t", columns: ["a"], rows: [[1], [2]] }], findings: ["f"], timings: { total_s: 0.1 },
-    artifacts: [{ id: "a1", name: "fig-1.png", kind: "figure", url: "/v1/artifacts/a1" }],
+    artifacts: [{ id: "a1", name: "fig-1.png", kind: "figure", url: "/v1/artifacts/a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1" }],
     ...over,
   });
 
@@ -144,7 +144,7 @@ describe("analysis turns", () => {
       script: "x".repeat(25_000),
       tables: [{ name: "t", columns: ["a"], rows: Array.from({ length: 300 }, (_, i) => [i]), truncated: true }],
       findings: Array.from({ length: 60 }, () => "f"),
-      artifacts: Array.from({ length: 25 }, (_, i) => ({ id: `a${i}`, name: "x", kind: "figure", url: "/v1/artifacts/x" })),
+      artifacts: Array.from({ length: 25 }, (_, i) => ({ id: `a${i}`, name: "x", kind: "figure", url: "/v1/artifacts/e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0" })),
       timings: Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`t${i}`, 0.1])),
     }) } as never);
     vi.resetModules();

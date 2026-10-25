@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     store_write_rate_per_min: int = Field(600, ge=0)  # per client IP; 0 = unlimited
     store_max_body_bytes: int = 1_000_000  # every store route except import
     import_max_bytes: int = 10_000_000
+    max_turns_per_session: int = Field(50, ge=1)  # newest turns per session in a snapshot; the rest load on demand
+    store_max_turns: int = Field(500, ge=1)  # turns one session may hold
+    store_max_turn_json_bytes: int = Field(200_000, ge=1)  # progress / plan / analysis / answer, each, serialized
+    allowed_origins: list[str] = []  # non-empty: a store write carrying an Origin header must match one of these
+    usage_retention_days: int = Field(180, ge=1)
     db_pool_size: int = Field(5, ge=1)
     db_max_overflow: int = Field(5, ge=0)
     db_connect_timeout_s: int = Field(3, ge=1)

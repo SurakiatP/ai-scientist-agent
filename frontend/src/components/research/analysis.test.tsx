@@ -23,8 +23,8 @@ const data: TurnAnalysis = {
   findings: ["North leads.", "One region is missing a value."],
   timings: { load_s: 0.5, total_s: 65.4 },
   artifacts: [
-    { id: "fig1", name: "trend.png", kind: "figure", url: "/v1/artifacts/fig1" },
-    { id: "csv1", name: "by_region.csv", kind: "csv", url: "/v1/artifacts/csv1" },
+    { id: "fig1", name: "trend.png", kind: "figure", url: "/v1/artifacts/f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1" },
+    { id: "csv1", name: "by_region.csv", kind: "csv", url: "/v1/artifacts/c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1" },
   ],
 };
 
@@ -68,7 +68,7 @@ describe("AnalysisArtifact", () => {
     expect(screen.getByText(t.analysisTruncated)).toBeInTheDocument();
     expect(screen.getAllByText("region").length).toBeGreaterThan(0);
     const link = screen.getByRole("link", { name: `${t.download} by_region.csv` });
-    expect(link).toHaveAttribute("href", `${API_BASE}/v1/artifacts/csv1`);
+    expect(link).toHaveAttribute("href", `${API_BASE}/v1/artifacts/c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1`);
     expect(link).toHaveAttribute("download", "by_region.csv");
   });
 
@@ -82,7 +82,7 @@ describe("AnalysisArtifact", () => {
 
     tab(t.analysisTabCharts);
     const img = screen.getByRole("img", { name: `${t.analysisChartAlt}: trend.png` });
-    expect(img).toHaveAttribute("src", `${API_BASE}/v1/artifacts/fig1`);
+    expect(img).toHaveAttribute("src", `${API_BASE}/v1/artifacts/f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1`);
     expect(screen.getByText("trend.png")).toBeInTheDocument();
 
     tab(t.analysisTabFindings);
@@ -112,6 +112,9 @@ describe("AnalysisArtifact", () => {
         { id: "a", name: "bad.png", kind: "figure", url: "https://evil.test/a.png" },
         { id: "b", name: "bad.png", kind: "figure", url: "//evil.test/b.png" },
         { id: "c", name: "bad.csv", kind: "csv", url: "javascript:alert(1)" },
+        { id: "d", name: "bad.png", kind: "figure", url: "/\\evil.example/x" },
+        { id: "e", name: "bad.png", kind: "figure", url: `/v1/artifacts/${"a".repeat(32)}/../x` },
+        { id: "f", name: "bad.png", kind: "figure", url: "/v1/artifacts/short" },
       ],
     };
     render(<AnalysisArtifact turn={base(empty, "error")} />);

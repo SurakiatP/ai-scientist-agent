@@ -149,3 +149,15 @@ async def test_block_limits(blk, monkeypatch):
 async def test_too_many_blocks(monkeypatch):
     blk = {"type": "paragraph", "runs": [R("x")]}
     assert (await post(body(sections=[{"heading": "h", "blocks": [blk] * 61}]), monkeypatch)).status_code == 422
+
+
+async def test_export_gated_and_json_only(monkeypatch):
+    for k, v in ENV.items():
+        monkeypatch.setenv(k, v)
+    get_settings.cache_clear()
+    app = create_app()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.post("/v1/reports/export", content=b"{}", headers={"content-type": "text/plain"})
+        assert r.status_code in (415, 422)
+        app.state.preview_gate.free = 0
+        assert (await c.post("/v1/reports/export", json=body())).status_code == 429

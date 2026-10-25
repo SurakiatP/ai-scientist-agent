@@ -97,6 +97,10 @@ const toSession = (r: Row, local?: Session): Session => {
     const mine = local?.turns.find((t) => t.id === x.id);
     return mine && (runningTurnId() === mine.id || queue.some((o) => o.k === "turn" && o.id === mine.id)) ? mine : toTurn(x);
   }).filter((t): t is Turn => !!t);
+  if (r.has_more_turns === true && local && rows.length) { // the server sent only the newest turns: keep the older ones we already hold
+    const first = Number(rows[0].idx);
+    turns.unshift(...local.turns.filter((t) => (idxOf.get(t.id) ?? Infinity) < first && !tombstones.has(t.id)));
+  }
   return { id, projectId: typeof r.project_id === "string" ? r.project_id : PERSONAL, title: str(r.title), createdAt: ms(r.created_at), updatedAt: ms(r.updated_at), turns };
 };
 const toProject = (r: Row): Project => ({ id: str(r.id), name: str(r.name), createdAt: ms(r.created_at) });
@@ -143,7 +147,7 @@ class Net extends Error { constructor(readonly status: number, readonly body?: R
 async function call(method: string, path: string, body?: unknown, keepalive = false): Promise<Row> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, { method, keepalive, ...(body !== undefined ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) });
+    res = await fetch(`${API_BASE}${path}`, { method, keepalive, ...(body !== undefined ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : method === "GET" ? {} : { headers: { "Content-Type": "application/json" }, body: "{}" }) });
   } catch { throw new Net(0); }
   let json: Row = {};
   try { const b = await res.json(); if (b && typeof b === "object") json = b as Row; } catch {}
@@ -198,6 +202,10 @@ async function send(o: Op, keepalive = false): Promise<Out> {
     if (!(e instanceof Net)) return "drop";
     if (e.status === 409 && e.body?.current && typeof e.body.current === "object") { adopt(o, e.body.current as Row); return "drop"; }
     if (e.status === 404 && o.a === "del") return "ok";
+    if (e.status === 410) { // an edit removed this turn on the server: our copy is stale, drop it quietly
+      if (o.k === "turn") { tombstones.add(o.id); idxOf.delete(o.id); versions.delete(vkey("turn", o.id)); quiet(() => useChatStore.setState((s) => ({ sessions: s.sessions.map((x) => (x.id === o.sid ? { ...x, turns: x.turns.filter((t) => t.id !== o.id) } : x)) }))); }
+      return "drop";
+    }
     if (e.status === 404 && o.k === "turn" && o.a === "del") return "ok";
     if (e.status === 405) return "ok";
     if (e.status === 429) { blockedUntil = Date.now() + Math.min(60, Math.max(1, e.retryAfter || 5)) * 1000; return "retry"; }
@@ -253,7 +261,7 @@ async function snapshot(first = false): Promise<boolean> {
     return false;
   }
 }
-const snapSoon = () => { clearTimeout(snapTimer); snapTimer = setTimeout(() => void snapshot(), 400); };
+const snapSoon = () => { clearTimeout(snapTimer); snapTimer = setTimeout(() => void snapshot(), 2000); };
 export const refreshNow = () => snapshot();
 export const loadMore = () => { limit = Math.min(limit + MAX_SESSIONS, 1000); return snapshot(); };
 
@@ -275,7 +283,8 @@ function listen() {
     };
     src.onerror = () => { // EventSource retries by itself unless the server refused (429/closed): then back off and reopen
       failed = true;
-      if (useSync.getState().status === "online") goOffline(); // the live stream dropping is the earliest sign the server is gone
+      // CLOSED means the server refused (e.g. 429 listener cap): not an outage, retry later. A dropped connection stays CONNECTING.
+      if (src.readyState !== 2 && useSync.getState().status === "online") goOffline(); // the live stream dropping is the earliest sign the server is gone
       if (src.readyState === 2) { src.close(); es = null; setTimeout(() => { if (useSync.getState().status !== "disabled" && !es) open(); }, Math.min(delay * 2, 30_000)); }
     };
   };

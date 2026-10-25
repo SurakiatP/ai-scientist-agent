@@ -221,7 +221,7 @@ describe("realtime", () => {
     expect(n()).toBe(before);
     snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "Changed elsewhere", version: 2, turns: [] }), row(U(4), { title: "New elsewhere", turns: [] })] };
     FakeES.all[0].emit({ type: "changed", entity: "session", id: U(2), version: 2 });
-    await vi.waitFor(() => expect(useChatStore.getState().sessions.map((s) => s.title).sort()).toEqual(["Changed elsewhere", "New elsewhere"]));
+    await vi.waitFor(() => expect(useChatStore.getState().sessions.map((s) => s.title).sort()).toEqual(["Changed elsewhere", "New elsewhere"]), { timeout: 4000 });
   });
 
   it("never overwrites a turn that is running in this tab", async () => {
@@ -231,7 +231,7 @@ describe("realtime", () => {
     useChatStore.getState().patchTurn(U(2), U(3), { progress: { ...emptyProgress, reasoning: "local live text" } });
     snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "S", version: 2, turns: [row(U(3), { idx: 0, question: "q", status: "stopped", version: 5, progress: null, updated_at: new Date().toISOString() })] })] };
     FakeES.all[0].emit({ type: "changed", entity: "turn", id: U(3), version: 5 });
-    await vi.waitFor(() => expect(calls.filter((c) => c.url.startsWith("/v1/store/snapshot")).length).toBeGreaterThan(1));
+    await vi.waitFor(() => expect(calls.filter((c) => c.url.startsWith("/v1/store/snapshot")).length).toBeGreaterThan(1), { timeout: 4000 });
     await new Promise((r) => setTimeout(r, 100));
     const t = useChatStore.getState().sessions[0].turns[0];
     expect(t.status).toBe("running");
@@ -244,7 +244,7 @@ describe("realtime", () => {
     useChatStore.getState().setActive(U(2));
     snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "S renamed", version: 2, turns: [] })] };
     FakeES.all[0].emit({ type: "changed", entity: "session", id: U(2), version: 2 });
-    await vi.waitFor(() => expect(useSync.getState().notice).toBe("remote"));
+    await vi.waitFor(() => expect(useSync.getState().notice).toBe("remote"), { timeout: 4000 });
   });
 
   it("shows a running turn whose tab died as interrupted", async () => {
@@ -259,8 +259,48 @@ describe("realtime", () => {
     useChatStore.getState().truncateFrom(U(2), U(4));
     await done();
     FakeES.all[0].emit({ type: "changed", entity: "session", id: U(2), version: 9 });
-    await vi.waitFor(() => expect(calls.filter((c) => c.url.startsWith("/v1/store/snapshot")).length).toBeGreaterThan(1));
+    await vi.waitFor(() => expect(calls.filter((c) => c.url.startsWith("/v1/store/snapshot")).length).toBeGreaterThan(1), { timeout: 4000 });
     await new Promise((r) => setTimeout(r, 100));
     expect(useChatStore.getState().sessions[0].turns.map((t) => t.id)).toEqual([U(3)]);
+  });
+});
+
+describe("final review fixes", () => {
+  it("debounces snapshot refetch for 2 s", async () => {
+    snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "Old", turns: [] })] };
+    await online();
+    const n = () => calls.filter((c) => c.url.startsWith("/v1/store/snapshot")).length;
+    const before = n();
+    FakeES.all[0].emit({ type: "changed", entity: "session", id: U(2), version: 7 });
+    await new Promise((r) => setTimeout(r, 1000));
+    expect(n()).toBe(before);
+    await vi.waitFor(() => expect(n()).toBe(before + 1), { timeout: 3000 });
+  });
+
+  it("an SSE refusal (closed stream) is not an outage", async () => {
+    await online();
+    const es = FakeES.all[0];
+    es.readyState = 2; es.onerror?.();
+    expect(useSync.getState().status).toBe("online");
+  });
+
+  it("a 410 on a turn write drops it from the cache and the queue", async () => {
+    snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "S", turns: [row(U(3), { idx: 0, question: "a", status: "done", progress: null })] })] };
+    await online();
+    routes.push((c) => (c.method === "PUT" && c.url.endsWith(U(3)) ? { status: 410, body: { detail: "gone" } } : undefined));
+    useChatStore.getState().patchTurn(U(2), U(3), { question: "edited elsewhere" });
+    await done();
+    expect(useChatStore.getState().sessions[0].turns).toEqual([]);
+    expect(useSync.getState().status).toBe("online");
+  });
+
+  it("keeps older local turns when the server returns only the newest (has_more_turns)", async () => {
+    snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "S", turns: [row(U(3), { idx: 0, question: "a", status: "done", progress: null }), row(U(4), { idx: 1, question: "b", status: "done", progress: null })] })] };
+    await online();
+    snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "S", version: 2, has_more_turns: true, turn_count: 2, turns: [row(U(4), { idx: 1, question: "b", status: "done", progress: null, version: 2 })] })] };
+    FakeES.all[0].emit({ type: "changed", entity: "session", id: U(2), version: 2 });
+    await vi.waitFor(() => expect(calls.filter((c) => c.url.startsWith("/v1/store/snapshot")).length).toBeGreaterThan(1), { timeout: 4000 });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(useChatStore.getState().sessions[0].turns.map((t) => t.id)).toEqual([U(3), U(4)]);
   });
 });

@@ -11,8 +11,8 @@ from pydantic import BaseModel, ValidationError
 
 from scientist import usage
 from scientist.routes_ask import HEADERS
-from scientist.store import (FILE_RE, UUID_RE, Busy, Conflict, FileIn, Invalid, NotFound, ProjectIn, SessionIn, Store,
-                             TurnIn)
+from scientist.store import (FILE_RE, UUID_RE, Busy, Conflict, FileIn, Gone, Invalid, NotFound, ProjectIn, SessionIn, Store,
+                             TooMany, TurnIn)
 
 router = APIRouter(prefix="/v1")
 Uid = Annotated[str, Path(pattern=UUID_RE)]
@@ -25,8 +25,19 @@ def data(request: Request) -> Store:
     return st
 
 
+def require_json(request: Request) -> None:
+    """CSRF guard: a cross-site page can only send "simple" requests (text/plain, form types) without a preflight."""
+    if not request.headers.get("content-type", "").lower().startswith("application/json"):
+        raise HTTPException(415, "Content-Type must be application/json")
+    allowed = getattr(request.app.state.settings, "allowed_origins", [])
+    if allowed and (o := request.headers.get("origin")) and o not in allowed:
+        raise HTTPException(403, "origin not allowed")
+
+
 def write_guard(request: Request, st: Store = Depends(data)) -> None:
-    """Per-client-IP sliding minute. ponytail: in-process, and behind a proxy every caller shares the proxy's IP."""
+    """Per-client-IP sliding minute (behind a proxy, set FORWARDED_ALLOW_IPS so the real client IP is seen)."""
+    if request.method != "DELETE":  # DELETE always preflights; the rest must declare JSON, even body-less POSTs
+        require_json(request)
     cap = st.settings.store_write_rate_per_min
     if not cap:
         return
@@ -51,7 +62,7 @@ async def read_body(request: Request, limit: int):
             raise HTTPException(413, "request body too large")
     try:
         return json.loads(buf)
-    except ValueError:
+    except (ValueError, RecursionError):
         raise HTTPException(422, "body is not valid JSON") from None
 
 
@@ -70,6 +81,10 @@ async def run(coro):
         raise HTTPException(404, f"{e} not found") from None
     except Invalid as e:
         raise HTTPException(422, str(e)) from None
+    except Gone as e:
+        raise HTTPException(410, str(e)) from None
+    except TooMany as e:
+        raise HTTPException(409, str(e)) from None
     except Conflict as e:
         return JSONResponse({"detail": str(e), "current": jsonable_encoder(e.current)}, status_code=409)
 

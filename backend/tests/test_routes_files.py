@@ -226,7 +226,7 @@ def _signing(store):
 async def test_presign_inline_pdf_and_attachment_xlsx(c, store):
     _signing(store)
     pdf = (await up(c, "r p.pdf", b"%PDF-1", "application/pdf")).json()["id"]
-    r = await c.post(f"/v1/files/{pdf}/presign")
+    r = await c.post(f"/v1/files/{pdf}/presign", json={})
     j = r.json()
     assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
     assert j["url"].startswith("http://127.0.0.1:59100/bkt/" + pdf) and "X-Amz-Expires=300" in j["url"]
@@ -234,7 +234,7 @@ async def test_presign_inline_pdf_and_attachment_xlsx(c, store):
     assert j["inline"] and j["kind"] == "pdf" and j["expires_in"] == 300 and j["name"] == "r p.pdf"
     assert "X-Amz-Signature" in j["url"] and "SignedHeaders=host" in j["url"]
     x = (await up(c, "a.xlsx", b"PK\x03\x04")).json()["id"]
-    u = (await c.post(f"/v1/files/{x}/presign")).json()
+    u = (await c.post(f"/v1/files/{x}/presign", json={})).json()
     assert not u["inline"] and "response-content-disposition=attachment" in u["url"]
     assert "octet-stream" in u["url"]
 
@@ -242,12 +242,12 @@ async def test_presign_inline_pdf_and_attachment_xlsx(c, store):
 async def test_presign_errors(c, store):
     _signing(store)
     fid = (await up(c, "a.csv", b"a")).json()["id"]
-    assert (await c.post("/v1/files/" + "0" * 32 + "/presign")).status_code == 404
-    assert (await c.post("/v1/files/nope/presign")).status_code == 404
+    assert (await c.post("/v1/files/" + "0" * 32 + "/presign", json={})).status_code == 404
+    assert (await c.post("/v1/files/nope/presign", json={})).status_code == 404
     async def boom(key):
         raise RuntimeError
     store.head = boom
-    assert (await c.post(f"/v1/files/{fid}/presign")).status_code == 503
+    assert (await c.post(f"/v1/files/{fid}/presign", json={})).status_code == 503
 
 
 async def test_presign_ttl_setting_and_disabled(env, store, monkeypatch):
@@ -256,7 +256,7 @@ async def test_presign_ttl_setting_and_disabled(env, store, monkeypatch):
     get_settings.cache_clear()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(store=store)), base_url="http://t") as c:
         fid = (await up(c, "a.csv", b"a")).json()["id"]
-        assert "X-Amz-Expires=60" in (await c.post(f"/v1/files/{fid}/presign")).json()["url"]
+        assert "X-Amz-Expires=60" in (await c.post(f"/v1/files/{fid}/presign", json={})).json()["url"]
     monkeypatch.setenv("PRESIGN_TTL_SECONDS", "99999")
     get_settings.cache_clear()
     with pytest.raises(Exception):
@@ -266,4 +266,4 @@ async def test_presign_ttl_setting_and_disabled(env, store, monkeypatch):
     get_settings.cache_clear()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(store=store)), base_url="http://t") as c:
         fid = (await up(c, "a.csv", b"a")).json()["id"]
-        assert (await c.post(f"/v1/files/{fid}/presign")).status_code == 501
+        assert (await c.post(f"/v1/files/{fid}/presign", json={})).status_code == 501

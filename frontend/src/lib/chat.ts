@@ -103,9 +103,10 @@ const isTable = (v: unknown): v is AnalysisTable => {
     Array.isArray(t.rows) && t.rows.length <= TABLE_ROWS &&
     t.rows.every((r) => Array.isArray(r) && r.length <= COLUMNS && r.every(isCell));
 };
+export const ARTIFACT_URL = /^\/v1\/artifacts\/[0-9a-f]{32}$/; // the only shape the server issues; anything else (// \\ schemes) is dropped
 const isArtifact = (v: unknown): v is AnalysisArtifact => {
   const a = v as Record<string, unknown> | null;
-  return isObj(a) && isStr(a.id, FILE) && isStr(a.name, 300) && (a.kind === "figure" || a.kind === "csv") && isStr(a.url, 2048);
+  return isObj(a) && isStr(a.id, FILE) && isStr(a.name, 300) && (a.kind === "figure" || a.kind === "csv") && isStr(a.url, 2048) && ARTIFACT_URL.test(a.url);
 };
 const isTimings = (v: unknown): v is Record<string, number> =>
   isObj(v) && Object.keys(v).length <= TIMINGS && Object.entries(v).every(([k, n]) => k.length <= 100 && isNum(n) && n >= 0);

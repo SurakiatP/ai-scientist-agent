@@ -13,6 +13,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from starlette.datastructures import UploadFile
 
+from scientist.routes_store import require_json
 from scientist.object_store import ObjectMissing, presign_policy
 
 router = APIRouter()
@@ -135,6 +136,7 @@ async def meta(file_id: str, request: Request):
 
 @router.patch("/v1/files/{file_id}")
 async def rename(file_id: str, body: Rename, request: Request):
+    require_json(request)
     st, key = _store(request), _key(file_id)
     old = await _meta(st, key)
     name = PurePosixPath(body.name.replace("\\", "/")).name.strip()
@@ -190,7 +192,7 @@ async def preview(request: Request, file_id: str, rows: int = Query(MAX_ROWS, ge
         raise HTTPException(413, "json file too large to preview")
     try:
         data = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
         raise HTTPException(422, "could not parse json")
     if not isinstance(data, list) or not data or not all(isinstance(r, dict) for r in data):
         raise HTTPException(422, "preview needs a JSON array of objects")
@@ -203,6 +205,7 @@ async def preview(request: Request, file_id: str, rows: int = Query(MAX_ROWS, ge
 @router.post("/v1/files/{file_id}/presign")
 async def presign(file_id: str, request: Request, response: Response):
     """Short-lived direct-to-MinIO GET link. POST so caches and prefetchers never touch it."""
+    require_json(request)
     response.headers["Cache-Control"] = "no-store"
     s = request.app.state.settings
     if not s.presign_enabled:

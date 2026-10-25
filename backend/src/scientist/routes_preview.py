@@ -14,6 +14,7 @@ from scientist import report_render
 from scientist.preview_store import ID_RE, PreviewStore
 from scientist.routes_ask import HEADERS, _sse
 from scientist.routes_reports import TIMEOUT_S, ExportRequest
+from scientist.routes_store import require_json
 
 router = APIRouter()
 MAX_QUEUE = 10
@@ -65,6 +66,7 @@ async def _events(req: ExportRequest, gate, store: PreviewStore) -> AsyncIterato
 
 @router.post("/v1/async/reports/preview")
 async def preview(body: ExportRequest, request: Request) -> StreamingResponse:
+    require_json(request)
     st = request.app.state
     if st.preview_gate.free == 0 and len(st.preview_gate.queue) >= MAX_QUEUE:
         raise HTTPException(429, "too many previews queued; try again shortly")

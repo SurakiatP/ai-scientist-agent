@@ -41,6 +41,9 @@ async def api(newdb):
     await app.state.db.close()
 
 
+JSON = {"content-type": "application/json"}
+
+
 def sql(db, q, *a):
     with psycopg.connect(host="127.0.0.1", port=db["port"], user="app", password=db["password"], dbname=db["name"], autocommit=True) as c:
         cur = c.execute(q, a)
@@ -97,7 +100,7 @@ async def test_project_crud_version_conflict_and_validation(api):
     assert (await api.put(f"/v1/store/projects/{pid}", json={"name": "x" * 121})).status_code == 422
     assert (await api.put(f"/v1/store/projects/{pid}", json={"name": ""})).status_code == 422
     assert (await api.put("/v1/store/projects/not-a-uuid", json={"name": "a"})).status_code == 422
-    assert (await api.put(f"/v1/store/projects/{pid}", content=b"{nope")).status_code == 422
+    assert (await api.put(f"/v1/store/projects/{pid}", content=b"{nope", headers=JSON)).status_code == 422
     assert (await api.delete(f"/v1/store/projects/{u()}")).status_code == 404
 
 
@@ -105,7 +108,7 @@ async def test_session_turn_roundtrip_and_snapshot(api):
     sid, tid = await mk_session(api), u()
     r = await api.put(f"/v1/store/sessions/{sid}/turns/{tid}", json=turn(0, status="running", progress={"step": 1}))
     assert r.status_code == 200 and r.json()["version"] == 1
-    r = await api.put(f"/v1/store/sessions/{sid}/turns/{tid}", json=turn(0, version=2, plan=[{"term": "x"}]))
+    r = await api.put(f"/v1/store/sessions/{sid}/turns/{tid}", json=turn(0, version=1, plan=[{"term": "x"}]))
     assert r.json()["version"] == 2
     snap = (await api.get("/v1/store/snapshot")).json()
     s = next(x for x in snap["sessions"] if x["id"] == sid)
@@ -144,10 +147,10 @@ async def test_truncate_turns_validation(api):
 async def test_turn_conflicts_and_limits(api):
     sid, tid = await mk_session(api), u()
     put = lambda t, b, s=sid: api.put(f"/v1/store/sessions/{s}/turns/{t}", json=b)  # noqa: E731
-    await put(tid, turn(0, version=5))
-    r = await put(tid, turn(0, version=4))  # lower than stored
-    assert r.status_code == 409 and r.json()["current"]["version"] == 5
-    assert (await put(tid, turn(0, version=5))).status_code == 200  # same version: idempotent retry
+    assert (await put(tid, turn(0, version=5))).json()["version"] == 1  # M3: the server owns the version
+    assert (await put(tid, turn(0, version=1))).json()["version"] == 2  # equal to stored: accepted, bumped server-side
+    r = await put(tid, turn(0, version=1))  # stale
+    assert r.status_code == 409 and r.json()["current"]["version"] == 2
     assert (await put(u(), turn(0))).status_code == 409  # position taken by another turn
     assert (await put(u(), turn(1, mode="bogus"))).status_code == 422
     assert (await put(u(), turn(1, status="bogus"))).status_code == 422
@@ -175,14 +178,14 @@ async def test_soft_delete_trash_restore_and_permanent(api):
     assert (await api.delete(f"/v1/store/sessions/{sid}")).status_code == 200  # idempotent
     assert sid not in [s["id"] for s in (await api.get("/v1/store/snapshot")).json()["sessions"]]
     assert sid in [s["id"] for s in (await api.get("/v1/store/trash")).json()["sessions"]]
-    r = await api.post(f"/v1/store/sessions/{sid}/restore")
+    r = await api.post(f"/v1/store/sessions/{sid}/restore", json={})
     assert r.status_code == 200 and r.json()["deleted_at"] is None
     s = next(x for x in (await api.get("/v1/store/snapshot")).json()["sessions"] if x["id"] == sid)
     assert len(s["turns"]) == 1  # turns survive trash and restore
     await api.delete(f"/v1/store/sessions/{sid}")
     assert (await api.delete(f"/v1/store/sessions/{sid}", params={"permanent": 1})).status_code == 200
     assert sql(api.db, "select count(*) from turns") == [(0,)]  # cascade
-    assert (await api.post(f"/v1/store/sessions/{sid}/restore")).status_code == 404
+    assert (await api.post(f"/v1/store/sessions/{sid}/restore", json={})).status_code == 404
 
 
 async def test_purge_removes_only_older_than_7_days(api):
@@ -194,18 +197,19 @@ async def test_purge_removes_only_older_than_7_days(api):
     sql(api.db, "update sessions set deleted_at = now() - interval '6 days' where id=%s", new)
     trash = (await api.get("/v1/store/trash")).json()
     assert [s["id"] for s in trash["sessions"]] == [new]  # 8-day-old row is already outside the window
-    r = await api.post("/v1/store/trash/purge")
+    r = await api.post("/v1/store/trash/purge", json={})
     assert r.json()["sessions"] == 1
     assert {r[0] for r in sql(api.db, "select id::text from sessions")} == {new, keep}
 
 
-async def test_snapshot_purges_lazily_and_limits(api):
+async def test_snapshot_does_not_purge_and_limits(api):
     ids = [await mk_session(api) for _ in range(3)]
     await api.delete(f"/v1/store/sessions/{ids[0]}")
     sql(api.db, "update sessions set deleted_at = now() - interval '9 days' where id=%s", ids[0])
     snap = (await api.get("/v1/store/snapshot", params={"limit_sessions": 1})).json()
     assert len(snap["sessions"]) == 1 and snap["sessions"][0]["id"] == ids[2]  # newest first
-    assert sql(api.db, "select count(*) from sessions where id=%s", ids[0]) == [(0,)]
+    assert sql(api.db, "select count(*) from sessions where id=%s", ids[0]) == [(1,)]  # I2: GET never deletes
+    assert (await api.post("/v1/store/trash/purge", json={})).json()["sessions"] == 1
     assert (await api.get("/v1/store/snapshot", params={"limit_sessions": 0})).status_code == 422
 
 
@@ -236,10 +240,10 @@ async def test_files_register_delete_restore_and_purge_drops_object(api):
     assert (await api.put("/v1/store/files/XYZ", json={"name": "a"})).status_code == 422
     await api.delete(f"/v1/store/files/{f}")
     assert dropped == []  # object stays until purge
-    assert (await api.post(f"/v1/store/files/{f}/restore")).json()["deleted_at"] is None
+    assert (await api.post(f"/v1/store/files/{f}/restore", json={})).json()["deleted_at"] is None
     await api.delete(f"/v1/store/files/{f}")
     sql(api.db, "update files set deleted_at = now() - interval '8 days'")
-    assert (await api.post("/v1/store/trash/purge")).json()["files"] == 1
+    assert (await api.post("/v1/store/trash/purge", json={})).json()["files"] == 1
     assert dropped == [f]
 
 
@@ -253,9 +257,9 @@ async def test_hostile_text_is_stored_verbatim(api):
 
 
 async def test_oversized_body_413(api):
-    r = await api.put(f"/v1/store/projects/{u()}", content=b'{"name":"' + b"a" * 1_100_000 + b'"}')
+    r = await api.put(f"/v1/store/projects/{u()}", content=b'{"name":"' + b"a" * 1_100_000 + b'"}', headers=JSON)
     assert r.status_code == 413
-    r = await api.post("/v1/store/import", content=b'{"sessions":[]' + b" " * 10_100_000 + b"}")
+    r = await api.post("/v1/store/import", content=b'{"sessions":[]' + b" " * 10_100_000 + b"}", headers=JSON)
     assert r.status_code == 413
 
 
@@ -499,3 +503,84 @@ async def test_ask_and_analyze_routes_write_usage_rows(env, store, fakes, newdb,
         assert r.status_code == 200 and '"complete"' in r.text
         await usage.drain()
     await app.state.db.close()
+
+
+# --- final review fixes (I1-I5, M1-M11) --------------------------------------------------------------------------------
+async def test_i1_non_json_content_type_rejected_on_every_write(api):
+    sid, pid, f = await mk_session(api), u(), fid()
+    for method, path in [("PUT", f"/v1/store/projects/{pid}"), ("POST", "/v1/store/import"), ("POST", "/v1/store/trash/purge"),
+                         ("POST", f"/v1/store/sessions/{sid}/restore"), ("PUT", f"/v1/store/sessions/{sid}/turns/{u()}"),
+                         ("PUT", f"/v1/store/files/{f}")]:
+        for ct in ("text/plain", "application/x-www-form-urlencoded", "multipart/form-data"):
+            r = await api.request(method, path, content=b'{"name":"x"}', headers={"content-type": ct})
+            assert r.status_code == 415, (method, path, ct)
+    assert (await api.put(f"/v1/store/projects/{pid}", content=b'{"name":"x"}')).status_code == 415  # no header at all
+    assert (await api.put(f"/v1/store/projects/{pid}", json={"name": "ok"})).status_code == 200
+
+
+async def test_i1_origin_checked_only_when_configured(api):
+    pid = u()
+    h = {"origin": "https://evil.example"}
+    assert (await api.put(f"/v1/store/projects/{pid}", json={"name": "a"}, headers=h)).status_code == 200  # default: no check
+    api.app.state.settings.allowed_origins = ["https://ok.example"]
+    assert (await api.put(f"/v1/store/projects/{pid}", json={"name": "b"}, headers=h)).status_code == 403
+    assert (await api.put(f"/v1/store/projects/{pid}", json={"name": "b"}, headers={"origin": "https://ok.example"})).status_code == 200
+
+
+async def test_i2_snapshot_returns_newest_turns_and_counts(api, monkeypatch):
+    api.app.state.settings.max_turns_per_session = 3
+    sid = await mk_session(api)
+    ids = [u() for _ in range(5)]
+    for i, t in enumerate(ids):
+        assert (await api.put(f"/v1/store/sessions/{sid}/turns/{t}", json=turn(i))).status_code == 200
+    s = next(x for x in (await api.get("/v1/store/snapshot")).json()["sessions"] if x["id"] == sid)
+    assert [t["id"] for t in s["turns"]] == ids[2:] and s["turn_count"] == 5 and s["has_more_turns"] is True
+
+
+async def test_i2_turn_count_cap_and_json_size_cap(api):
+    api.app.state.settings.store_max_turns = 2
+    sid = await mk_session(api)
+    for i in range(2):
+        assert (await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(i))).status_code == 200
+    assert (await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(2))).status_code == 409
+    sid = await mk_session(api)
+    big = {"x": "a" * 200_001}
+    for k in ("progress", "plan", "analysis"):
+        assert (await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(0, **{k: big}))).status_code == 422
+    assert (await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(0, answer={"content": "c", "references": [], "x": big}))).status_code == 422
+
+
+async def test_i3_import_clamps_timestamps(api):
+    sid = u()
+    r = await api.post("/v1/store/import", json={"sessions": [{"id": sid, "title": "far", "updated_at": "9999-01-01T00:00:00Z", "created_at": "1970-01-01T00:00:00Z"}]})
+    assert r.status_code == 200
+    (up, cr), = sql(api.db, "select updated_at, created_at from sessions where id=%s", sid)
+    now = sql(api.db, "select now()")[0][0]
+    assert up <= now and cr.year >= 2000
+
+
+async def test_i5_stale_put_on_truncated_turn_is_gone(api):
+    sid = await mk_session(api)
+    old = [u() for _ in range(2)]
+    for i, t in enumerate(old):
+        await api.put(f"/v1/store/sessions/{sid}/turns/{t}", json=turn(i))
+    assert (await api.delete(f"/v1/store/sessions/{sid}/turns/from/1")).json() == {"removed": 1}
+    assert (await api.put(f"/v1/store/sessions/{sid}/turns/{old[1]}", json=turn(1))).status_code == 410  # B is stale
+    assert (await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(1, question="edited"))).status_code == 200
+    sql(api.db, "update turn_tombstones set created_at = now() - interval '9 days'")
+    assert (await api.post("/v1/store/trash/purge", json={})).json()["tombstones"] == 1
+
+
+async def test_m6_deep_json_is_422(api):
+    r = await api.put(f"/v1/store/projects/{u()}", content=b"[" * 100_000, headers=JSON)
+    assert r.status_code == 422
+
+
+async def test_m7_file_size_bound(api):
+    r = await api.put(f"/v1/store/files/{fid()}", json={"name": "a.csv", "size": 2**63, "kind": "csv"})
+    assert r.status_code == 422
+
+
+async def test_m9_usage_retention(api):
+    sql(api.db, "insert into usage_events(at, mode, ok) values (now() - interval '200 days', 'deep', true), (now(), 'deep', true)")
+    assert await api.app.state.data.purge_usage() == 1

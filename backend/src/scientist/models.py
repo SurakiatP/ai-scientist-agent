@@ -42,3 +42,6 @@ usage_events = sa.Table(
     sa.Column("llm_calls", sa.Integer, nullable=False, server_default="0"), sa.Column("prompt_tokens", sa.Integer),
     sa.Column("completion_tokens", sa.Integer), sa.Column("cost_usd", sa.Numeric(10, 6)),
     sa.Column("papers_found", sa.Integer), sa.Column("ok", sa.Boolean, nullable=False))
+turn_tombstones = sa.Table(
+    "turn_tombstones", md, sa.Column("id", UUID, primary_key=True), sa.Column("session_id", UUID, nullable=False),
+    _ts("created_at", nullable=False, server_default=NOW))

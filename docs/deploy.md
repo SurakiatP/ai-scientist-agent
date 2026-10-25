@@ -42,8 +42,10 @@ Foundation only: the app creates one table (`app_meta`) so far and keeps working
 
 - The `/v1/store/*` routes (chats, projects, messages, file list, trash, usage) need `DATABASE_URL` and migration `0002`; without them they answer 503 `database not configured` and the web app falls back to browser-only storage (it checks `/v1/health` → `db`).
 - **There is no login.** Anyone who can reach the server IP can read, edit and delete everything, including "delete all chats". Keep the app behind the internal network or a VPN and never expose Postgres or MinIO publicly.
-- Deleted chats, projects and files go to the trash for `TRASH_DAYS` (7). The purge runs on every snapshot and hourly; a file's MinIO object is removed only when it is purged.
-- Writes are rate limited per client IP (`STORE_WRITE_RATE_PER_MIN`). Behind a reverse proxy every caller shares the proxy's IP, so raise it or pass the real IP through.
+- Deleted chats, projects and files go to the trash for `TRASH_DAYS` (7). The purge runs hourly (and on `POST /v1/store/trash/purge`); a file's MinIO object is removed only when it is purged.
+- Writes are rate limited per client IP (`STORE_WRITE_RATE_PER_MIN`). Behind a reverse proxy every caller shares the proxy's IP unless you set `FORWARDED_ALLOW_IPS` to the proxy's address/CIDR (uvicorn reads it; compose passes it through, default `127.0.0.1`).
+- Store writes must be `Content-Type: application/json` (415 otherwise): this blocks cross-site form/`text/plain` posts. `ALLOWED_ORIGINS` (compose sets it to `https://$DOMAIN`) additionally rejects writes carrying another `Origin` (403); empty = no check.
+- Caps: a snapshot returns the newest `MAX_TURNS_PER_SESSION` (50) turns per session, a session holds at most `STORE_MAX_TURNS` (500), and each turn JSON field is limited to `STORE_MAX_TURN_JSON_BYTES`. Turns removed by an edit are tombstoned (answer 410 to stale writers) until the trash purge; `usage_events` older than `USAGE_RETENTION_DAYS` (180) are deleted hourly.
 - The live change feed (`GET /v1/store/events`) is in-process: run **one backend worker**.
 - The dataset lives only in Postgres: keep the daily `pg_dump` backup (section 6) and test a restore.
 - `usage_events` (timings, token counts, cost) stores no question text.

@@ -111,7 +111,7 @@ describe("streamAnalyze", () => {
       'data: {"type":"waiting","position":1}\n\n',
       'data: {"type":"analysis_step","step":"profiling"}\n\n',
       'data: {"type":"analysis_script","code":"finding(df.a.mean())"}\n\n',
-      'data: {"type":"analysis_result","quality":{"rows":3,"columns":2,"columns_info":[{"name":"a","dtype":"int64","null_pct":0}]},"tables":[{"name":"t","columns":["x"],"rows":[[1]]}],"findings":["mean 2"],"timings":{"total_s":0.1},"artifacts":[{"id":"a1","name":"fig-1.png","kind":"figure","url":"/v1/artifacts/a1"}]}\n\n',
+      'data: {"type":"analysis_result","quality":{"rows":3,"columns":2,"columns_info":[{"name":"a","dtype":"int64","null_pct":0}]},"tables":[{"name":"t","columns":["x"],"rows":[[1]]}],"findings":["mean 2"],"timings":{"total_s":0.1},"artifacts":[{"id":"a1","name":"fig-1.png","kind":"figure","url":"/v1/artifacts/a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"}]}\n\n',
       'data: {"type":"complete"}\n\n',
     ];
     const f = mockFetch(events);

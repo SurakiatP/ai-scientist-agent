@@ -122,7 +122,7 @@ export async function fetchPreview(id: string, signal: AbortSignal): Promise<Pre
 // the files store, or log it.
 export type Presigned = { url: string; expiresIn: number; inline: boolean; kind: string; name: string };
 export async function presignFile(id: string, signal?: AbortSignal): Promise<Presigned> {
-  const b = await json(await call(`${id}/presign`, { method: "POST", signal }));
+  const b = await json(await call(`${id}/presign`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}", signal }));
   if (typeof b.url !== "string" || !/^https?:\/\//.test(b.url) || typeof b.inline !== "boolean") throw new FileApiError(-1);
   return { url: b.url, expiresIn: typeof b.expires_in === "number" ? b.expires_in : 0, inline: b.inline, kind: typeof b.kind === "string" ? b.kind : "", name: typeof b.name === "string" ? b.name : "" };
 }

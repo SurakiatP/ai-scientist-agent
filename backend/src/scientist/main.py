@@ -6,6 +6,7 @@ import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from scientist import store as store_mod, usage
 from scientist.config import get_settings
 from scientist.gate import RunGate
 from scientist.object_store import ObjectStore, create_store
@@ -54,6 +55,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                     with suppress(asyncio.CancelledError):
                         await purger
                 await rt.close()
+                await usage.drain()  # in-flight usage rows land before the pool closes
                 if app.state.db:
                     await app.state.db.close()
                 if runner is None:
@@ -65,9 +67,11 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
             await asyncio.sleep(3600)
             try:
                 await app.state.data.purge()
+                await app.state.data.purge_usage()
             except Exception:
                 log.exception("trash purge failed")
 
+    store_mod.MAX_JSON_BYTES[0] = settings.store_max_turn_json_bytes
     app = FastAPI(title="scientist", lifespan=lifespan)
     app.state.db = db or open_database(settings)
     app.state.data = Store(app.state.db, Bus(), settings, lambda: app.state.store) if app.state.db else None

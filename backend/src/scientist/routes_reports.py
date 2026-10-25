@@ -4,11 +4,12 @@ import re
 from typing import Annotated, Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 
 from scientist import report_render
+from scientist.routes_store import require_json
 
 router = APIRouter()
 TIMEOUT_S, MAX_CHARS, MAX_BYTES = 20, 200_000, 10 << 20
@@ -109,12 +110,19 @@ def filename(title: str) -> str:
 
 
 @router.post("/v1/reports/export")
-async def export(req: ExportRequest):
+async def export(req: ExportRequest, request: Request):
+    require_json(request)
+    g = request.app.state.preview_gate  # same renderer pool as previews
+    if g.free == 0:
+        raise HTTPException(429, "too many exports in progress; try again shortly")
+    g.free -= 1
     render = report_render.render_pdf if req.format == "pdf" else report_render.render_docx
     try:
         data = await asyncio.wait_for(asyncio.to_thread(render, req.model_dump()), TIMEOUT_S)
     except (TimeoutError, ImportError):
         raise HTTPException(503, "report renderer unavailable")
+    finally:
+        g.release()
     if len(data) > MAX_BYTES:
         raise HTTPException(422, "report is too large")
     name = quote(f"{filename(req.title)}.{req.format}")

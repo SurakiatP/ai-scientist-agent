@@ -182,7 +182,7 @@ describe("analysis controller", () => {
     tables: [{ name: "t", columns: ["a"], rows: [[1], [2]] }],
     findings: ["mean 1.5"],
     timings: { load_s: 0.1, script_s: 0.2, total_s: 0.3 },
-    artifacts: [{ id: "a1", name: "fig-1.png", kind: "figure" as const, url: "/v1/artifacts/a1" }],
+    artifacts: [{ id: "a1", name: "fig-1.png", kind: "figure" as const, url: "/v1/artifacts/a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1" }],
   };
 
   it("stores steps, script and result on a kind=analysis turn", async () => {
@@ -203,7 +203,7 @@ describe("analysis controller", () => {
       analysis: {
         fileId: "f".repeat(32), fileName: "data.csv",
         steps: ["profiling", "writing_script", "running"], script: "finding('x')",
-        findings: ["mean 1.5"], artifacts: [{ id: "a1", name: "fig-1.png", kind: "figure", url: "/v1/artifacts/a1" }],
+        findings: ["mean 1.5"], artifacts: [{ id: "a1", name: "fig-1.png", kind: "figure", url: "/v1/artifacts/a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1" }],
       },
     });
     expect(last(chat).answer).toBeUndefined();

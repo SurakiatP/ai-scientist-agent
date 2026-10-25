@@ -391,7 +391,7 @@ describe("Analysis messages", () => {
     fileId: "f".repeat(32), fileName: "data.csv", steps: ["profiling", "running"], script: "print(1)",
     quality: { rows: 4, columns: 1, truncated: false, columns_info: [{ name: "a", dtype: "int", null_pct: 0 }] },
     tables: [{ name: "result", columns: ["a"], rows: [[1]], truncated: false }],
-    findings: ["a finding"], timings: { total_s: 2 }, artifacts: [{ id: "a1", name: "chart.png", kind: "figure", url: "/v1/artifacts/a1" }],
+    findings: ["a finding"], timings: { total_s: 2 }, artifacts: [{ id: "a1", name: "chart.png", kind: "figure", url: "/v1/artifacts/a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1" }],
   };
 
   it("renders the analysis artifact instead of the research progress card", () => {

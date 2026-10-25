@@ -78,6 +78,6 @@ def open_database(settings: Settings) -> Database | None:
         return None
     try:
         return Database(create_engine(settings))
-    except Exception:
-        log.exception("database engine could not be created")  # bad URL / unreadable password file; message never holds the password
+    except Exception as e:
+        log.error("database engine could not be created (%s)", type(e).__name__)  # bad URL / unreadable password file; message never holds the password
         return None
