@@ -40,14 +40,13 @@ lint clean, tsc clean, vitest 135 passed (133 before), `next build` ok, backend 
 - Browsers request `/favicon.ico` regardless of the `<link>`; it returned 404. Added a 32px `app/favicon.ico` rendered from `icon.svg`.
 - Verified in a real browser: not-found page (404 shows th copy and a link to chat). Verified by build only: `error.tsx` and `global-error.tsx` (no way to trigger a render error without editing code).
 
-## Not built / gaps (all intentional or backend-limited)
-- Sessions and projects live only in this browser (localStorage). No server persistence, no sync across devices, cleared with site data.
-- The research plan is shown read-only ("proposed by Hermes, cannot be edited"); no plan editing or approval step.
-- No file upload (attach is disabled with a reason).
-- No PDF or DOCX export (buttons disabled with a reason; only Markdown copy and download).
-- No analysis or report artifacts (images in the reference set showing them are not implemented).
-- No quick-chat mode; only Deep Research.
-- Follow-ups do not send earlier turns; each question is answered on its own (stated in the UI).
+## Not built / gaps (state at branch feature/ui-match-mockups)
+- Sessions and projects live only in this browser (localStorage); no login, no server persistence or sync.
+- Built since the first report: editable research plan (plan_only, PlanCard), Quick mode, earlier turns sent as context (last 3), file upload to MinIO and Python analysis in a Docker sandbox (analysis artifact with tables, figures, code), a research report card (Markdown download), settings rows, a shared compact UI scale.
+- PDF and DOCX export: buttons disabled with a reason (no document generator in the backend).
+- Python analysis is disabled in the Compose deployment (`SANDBOX_ENABLED=false`): it needs a Docker-capable runner, the backend container never gets the Docker socket. It works with `scripts/dev.sh`.
+- Sidebar is not grouped by project and there is no project page (mockup 06); no per-message "..." menu or thumbs; artifact side panel lacks run date and Python versions (the backend does not send them).
+- Analysis scripts written by the model sometimes fail twice (reliability); CSV formula injection guard and artifact expiry are not done.
 
 ## Not tested
 - Safari, Firefox, real screen readers (VoiceOver, NVDA). Only Chrome via playwright-core.
