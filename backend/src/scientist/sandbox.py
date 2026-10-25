@@ -15,6 +15,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from scientist.config import Settings
+from scientist.proc import kill_and_reap
 
 ALLOWED_IMPORTS = {"pandas", "numpy", "matplotlib", "math", "statistics", "json", "datetime", "collections", "itertools",
                    "re"}
@@ -237,8 +238,10 @@ async def run_analysis(script: str | None, data: bytes, ext: str, settings: Sett
             out, err = await asyncio.wait_for(finish(), s.sandbox_timeout_s)
         except (TimeoutError, _TooBig) as e:
             await _docker("rm", "-f", name)  # killing the docker client alone would leave the container running
-            proc.kill()
-            await proc.wait()
+            for t in (out_t, err_t):  # stop our readers first: kill_and_reap drains the pipes itself
+                t.cancel()
+            await asyncio.gather(out_t, err_t, return_exceptions=True)
+            await kill_and_reap(proc)
             return AnalysisResult(ok=False, error="timeout" if isinstance(e, TimeoutError) else "output_too_large")
         except BaseException:  # cancelled (client gone): same cleanup, then propagate
             await asyncio.shield(_docker("rm", "-f", name))

@@ -15,6 +15,7 @@ from pydantic import BaseModel, ValidationError
 
 from scientist.config import Settings
 from scientist.events import BranchAnswer, Paper, paper_key
+from scientist.proc import kill_and_reap
 
 ROOT = Path(__file__).resolve().parents[3]
 CACHE = Path.home() / ".cache/scientist"
@@ -162,8 +163,7 @@ class HermesRuntime(BranchRunner):
             try:
                 await asyncio.wait_for(proc.wait(), 15)
             except TimeoutError:
-                proc.kill()
-                await proc.wait()
+                await kill_and_reap(proc)
         self.procs.discard(proc)
 
     async def close(self) -> None:
