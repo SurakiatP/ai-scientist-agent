@@ -20,6 +20,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: "24", cache: npm, cache-dependency-path: frontend/package-lock.json }
       - run: npm ci
+      - run: npx next typegen # LayoutProps/PageProps are generated; a fresh checkout has none, so tsc would fail without this
       - run: npx tsc --noEmit
       - run: npm run lint
       - run: npm test
