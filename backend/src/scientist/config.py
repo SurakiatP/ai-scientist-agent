@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     upload_max_files: int = 10  # file parts accepted per request
     upload_max_total_bytes: int = 200_000_000  # request body cap
     # data-analysis sandbox (docker run limits; see sandbox/ and scientist/sandbox.py)
+    sandbox_enabled: bool = True  # false where no Docker-capable runner exists (Compose deployment): analyze answers 503
+    analyze_max_queue: int = 20  # analyses allowed to wait for a sandbox slot; more get 429
     sandbox_image: str = "scientist-sandbox:latest"
     sandbox_mem: str = "2g"  # also --memory-swap, so swap is off
     sandbox_cpus: float = 1.0

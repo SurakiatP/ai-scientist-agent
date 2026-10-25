@@ -9,7 +9,7 @@ Ubuntu 24.04. Use `infra/deploy/cloud-init.yaml` (edit SSH key, repo, tag) or in
 `infra/deploy/bootstrap.sh` (as root) creates `/etc/ai-scientist/private/` with random `minio-access-key` / `minio-secret-key` (mode 0640, group 10001) and copies `app.env.example` to `app.env` (0600). Edit `app.env`: set `DOMAIN`, `ACME_EMAIL`, `OPENROUTER_API_KEY`. The key lives only there, never in an image or the repo. `deploy.sh` refuses to run while `CHANGE_ME` remains.
 
 ## 3. Hermes runtime
-The backend runs research branches through Hermes (see `infra/hermes/setup.md`). Prepare the pinned checkout into `/var/lib/ai-scientist/cache` (mounted read-only at `~/.cache/scientist`). Branch sandboxes need a Docker runner; the backend gets no host Docker socket. An isolated `analysis-sandbox` service is a commented placeholder in the compose file and is not built yet.
+The backend runs research branches through Hermes (see `infra/hermes/setup.md`). Prepare the pinned checkout into `/var/lib/ai-scientist/cache` (mounted read-only at `~/.cache/scientist`). Branch sandboxes need a Docker runner; the backend gets no host Docker socket. An isolated `analysis-sandbox` service is a commented placeholder in the compose file and is not built yet. Until it exists, `SANDBOX_ENABLED=false` (set in `app.env.example`) turns data analysis off: `/v1/async/analyze` returns 503 and `/v1/health` reports `analysis: disabled`. Do not mount `/var/run/docker.sock` into the backend to work around this: it makes any backend compromise root on the host.
 
 ## 4. Deploy a tag
 ```sh

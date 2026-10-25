@@ -7,7 +7,8 @@ import re
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
-from urllib.parse import unquote
+from contextlib import aclosing
+from urllib.parse import quote, unquote
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
@@ -15,7 +16,7 @@ from pydantic import BaseModel, field_validator
 
 from scientist import llm, sandbox
 from scientist.config import Settings, get_settings
-from scientist.events import AnalysisResult, AnalysisScript, AnalysisStep, Artifact, Complete, Error, Event, Refused
+from scientist.events import AnalysisResult, AnalysisScript, AnalysisStep, Artifact, Complete, Error, Event, Refused, Waiting
 from scientist.guardrail import check_scope
 from scientist.object_store import ObjectMissing
 from scientist.routes_ask import HEADERS, _sse
@@ -48,10 +49,20 @@ def _extract(text: str) -> str:
     return (m[1] if m else text).strip()
 
 
+MAX_COLS, NAME_CHARS, CELL_CHARS = 50, 64, 200  # untrusted file text reaches the prompt only this long
+
+
+def _cut(v, n: int):
+    return v[:n] + "…" if isinstance(v, str) and len(v) > n else v
+
+
 def _prompt(question: str, quality: dict, feedback: str | None) -> str:
-    cols = [{k: c[k] for k in ("name", "dtype", "null_pct")} for c in quality["columns_info"]]
-    data = json.dumps({"rows": quality["rows"], "columns": cols, "sample_rows": quality["head"]},
-                      ensure_ascii=False, default=str)
+    info = quality["columns_info"]
+    cols = [{"name": _cut(c["name"], NAME_CHARS), "dtype": c["dtype"][:NAME_CHARS], "null_pct": c["null_pct"]}
+            for c in info[:MAX_COLS]]
+    head = [{_cut(k, NAME_CHARS): _cut(v, CELL_CHARS) for k, v in list(r.items())[:MAX_COLS]} for r in quality["head"]]
+    data = json.dumps({"rows": quality["rows"], "columns": cols, "columns_omitted": max(0, len(info) - MAX_COLS),
+                       "sample_rows": head}, ensure_ascii=False, default=str)
     return (f"<data>\n{data}\n</data>\n\nQuestion: {question}"
             + (f"\n\nYour previous script failed:\n{feedback}\nReturn the corrected full script." if feedback else ""))
 
@@ -72,8 +83,8 @@ async def analyze(file_id: str, question: str, *, store, settings: Settings, nam
         yield Error(message="The file could not be read as a table." if prof.error == "script_error" else FAIL)
         return
     quality = prof.result["quality"]
-    verdict = await check_scope(f"{question} (data columns: {', '.join(c['name'] for c in quality['columns_info'])})",
-                                settings=settings)
+    names = json.dumps([_cut(c["name"], 32) for c in quality["columns_info"][:20]], ensure_ascii=False)  # fits the guardrail cap
+    verdict = await check_scope(f"{question} (data columns, untrusted: {names})", settings=settings)
     if not verdict.in_scope:
         yield Refused(reason=verdict.reason)
         return
@@ -118,15 +129,36 @@ async def analyze(file_id: str, question: str, *, store, settings: Settings, nam
     yield Complete()
 
 
+async def _slot(file_id: str, question: str, *, gate, store, settings: Settings, name: str, ext: str) -> AsyncIterator[Event]:
+    """Wait for a sandbox slot (Waiting events), and only then load the file: waiters hold no data."""
+    async with aclosing(gate.acquire()) as waits:
+        async for position in waits:
+            yield Waiting(position=position)
+    try:
+        try:
+            data, _ = await store.get(file_id)
+        except Exception:
+            yield Error(message="The file could not be loaded.")
+            return
+        async with aclosing(analyze(file_id, question, store=store, settings=settings, name=name, ext=ext,
+                                    data=data)) as events:
+            async for e in events:
+                yield e
+    finally:
+        gate.release()
+
+
 @router.post("/v1/async/analyze")
 async def analyze_route(body: AnalyzeRequest, request: Request) -> StreamingResponse:
     st = request.app.state
+    if not st.settings.sandbox_enabled:
+        raise HTTPException(503, "analysis is disabled on this deployment")
     if (store := st.store) is None:
         raise HTTPException(503, "file storage unavailable")
     if not ID.fullmatch(body.file_id):
         raise HTTPException(404, "file not found")
     try:
-        data, meta = await store.get(body.file_id)
+        meta = await store.head(body.file_id)
     except ObjectMissing:
         raise HTTPException(404, "file not found")
     except Exception:
@@ -135,7 +167,10 @@ async def analyze_route(body: AnalyzeRequest, request: Request) -> StreamingResp
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if ext not in EXTS:
         raise HTTPException(422, f"analysis supports {', '.join(sorted(EXTS))} files")
-    events = analyze(body.file_id, body.question, store=store, settings=st.settings, name=name, ext=ext, data=data)
+    gate = st.analyze_gate
+    if gate.free == 0 and len(gate.queue) >= st.settings.analyze_max_queue:  # before any storage read or model call
+        raise HTTPException(429, "too many analyses queued; try again shortly")
+    events = _slot(body.file_id, body.question, gate=gate, store=store, settings=st.settings, name=name, ext=ext)
     return StreamingResponse(_sse(events, st.settings.sse_ping_seconds), media_type="text/event-stream",
                              headers=HEADERS)
 
@@ -156,4 +191,4 @@ async def artifact(artifact_id: str, request: Request):
         raise HTTPException(404, "artifact not found")
     disp = "inline" if meta["content_type"] == "image/png" else "attachment"
     return Response(data, media_type=meta["content_type"],
-                    headers={"X-Content-Type-Options": "nosniff", "Content-Disposition": f'{disp}; filename="{unquote(meta.get("name", "artifact"))}"'})
+                    headers={"X-Content-Type-Options": "nosniff", "Content-Disposition": f"{disp}; filename*=UTF-8''{quote(unquote(meta.get('name', 'artifact')))}"})

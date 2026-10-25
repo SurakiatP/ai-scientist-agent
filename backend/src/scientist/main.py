@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from scientist.config import get_settings
 from scientist.gate import RunGate
 from scientist.object_store import ObjectStore, create_store
+from scientist.sandbox import sweep_sandboxes
 from scientist.hermes import BranchRunner, HermesRuntime, sweep_containers
 from scientist.routes_ask import router as ask_router
 from scientist.routes_analyze import router as analyze_router
@@ -42,9 +43,11 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                 await rt.close()
                 if runner is None:
                     sweep_containers()
+                sweep_sandboxes()
 
     app = FastAPI(title="scientist", lifespan=lifespan)
     app.state.settings, app.state.gate = settings, RunGate(settings.max_concurrent_runs)
+    app.state.analyze_gate = RunGate(settings.sandbox_max_concurrent)
     app.state.store = store
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins,
                        allow_methods=["*"], allow_headers=["*"])
@@ -54,12 +57,17 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
 
     @app.get("/v1/health")
     async def health():
+        h = {"status": "ok"}
         if not settings.minio_endpoint and store is None:  # uploads not configured
-            return {"status": "ok"}
-        try:  # research chat works without file storage, so a down store degrades `files`, not the app
-            await app.state.store.ping()
-        except Exception:
-            return {"status": "ok", "files": "unavailable"}
-        return {"status": "ok", "files": "ok"}
+            pass
+        else:
+            try:  # research chat works without file storage, so a down store degrades `files`, not the app
+                await app.state.store.ping()
+                h["files"] = "ok"
+            except Exception:
+                h["files"] = "unavailable"
+        if not settings.sandbox_enabled:
+            h["analysis"] = "disabled"
+        return h
 
     return app

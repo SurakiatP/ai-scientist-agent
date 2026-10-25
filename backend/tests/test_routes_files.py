@@ -26,7 +26,9 @@ class MemStore:
         return self.objs[key]
 
     async def head(self, key):
-        await self.get(key)
+        if key not in self.objs:
+            raise ObjectMissing
+        return self.objs[key][1]
 
     async def delete(self, key):
         self.objs.pop(key)
