@@ -26,6 +26,21 @@ class Settings(BaseSettings):
     guardrail_max_tokens: int = 256
     strategy_max_tokens: int = 1500
     synthesis_max_tokens: int = 4000
+    # MinIO file store (self-hosted in the stack); empty endpoint = uploads off. *_file wins over the plain value (Docker secrets)
+    minio_endpoint: str = ""
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
+    minio_access_key_file: str = ""
+    minio_secret_key_file: str = ""
+    minio_bucket: str = "scientist-uploads"
+    upload_max_bytes_csv: int = 100_000_000
+    upload_max_bytes_parquet: int = 100_000_000
+    upload_max_bytes_xlsx: int = 25_000_000
+    upload_max_bytes_json: int = 50_000_000
+    upload_max_bytes_pdf: int = 30_000_000
+    upload_max_bytes_docx: int = 30_000_000
+    upload_max_files: int = 10  # file parts accepted per request
+    upload_max_total_bytes: int = 200_000_000  # request body cap
     contact_email: str = ""  # sent as mailto in the citation-check User-Agent (Crossref/NCBI polite pool)
 
 

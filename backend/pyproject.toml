@@ -2,7 +2,14 @@
 name = "scientist"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["fastapi", "uvicorn", "pydantic-settings", "httpx"]
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic-settings",
+    "httpx",
+    "boto3>=1.43.118",
+    "python-multipart>=0.0.32",
+]
 
 [dependency-groups]
 dev = ["pytest", "pytest-asyncio", "httpx"]
