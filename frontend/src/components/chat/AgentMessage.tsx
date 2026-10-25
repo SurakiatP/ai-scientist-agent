@@ -16,16 +16,22 @@ import { PlanCard, type PlanSearch } from "@/components/research/PlanCard";
 import { ProgressCard } from "@/components/research/ProgressCard";
 import { AnswerSkeleton } from "@/components/research/AnswerSkeleton";
 import { ReportArtifact, reportId } from "@/components/research/ReportArtifact";
-import type { Turn } from "@/lib/chat";
+import type { RefusalCode, Turn } from "@/lib/chat";
 import { useReportPanel } from "@/lib/exportReport";
 import { useInspector } from "@/lib/inspector";
 import { useT } from "@/lib/prefs";
-import { strings } from "@/lib/strings";
+import { strings, type Strings } from "@/lib/strings";
 import { LogoMark } from "@/components/landing/Dropdown";
 import { approvePlan, cancelPlan, startAnalysis, startRun, useRunState } from "@/lib/run";
 import { focusComposer, useMode } from "./Composer";
 import { Starters } from "./EmptyChat";
 import { avatarSx, Time } from "./UserMessage";
+
+// refusal code -> localized text key; out_of_scope has none (it keeps the generic message)
+const REFUSAL_TEXT: Partial<Record<RefusalCode, keyof Strings>> = {
+  injection: "refusedInjection", needs_search: "refusedNeedsSearch", use_research: "refusedUseResearch", empty_memory: "refusedEmptyMemory",
+  too_long: "refusedTooLong", unsafe_request: "refusedUnsafe", not_about_data: "refusedNotData", check_failed: "refusedCheckFailed",
+};
 
 function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }) {
   const t = useT();
@@ -43,7 +49,8 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   };
   const scope = { sessionId, turnId: turn.id };
   // the backend reason is English-only; Thai UI shows the localized scope message instead
-  const text = status === "refused" ? (t === strings.th ? t.refused : turn.refused) : status === "error" ? turn.error : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
+  const coded = status === "refused" && turn.refusedCode ? REFUSAL_TEXT[turn.refusedCode] : undefined;
+  const text = status === "refused" ? (coded ? t[coded] : t === strings.th ? t.refused : turn.refused) : status === "error" ? turn.error : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
   const refs = turn.answer?.references ?? [];
   const [tab, setTab] = useState<"answer" | "sources">("answer");
   const openInspector = useInspector((x) => x.open);
@@ -124,6 +131,9 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
           <Typography sx={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap", lineHeight: 1.7 }}>{text}</Typography>
         </Stack>
       ) : text && <Typography aria-live="polite" sx={{ overflowWrap: "anywhere", whiteSpace: "pre-wrap", lineHeight: 1.7 }}>{text}</Typography>}
+      {status === "refused" && (turn.refusedCode === "needs_search" || turn.refusedCode === "use_research") && (
+        <Button variant="outlined" onClick={() => { useMode.getState().set("deep"); focusComposer(); }} sx={{ mt: 1.5 }}>{t.switchTo} {t.modeDeep}</Button>
+      )}
       {status === "refused" && !analysis && <Box sx={{ mt: 2 }}><Typography sx={{ mb: 1, color: "text.secondary", fontSize: "0.875rem" }}>{t.backToResearch}</Typography><Starters label={t.examplesLabel} sessionId={sessionId} /></Box>}
       {(status === "error" || status === "interrupted" || status === "stopped") && (
         <Stack direction="row" spacing={1.5} useFlexGap sx={{ mt: 1.5, alignItems: "center", flexWrap: "wrap" }}>

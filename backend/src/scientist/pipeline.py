@@ -15,7 +15,7 @@ from scientist.config import Settings
 from scientist.events import (BranchAnswer, Paper, Complete, Error, Event, FinalAnswer, Reference, Refused, Search,
                               Sources, Strategy, Waiting, arxiv_id, paper_key)
 from scientist.gate import RunGate
-from scientist.guardrail import OUT_OF_SCOPE, check_scope
+from scientist.guardrail import guard
 from scientist.hermes import BranchFailed, BranchRunner, InvalidPaper
 
 PROMPTS = Path(__file__).parent / "prompts"
@@ -88,9 +88,9 @@ async def ask(question: str, runner: BranchRunner, *, settings: Settings, client
         async for e in _chat(question, memory, settings, gate):
             yield e
         return
-    verdict = await check_scope(question, settings=settings)
+    verdict = await guard("plan_only" if plan_only else mode, question, settings=settings)
     if not verdict.in_scope:
-        yield Refused(reason=verdict.reason)  # refusals never queue or take a slot
+        yield Refused(reason=verdict.reason, code=verdict.code)  # refusals never queue or take a slot
         return
     if plan_only:
         if strategy := await _plan(question, settings, mode, history, plan):
@@ -254,11 +254,9 @@ def _cited(text: str, refs: dict[str, Reference]) -> tuple[str, list[Reference]]
 
 async def _chat(question: str, memory: list, settings: Settings, gate: RunGate) -> AsyncIterator[Event]:
     """One model call over the browser-supplied memory: no scope model, no strategy, no branches."""
-    if not memory:
-        yield Refused(reason="There are no earlier research results in this session to answer from.")
-        return
-    if len(question) > settings.max_question_chars or OUT_OF_SCOPE.search(question):  # cheap rules only
-        yield Refused(reason="Not a scientific research question.")
+    verdict = await guard("chat", question, settings=settings, context={"memory": len(memory)})  # cheap rules only
+    if not verdict.in_scope:
+        yield Refused(reason=verdict.reason, code=verdict.code)
         return
     async with aclosing(gate.acquire()) as waits:
         async for position in waits:

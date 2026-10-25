@@ -21,7 +21,7 @@ export type ApiError = { message: string; code?: StreamCode; status?: number };
 export type StreamError = ApiError & { type: "error" };
 
 export type AskEvent =
-  | { type: "refused"; reason: string }
+  | { type: "refused"; reason: string; code?: string }
   | { type: "waiting"; position: number }
   | { type: "strategy"; reasoning: string; searches: Search[] }
   | { type: "sources"; term: string; papers: Paper[] }
@@ -47,7 +47,7 @@ export type AnalysisResult = {
 
 export type AnalyzeEvent =
   | { type: "waiting"; position: number }
-  | { type: "refused"; reason: string }
+  | { type: "refused"; reason: string; code?: string }
   | { type: "analysis_step"; step: AnalysisStep }
   | { type: "analysis_script"; code: string }
   | ({ type: "analysis_result" } & AnalysisResult)

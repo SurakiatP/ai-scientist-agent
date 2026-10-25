@@ -82,6 +82,18 @@ describe("run controller", () => {
     await run.startRun(sid, "q");
     expect(last(chat)).toMatchObject({ status: "refused", refused: "off topic" });
   });
+  it("refused stores a known code, ignores unknown or oversized ones", async () => {
+    const { chat, run, sid } = await setup();
+    script = gen([{ type: "refused", reason: "r", code: "needs_search" }]);
+    await run.startRun(sid, "q");
+    expect(last(chat)).toMatchObject({ status: "refused", refusedCode: "needs_search" });
+    script = gen([{ type: "refused", reason: "r", code: "x".repeat(40) }]);
+    await run.startRun(sid, "q2");
+    expect(last(chat).refusedCode).toBeUndefined();
+    script = gen([{ type: "refused", reason: "r", code: "<script>" }]);
+    await run.startRun(sid, "q3");
+    expect(last(chat).refusedCode).toBeUndefined();
+  });
   it("error event stores text", async () => {
     const { chat, run, sid } = await setup();
     script = gen([{ type: "error", message: "", code: "network" }]);

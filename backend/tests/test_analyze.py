@@ -317,14 +317,13 @@ async def test_prompt_and_scope_input_truncated(c, store, fakes, monkeypatch):
     async def run(script, data, ext, settings):
         return sandbox.AnalysisResult(ok=True, result={"quality": q} if script is None else {"tables": [], "findings": [], "timings": {}})
     monkeypatch.setattr(sandbox, "run_analysis", run)
-    from scientist import guardrail
     import scientist.routes_analyze as ra
-    orig = ra.check_scope
+    orig = ra.guard
 
-    async def cs(text, **kw):
-        seen.append(text)
-        return await orig(text, **kw)
-    monkeypatch.setattr(ra, "check_scope", cs)
+    async def cs(mode, text, **kw):
+        seen.append(json.dumps(kw["context"]))
+        return await orig(mode, text, **kw)
+    monkeypatch.setattr(ra, "guard", cs)
     ev = await analyze(c, store)
     assert len(fakes["prompts"][0]) < 12_000 and len(seen[0]) < 1_500 and "z" * 201 not in fakes["prompts"][0]
 

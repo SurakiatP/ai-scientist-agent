@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 from scientist.config import get_settings
 from scientist.events import Error, Event, to_sse
 from scientist.pipeline import THAI, ask
+from scientist.usage import track
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -129,5 +130,7 @@ async def ask_route(body: AskRequest, request: Request) -> StreamingResponse:
         raise HTTPException(429, "too many requests queued; try again shortly")
     events = ask(body.question, st.runner, settings=st.settings, client=st.client, gate=st.gate, mode=body.mode,
                  history=body.history, plan=body.plan, plan_only=body.plan_only, memory=body.memory)
+    if st.db is not None:
+        events = track(events, mode="plan" if body.plan_only else body.mode, db=st.db)
     return StreamingResponse(_sse(events, st.settings.sse_ping_seconds), media_type="text/event-stream",
                              headers=HEADERS)

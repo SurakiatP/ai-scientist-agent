@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import httpx
 from fastapi import FastAPI
@@ -18,6 +18,10 @@ from scientist.routes_reports import router as reports_router
 from scientist.routes_preview import router as preview_router
 from scientist.preview_store import PreviewStore
 from scientist.db import Database, open_database
+from scientist.routes_store import router as store_router
+from scientist.store import Bus, Store
+from sqlalchemy.exc import DBAPIError
+from fastapi.responses import JSONResponse
 
 log = logging.getLogger(__name__)
 
@@ -41,9 +45,14 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                     app.state.store = await asyncio.to_thread(create_store, settings)
                 except Exception:
                     log.exception("object store unavailable")
+            purger = asyncio.create_task(_purge_hourly(app)) if app.state.data else None
             try:
                 yield
             finally:
+                if purger:
+                    purger.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await purger
                 await rt.close()
                 if app.state.db:
                     await app.state.db.close()
@@ -51,8 +60,23 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                     sweep_containers()
                 sweep_sandboxes()
 
+    async def _purge_hourly(app: FastAPI) -> None:
+        while True:
+            await asyncio.sleep(3600)
+            try:
+                await app.state.data.purge()
+            except Exception:
+                log.exception("trash purge failed")
+
     app = FastAPI(title="scientist", lifespan=lifespan)
-    app.state.db = db or open_database(settings)  # None = database disabled; the engine connects lazily, so a down DB cannot break boot
+    app.state.db = db or open_database(settings)
+    app.state.data = Store(app.state.db, Bus(), settings, lambda: app.state.store) if app.state.db else None
+
+    @app.exception_handler(DBAPIError)
+    async def db_down(_, e):  # unreachable, not migrated, timed out: the store is unavailable, not the app broken
+        log.warning("store database error: %s", type(e.orig).__name__)
+        return JSONResponse({"detail": "database unavailable"}, status_code=503)
+  # None = database disabled; the engine connects lazily, so a down DB cannot break boot
     app.state.settings, app.state.gate = settings, RunGate(settings.max_concurrent_runs)
     app.state.analyze_gate = RunGate(settings.sandbox_max_concurrent)
     app.state.preview_gate = RunGate(settings.preview_max_concurrent)
@@ -65,6 +89,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     app.include_router(analyze_router)
     app.include_router(reports_router)
     app.include_router(preview_router)
+    app.include_router(store_router)
 
     @app.get("/v1/health")
     async def health():

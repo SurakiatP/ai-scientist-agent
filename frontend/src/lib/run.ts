@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { useChatStore, type Session, type Turn, type TurnAnalysis } from "./chat";
+import { refusalCode, useChatStore, type Session, type Turn, type TurnAnalysis } from "./chat";
 import { newId } from "./history";
 import { usePrefs } from "./prefs";
 import { emptyProgress, reduce, type Progress } from "./progress";
@@ -70,7 +70,7 @@ async function runAsk(question: string, c: AbortController, opts: { mode: AskMod
     for await (const e of streamAsk(question, c.signal, opts)) {
       progress = reduce(progress, e);
       if (e.type === "final_answer") { final = { content: e.content, references: e.references }; outcome = { status: "done", answer: final }; }
-      else if (e.type === "refused") outcome = { status: "refused", refused: e.reason };
+      else if (e.type === "refused") outcome = { status: "refused", refused: e.reason, refusedCode: refusalCode(e.code) };
       else if (e.type === "error") outcome = { status: "error", error: errorText(e) };
       patch(final && e.type === "final_answer" ? { progress, answer: final } : { progress });
     }
@@ -100,7 +100,7 @@ export async function startRun(sessionId: string, question: string, opts: { mode
       try {
         for await (const e of streamAsk(question, c.signal, { mode, history: historyFrom(session), planOnly: true })) {
           if (e.type === "strategy") plan = e.searches;
-          else if (e.type === "refused") outcome = { status: "refused", refused: e.reason }; // planning asks too: scope can be refused
+          else if (e.type === "refused") outcome = { status: "refused", refused: e.reason, refusedCode: refusalCode(e.code) }; // planning asks too: scope can be refused
           else if (e.type === "error") outcome = { status: "error", error: errorText(e) };
         }
       } catch {
@@ -182,7 +182,7 @@ export async function startAnalysis(sessionId: string, question: string, fileId:
     for await (const e of streamAnalyze(fileId, question, c.signal)) {
       analysis = reduceAnalysis(analysis, e);
       if (e.type === "analysis_result" || e.type === "complete") outcome = outcome ?? { status: "done" };
-      else if (e.type === "refused") outcome = { status: "refused", refused: e.reason };
+      else if (e.type === "refused") outcome = { status: "refused", refused: e.reason, refusedCode: refusalCode(e.code) };
       else if (e.type === "error") outcome = { status: "error", error: errorText(e) };
       patch({ analysis }); // status settles only after the stream closes, while the run lock is still held
     }

@@ -62,7 +62,8 @@ export function InlineConfirm({ text, note, onConfirm, onCancel }: { text: strin
   );
 }
 
-export function SessionMenu({ session, onRename, onDelete }: { session: Session; onRename: () => void; onDelete: () => void }) {
+// kid: DOM id key for the kebab, so the same session shown in two lists keeps unique ids.
+export function SessionMenu({ session, onRename, onDelete, kid }: { session: Session; onRename: () => void; onDelete: () => void; kid?: string }) {
   const t = useT();
   const projects = useChatStore((s) => s.projects), moveSession = useChatStore((s) => s.moveSession), setActive = useChatStore((s) => s.setActive), activeId = useChatStore((s) => s.activeId);
   const others = projects.filter((p) => p.id !== session.projectId);
@@ -76,5 +77,5 @@ export function SessionMenu({ session, onRename, onDelete }: { session: Session;
     })),
     { label: t.deleteItem, onClick: onDelete },
   ];
-  return <KebabMenu id={session.id} label={`${t.moreActions}: ${session.title || t.untitled}`} actions={actions} />;
+  return <KebabMenu id={kid ?? session.id} label={`${t.moreActions}: ${session.title || t.untitled}`} actions={actions} />;
 }

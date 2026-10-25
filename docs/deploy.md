@@ -38,6 +38,16 @@ docker compose -f infra/compose.yaml --env-file $APP_ENV_FILE up -d
 ## 6b. PostgreSQL
 Foundation only: the app creates one table (`app_meta`) so far and keeps working without a database (`DATABASE_URL` empty gives `db: disabled` in `/v1/health`; `unavailable` and `behind` never fail the endpoint). Compose runs `postgres` (image pinned by the multi-arch index digest of `postgres:17-alpine`, 17.11) on the internal-only `db` network with no published port, `cap_drop ALL` plus the five capabilities its entrypoint needs, `no-new-privileges`, 1 GB / 200 pids limits, scram auth everywhere (no trust, not even on the local socket) and idle/idle-in-transaction timeouts. The backend uses a dedicated non-superuser role `app` (created once by `infra/deploy/postgres-init.sh`) with a per-connection `statement_timeout`; the superuser password (`postgres-password`) is only mounted into the postgres container. `bootstrap.sh` generates both secrets; re-run it once on an existing VM before the first deploy of a release that has Postgres. **The app has no login: never publish the database port or put it on an external network.** Migrate by hand: `docker compose -f infra/compose.yaml --env-file <env> run --rm migrate`.
 
+## 6c. Shared data (Postgres)
+
+- The `/v1/store/*` routes (chats, projects, messages, file list, trash, usage) need `DATABASE_URL` and migration `0002`; without them they answer 503 `database not configured` and the web app falls back to browser-only storage (it checks `/v1/health` → `db`).
+- **There is no login.** Anyone who can reach the server IP can read, edit and delete everything, including "delete all chats". Keep the app behind the internal network or a VPN and never expose Postgres or MinIO publicly.
+- Deleted chats, projects and files go to the trash for `TRASH_DAYS` (7). The purge runs on every snapshot and hourly; a file's MinIO object is removed only when it is purged.
+- Writes are rate limited per client IP (`STORE_WRITE_RATE_PER_MIN`). Behind a reverse proxy every caller shares the proxy's IP, so raise it or pass the real IP through.
+- The live change feed (`GET /v1/store/events`) is in-process: run **one backend worker**.
+- The dataset lives only in Postgres: keep the daily `pg_dump` backup (section 6) and test a restore.
+- `usage_events` (timings, token counts, cost) stores no question text.
+
 ## 7. Operations
 Logs: `docker compose -f /opt/ai-scientist/current/infra/compose.yaml logs -f backend`. Local TLS rehearsal: set `CADDY_TLS=tls internal` in `app.env`.
 

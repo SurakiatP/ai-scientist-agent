@@ -26,10 +26,15 @@ export type Turn = {
   plan?: Search[]; // the approved plan: stored while awaiting review and kept as "the plan used" after approval
   answer?: { content: string; references: Reference[] };
   analysis?: TurnAnalysis;
-  refused?: string; error?: string;
+  refused?: string; refusedCode?: RefusalCode; error?: string;
 };
 export type Session = { id: string; projectId: string; title: string; createdAt: number; updatedAt: number; turns: Turn[] };
 export type Project = { id: string; name: string; createdAt: number }; // id "personal" is built in; name "" = localized default
+
+export const REFUSAL_CODES = ["out_of_scope", "injection", "needs_search", "use_research", "empty_memory", "too_long", "unsafe_request", "not_about_data", "check_failed"] as const;
+export type RefusalCode = (typeof REFUSAL_CODES)[number];
+/** The backend's refusal code, or nothing: unknown, oversized or non-string values are ignored. */
+export const refusalCode = (c: unknown): RefusalCode | undefined => typeof c === "string" && c.length <= 32 ? REFUSAL_CODES.find((x) => x === c) : undefined;
 
 export const PERSONAL = "personal";
 export const MAX_SESSIONS = 200;
@@ -165,6 +170,7 @@ const isTurn = (v: unknown): v is Turn => {
   if (t.plan !== undefined && !isPlan(t.plan)) return false;
   if (t.status === "awaiting_plan" && !t.plan) return false; // an awaiting turn must carry the plan it waits for
   if (t.refused !== undefined && !isStr(t.refused, 20_000)) return false;
+  if (t.refusedCode !== undefined && refusalCode(t.refusedCode) === undefined) return false;
   if (t.error !== undefined && !isStr(t.error, 2048)) return false;
   if (t.analysis !== undefined && !isAnalysis(t.analysis)) return false;
   return t.answer === undefined || (!!t.answer && isItem({ id: "x", question: "", createdAt: 0, answer: t.answer.content, references: t.answer.references }));

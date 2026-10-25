@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     # PostgreSQL (optional): empty database_url = no database, app behaves as before. Password may live in a Docker secret file (wins over any password in the URL).
     database_url: str = ""
     database_password_file: str = ""
+    # Shared data store (/v1/store). No login: caps below are the only guard on what one caller can do.
+    trash_days: int = Field(7, ge=1)
+    store_max_sessions: int = Field(200, ge=1)
+    store_write_rate_per_min: int = Field(600, ge=0)  # per client IP; 0 = unlimited
+    store_max_body_bytes: int = 1_000_000  # every store route except import
+    import_max_bytes: int = 10_000_000
     db_pool_size: int = Field(5, ge=1)
     db_max_overflow: int = Field(5, ge=0)
     db_connect_timeout_s: int = Field(3, ge=1)

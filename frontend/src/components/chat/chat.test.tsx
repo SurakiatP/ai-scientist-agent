@@ -267,6 +267,18 @@ describe("Thread", () => {
     expect(screen.getByText("Not a scientific research question.")).toBeInTheDocument();
   });
 
+  it("coded refusal shows the localized text and a switch-to-deep button for needs_search", () => {
+    useMode.setState({ mode: "chat" });
+    render(<Thread sessionId={mk([turn("refused", { refused: "English reason", refusedCode: "needs_search" })])} />);
+    expect(screen.getByText(strings.th.refusedNeedsSearch)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: `${strings.th.switchTo} ${strings.th.modeDeep}` }));
+    expect(useMode.getState().mode).toBe("deep");
+    cleanup();
+    render(<Thread sessionId={mk([turn("refused", { refused: "x", refusedCode: "injection" })])} />);
+    expect(screen.getByText(strings.th.refusedInjection)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: new RegExp(strings.th.switchTo) })).toBeNull();
+  });
+
   it("error turn Retry calls startRun with the same question", () => {
     const id = mk([turn("error", { question: "why?", error: "boom" })]);
     render(<Thread sessionId={id} />);

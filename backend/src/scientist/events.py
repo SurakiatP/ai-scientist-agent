@@ -103,6 +103,7 @@ class Search(BaseModel):
 class Refused(BaseModel):
     type: Literal["refused"] = "refused"
     reason: str
+    code: str | None = None
 
 
 class Waiting(BaseModel):

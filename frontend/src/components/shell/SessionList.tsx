@@ -7,6 +7,8 @@ import { useChatStore, type Session } from "@/lib/chat";
 import { useHydrated } from "@/lib/history";
 import { usePrefs, useT } from "@/lib/prefs";
 import { stopRun, useRunState } from "@/lib/run";
+import { useTreeOpen } from "./ProjectTree";
+import { projectName } from "./ProjectSwitcher";
 import { focusKebab, InlineConfirm, InlineRename, SessionMenu } from "./SessionMenu";
 
 // Short relative time ("2 ชม.", "2h"); under a minute reads as "now".
@@ -23,6 +25,7 @@ export function SessionList({ query, onPick }: { query: string; onPick?: () => v
   const hydrated = useHydrated(); // persisted store is browser-only: first render must match the server
   const activeId = useChatStore((s) => s.activeId), setActive = useChatStore((s) => s.setActive);
   const storeSessions = useChatStore((s) => s.sessions), store = useChatStore.getState();
+  const treeOpen = useTreeOpen((s) => s.open), projects = useChatStore((s) => s.projects), activeProjectId = useChatStore((s) => s.activeProjectId);
   const sessions = hydrated ? storeSessions.filter((s) => s.turns.length || s.title) : []; // blank chats are not history
   const { sessionId: runningId } = useRunState();
   const [edit, setEdit] = useState<{ id: string; mode: "rename" | "delete" } | null>(null);
@@ -30,8 +33,10 @@ export function SessionList({ query, onPick }: { query: string; onPick?: () => v
   const q = query.trim().toLowerCase();
   const match = (s: Session) => !q || (s.title || t.untitled).toLowerCase().includes(q);
   if (!sessions.length) return <Typography sx={{ px: 1.25, fontSize: "0.8125rem", color: "text.secondary" }}>{t.noSessions}</Typography>;
-  const rows = sessions.filter(match).sort((a, b) => b.updatedAt - a.updatedAt);
-  if (!rows.length) return <Typography sx={{ px: 1.25, fontSize: "0.8125rem", color: "text.secondary" }}>{t.noMatches}</Typography>;
+  // Sessions already listed inside an open project group are not repeated here; the rest, newest 8 (all matches while searching).
+  const all = sessions.filter((s) => match(s) && !treeOpen.includes(s.projectId)).sort((a, b) => b.updatedAt - a.updatedAt);
+  const rows = q ? all : all.slice(0, 8);
+  if (!rows.length) return q && !sessions.some(match) ? <Typography sx={{ px: 1.25, fontSize: "0.8125rem", color: "text.secondary" }}>{t.noMatches}</Typography> : null;
   return (
     <List dense disablePadding aria-label={t.recents}>
       {rows.map((s) => edit?.id === s.id ? (
@@ -53,7 +58,8 @@ export function SessionList({ query, onPick }: { query: string; onPick?: () => v
           <ListItemButton selected={s.id === activeId} onClick={() => { setActive(s.id); onPick?.(); }}
             aria-current={s.id === activeId ? "true" : undefined} sx={{ ...UI.row, borderRadius: 1.2, gap: 1.25, minWidth: 0, px: 1.25 }}>
             <ChatBubbleOutlineRoundedIcon sx={{ fontSize: 18, color: "text.secondary", flexShrink: 0 }} />
-            <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: "0.875rem" }}>{s.title || t.untitled}</Typography>
+            <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: "0.875rem" }}>{s.title || t.untitled}
+              {s.projectId !== activeProjectId && <Typography component="span" sx={{ ml: 1, fontSize: "0.75rem", color: "text.secondary" }}>{projectName(projects.find((p) => p.id === s.projectId) ?? projects[0], t)}</Typography>}</Typography>
             {s.id === runningId && (
               <Box role="img" aria-label={t.running} sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "primary.main", flexShrink: 0 }} />
             )}
