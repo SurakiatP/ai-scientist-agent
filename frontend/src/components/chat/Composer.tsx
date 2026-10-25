@@ -11,6 +11,7 @@ import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import { create } from "zustand";
 import { useStorageFull } from "@/lib/history";
 import { ease, enterPop } from "@/lib/motion";
+import { API_BASE } from "@/lib/config";
 import { useT } from "@/lib/prefs";
 import { canStart, startAnalysis, startRun, stopRun, useRunState } from "@/lib/run";
 import { UploadError, uploadFile, type AskMode } from "@/lib/sse";
@@ -22,6 +23,8 @@ export const useDraft = create<{ drafts: Record<string, string>; set: (sid: stri
   drafts: {},
   set: (sid, text) => set((d) => ({ drafts: { ...d.drafts, [sid]: text } })), // ponytail: empty strings linger until reload; negligible
 }));
+// The chosen mode is shared by every composer (first-message screen and thread), so Quick survives the first send. In memory only.
+export const useMode = create<{ mode: AskMode; set: (m: AskMode) => void }>((set) => ({ mode: "deep", set: (mode) => set({ mode }) }));
 export const focusComposer = () => document.getElementById("composer")?.focus();
 
 type Attached = { name: string; size: number; status: "uploading" | "ready" | "error"; fileId?: string; error?: string };
@@ -33,7 +36,13 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const text = useDraft((s) => s.drafts[sessionId] ?? ""), set = useDraft((s) => s.set);
   const setText = (v: string) => set(sessionId, v);
   const [err, setErr] = useState("");
-  const [mode, setMode] = useState<AskMode>("deep");
+  const mode = useMode((s) => s.mode), setMode = useMode((s) => s.set);
+  const [attachOff, setAttachOff] = useState(false); // backend says uploads/analysis cannot work: say so instead of failing after the upload
+  useEffect(() => {
+    const ac = new AbortController();
+    fetch(`${API_BASE}/v1/health`, { signal: ac.signal }).then((r) => r.json()).then((h) => { if (h?.analysis === "disabled" || h?.files === "unavailable") setAttachOff(true); }).catch(() => {}); // unreachable: fail open
+    return () => ac.abort();
+  }, []);
   const run = useRunState();
   const full = useStorageFull();
   const [composing, setComposing] = useState(false);
@@ -108,7 +117,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
         "&:focus-within": { borderColor: "primary.main", boxShadow: "0 0 0 1px var(--mui-palette-primary-main), 0 0 28px color-mix(in srgb, var(--mui-palette-primary-main) 28%, transparent)" },
       }}>
         <Box sx={{ display: "flex", alignItems: large ? "center" : "flex-end", borderRight: 1, borderColor: "divider", px: 0.75, py: 0.75, my: 0.5 }}>
-          <IconButton aria-label={t.attach} onClick={() => picker.current?.click()} disabled={busy} sx={{ minWidth: 44, minHeight: 44, color: "text.secondary" }}>
+          <IconButton aria-label={t.attach} title={attachOff ? t.attachUnavailable : undefined} onClick={() => picker.current?.click()} disabled={busy || attachOff} sx={{ minWidth: 44, minHeight: 44, color: "text.secondary" }}>
             <AttachFileRoundedIcon sx={{ transform: "rotate(45deg)" }} />
           </IconButton>
         </Box>
@@ -150,7 +159,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
             </Button>
             <Menu anchorEl={modeAnchor} open={!!modeAnchor} onClose={() => setModeAnchor(null)} slotProps={{ list: { "aria-label": t.chooseMode } }}>
               {(["deep", "quick"] as const).map((m) => (
-                <MenuItem key={m} selected={m === mode} aria-current={m === mode ? "true" : undefined} sx={{ minHeight: 44 }}
+                <MenuItem key={m} selected={m === mode} role="menuitemradio" aria-checked={m === mode} sx={{ minHeight: 44 }}
                   onClick={() => { setMode(m); setModeAnchor(null); }}>{m === "deep" ? t.modeDeep : t.modeQuick}</MenuItem>
               ))}
             </Menu>

@@ -33,7 +33,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const [planErr, setPlanErr] = useState(false); // approval can still fail (a run started elsewhere): say so, never idle silently
   const retry = () => {
     if (analysis) startAnalysis(sessionId, turn.question, analysis.fileId, analysis.fileName).catch(() => {});
-    else startRun(sessionId, turn.question).catch(() => {});
+    else startRun(sessionId, turn.question, { mode: turn.mode }).catch(() => {});
   };
   const scope = { sessionId, turnId: turn.id };
   const text = status === "refused" ? turn.refused : status === "error" ? turn.error : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
@@ -59,7 +59,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
             onApprove={(plan: PlanSearch[]) => { setPlanErr(false); approvePlan(sessionId, turn.id, plan).catch(() => setPlanErr(true)); }}
             onCancel={() => { setPlanErr(false); try { cancelPlan(sessionId, turn.id); } catch {} }}
           />
-          <Typography aria-live="polite" sx={{ fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{t.awaitPlanNote}</Typography>
+          <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{t.awaitPlanNote}</Typography>
           {planErr && <Typography role="status" sx={{ fontSize: "0.8125rem", color: "error.main" }}>{t.startFailed}</Typography>}
         </Stack>
       ) : status === "running" && <ProgressCard turn={turn} />}

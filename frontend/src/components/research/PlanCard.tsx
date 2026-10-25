@@ -15,7 +15,7 @@ const THAI = /[\u0E00-\u0E7F]/;
 
 type Row = { id: number; term: string; instructions: string; added?: boolean };
 
-export type RowState = "done" | "active" | "wait";
+export type RowState = "done" | "active" | "wait" | "skipped";
 
 function Badge({ n, state }: { n: number; state?: RowState }) {
   const on = state === "done" || state === "active";
@@ -123,9 +123,9 @@ export function PlanCard({ searches, editable, heading, rowState, onApprove, onC
                       {s.instructions.trim() !== "" && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", mt: 0.25, lineHeight: 1.6, overflowWrap: "anywhere" }}>{s.instructions}</Typography>}
                     </Box>
                     {st && (
-                      <Chip size="small" variant="outlined" label={st === "done" ? t.rowDone : st === "active" ? t.rowSearching : t.stepPending}
+                      <Chip size="small" variant="outlined" label={st === "done" ? t.rowDone : st === "active" ? t.rowSearching : st === "skipped" ? t.rowSkipped : t.stepPending}
                         icon={st === "done" ? <CheckRoundedIcon /> : undefined}
-                        sx={{ flexShrink: 0, borderRadius: 999, color: st === "wait" ? "text.secondary" : "primary.main", borderColor: st === "wait" ? "divider" : "primary.main", "& .MuiChip-icon": { color: "inherit", fontSize: 16 } }} />
+                        sx={{ flexShrink: 0, borderRadius: 999, color: st === "wait" || st === "skipped" ? "text.secondary" : "primary.main", borderColor: st === "wait" || st === "skipped" ? "divider" : "primary.main", "& .MuiChip-icon": { color: "inherit", fontSize: 16 } }} />
                     )}
                   </Stack>
                 );

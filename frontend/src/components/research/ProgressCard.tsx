@@ -100,7 +100,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
   const step = Math.min(4, stageIndex(p) + 1);
   const cur = p.searches.find((s) => !p.answered.includes(s.term))?.term; // what is being worked on right now
   const rowState = (term: string): RowState =>
-    p.answered.includes(term) || p.phase === "done" ? "done" : running && p.phase !== "waiting" && (term in p.sources || term === cur) ? "active" : "wait";
+    p.answered.includes(term) ? "done" : p.phase === "writing" || p.phase === "done" ? "skipped" : running && p.phase !== "waiting" && (term in p.sources || term === cur) ? "active" : "wait";
   return (
     <Box sx={{ border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.raised", p: { xs: 1.5, sm: 2 } }}>
       <Stack spacing={2}>

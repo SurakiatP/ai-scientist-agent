@@ -293,7 +293,7 @@ function Code({ a, t }: { a: TurnAnalysis; t: Strings }) {
   return (
     <Box>
       <Stack direction="row" sx={{ justifyContent: "flex-end", mb: 1 }}>
-        <Button variant="outlined" color="inherit" size="small" startIcon={<ContentCopyRoundedIcon />} onClick={copy} aria-label={t.analysisCopyCode} sx={{ minHeight: 44, borderColor: "divider" }}>
+        <Button variant="outlined" color="inherit" size="small" startIcon={<ContentCopyRoundedIcon />} onClick={copy} sx={{ minHeight: 44, borderColor: "divider" }}>
           {copied === "fail" ? t.copyFailed : copied === "ok" ? t.copied : t.analysisCopyCode}
         </Button>
       </Stack>

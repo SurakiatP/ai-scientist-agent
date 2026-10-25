@@ -117,8 +117,8 @@ export async function approvePlan(sessionId: string, turnId: string, plan: Searc
   const store = () => useChatStore.getState();
   setState({ sessionId, turnId });
   const patch = (p: Parameters<ReturnType<typeof store>["patchTurn"]>[2]) => { if (leaving) return; try { store().patchTurn(sessionId, turnId, p); } catch {} };
-  store().patchTurn(sessionId, turnId, { status: "running", progress: emptyProgress, plan });
   try {
+    store().patchTurn(sessionId, turnId, { status: "running", progress: emptyProgress, plan });
     await runAsk(turn.question, c, { mode, history: historyFrom(session), plan }, patch);
   } finally {
     ac = null;
@@ -166,7 +166,7 @@ export async function startAnalysis(sessionId: string, question: string, fileId:
       if (e.type === "analysis_result" || e.type === "complete") outcome = outcome ?? { status: "done" };
       else if (e.type === "refused") outcome = { status: "refused", refused: e.reason };
       else if (e.type === "error") outcome = { status: "error", error: errorText(e) };
-      patch({ analysis, ...(outcome ?? {}) });
+      patch({ analysis }); // status settles only after the stream closes, while the run lock is still held
     }
     patch({ analysis, ...(outcome ?? (c.signal.aborted ? { status: "stopped" as const } : { status: "error" as const, error: cutOffText() })) });
   } catch {

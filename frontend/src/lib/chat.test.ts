@@ -205,16 +205,20 @@ describe("plan turns", () => {
   it("clamps oversized plan writes so they reload", async () => {
     const s = await load();
     const id = s.getState().newSession();
-    const big = { term: "x".repeat(9999), instructions: "y".repeat(9999) };
+    const big = { term: "x".repeat(200), instructions: "y".repeat(500) };
     s.getState().addTurn(id, { ...turn("a", "awaiting_plan"), plan: Array.from({ length: 8 }, () => ({ ...big })) } as never);
     vi.resetModules();
     const t = (await load()).getState().sessions[0].turns[0];
     expect(t.status).toBe("awaiting_plan");
     expect(t.plan).toHaveLength(5);
-    for (const row of t.plan!) {
-      expect(row.term).toHaveLength(200);
-      expect(row.instructions).toHaveLength(500);
-    }
+    expect(t.plan!.every((row) => row.term.length === 200)).toBe(true); // rows are capped, text is never silently cut
+  });
+  it("an over-long stored plan is dropped on reload, not shown altered", async () => {
+    const s = await load();
+    const id = s.getState().newSession();
+    s.getState().addTurn(id, { ...turn("a", "awaiting_plan"), plan: [{ term: "x".repeat(300), instructions: "" }] } as never);
+    vi.resetModules();
+    expect((await load()).getState().sessions[0].turns).toEqual([]);
   });
 
   it("rehydrates a running plan turn as interrupted, the waiting one stays waiting", async () => {

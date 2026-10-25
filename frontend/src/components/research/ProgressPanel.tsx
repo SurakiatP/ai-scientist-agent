@@ -91,7 +91,7 @@ export function ProgressPanel({ turn, sessionId }: { turn: Turn; sessionId?: str
                   bgcolor: "surface.raised",
                   ...(state === "active" && { [NO_PREF]: { "&::after": { content: '""', position: "absolute", inset: -5, borderRadius: "50%", border: 2, borderColor: "transparent", borderTopColor: "primary.main", animation: "ps-spin 1s linear infinite" }, "@keyframes ps-spin": { to: { transform: "rotate(360deg)" } } } }),
                 }}>
-                  {state === "done" ? <CheckRoundedIcon sx={{ fontSize: 18 }} aria-label={t.done} /> : i + 1}
+                  {state === "done" ? <CheckRoundedIcon sx={{ fontSize: 18 }} titleAccess={t.done} /> : i + 1}
                 </Box>
                 <Box sx={{ minWidth: 0 }}>
                   <Typography sx={{ fontSize: "0.875rem", fontWeight: state === "active" ? 700 : 600, color: state === "pending" ? "text.secondary" : "text.primary" }}>{title}</Typography>

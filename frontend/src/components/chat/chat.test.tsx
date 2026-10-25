@@ -7,7 +7,7 @@ import { usePrefs } from "@/lib/prefs";
 import { emptyProgress } from "@/lib/progress";
 import { MAX_QUESTION, sampleQuestions, strings } from "@/lib/strings";
 import { AgentMessage } from "./AgentMessage";
-import { Composer, useDraft } from "./Composer";
+import { Composer, useDraft, useMode } from "./Composer";
 import { EmptyChat } from "./EmptyChat";
 import { Thread } from "./Thread";
 
@@ -44,6 +44,7 @@ beforeEach(() => {
   run.approvePlan.mockReset(); run.approvePlan.mockImplementation(async () => {}); run.cancelPlan.mockClear(); run.stopRun.mockClear();
   upload.fn.mockReset();
   useDraft.setState({ drafts: {} });
+  useMode.setState({ mode: "deep" });
 });
 afterEach(cleanup);
 
@@ -179,7 +180,7 @@ describe("Composer", () => {
     const trigger = () => screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeDeep}` });
     expect(trigger()).toBeInTheDocument();
     fireEvent.click(trigger());
-    fireEvent.click(screen.getByRole("menuitem", { name: t.modeQuick }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: t.modeQuick }));
     expect(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeQuick}` })).toBeInTheDocument();
     type("q");
     fireEvent.keyDown(box(), { key: "Enter" });
@@ -240,7 +241,39 @@ describe("Thread", () => {
     render(<Thread sessionId={id} />);
     expect(screen.getByText("boom")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: t.retry }));
-    expect(run.startRun).toHaveBeenCalledWith(id, "why?");
+    expect(run.startRun).toHaveBeenCalledWith(id, "why?", { mode: undefined });
+  });
+
+  it("Retry keeps the turn's mode (a Quick turn does not become Deep)", () => {
+    const id = mk([turn("error", { question: "why?", error: "boom", mode: "quick" })]);
+    render(<Thread sessionId={id} />);
+    fireEvent.click(screen.getByRole("button", { name: t.retry }));
+    expect(run.startRun).toHaveBeenCalledWith(id, "why?", { mode: "quick" });
+  });
+
+  it("the chosen mode is shared: a second composer starts in Quick", () => {
+    const { unmount } = render(<Composer sessionId={mk()} />);
+    fireEvent.click(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeDeep}` }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: t.modeQuick }));
+    unmount();
+    const id = mk();
+    render(<Composer sessionId={id} />);
+    type("q");
+    fireEvent.click(sendBtn());
+    expect(run.startRun).toHaveBeenCalledWith(id, "q", { mode: "quick" });
+  });
+
+  it("attach is disabled with a reason when the backend reports analysis disabled; fails open when unreachable", async () => {
+    const f = vi.spyOn(globalThis, "fetch").mockResolvedValue({ json: async () => ({ status: "ok", analysis: "disabled" }) } as Response);
+    render(<Composer sessionId={mk()} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: t.attach })).toBeDisabled());
+    expect(screen.getByRole("button", { name: t.attach })).toHaveAttribute("title", t.attachUnavailable);
+    cleanup();
+    f.mockRejectedValue(new Error("down"));
+    render(<Composer sessionId={mk()} />);
+    await Promise.resolve();
+    expect(screen.getByRole("button", { name: t.attach })).toBeEnabled();
+    f.mockRestore();
   });
 
   it("running turn has a polite live status; done turn renders markdown safely", () => {

@@ -209,6 +209,21 @@ describe("analysis controller", () => {
     expect(last(chat).analysis!.fileName).toBeUndefined();
   });
 
+  it("status stays running while the stream is open after analysis_result", async () => {
+    const { chat, run, sid } = await setup();
+    let release!: () => void;
+    analyzeScript = async function* () {
+      yield { type: "analysis_result", quality: [], tables: [], findings: [], timings: [], artifacts: [] } as never;
+      await new Promise<void>((r) => (release = r));
+      yield { type: "complete" };
+    };
+    const p = run.startAnalysis(sid, "q", "f".repeat(32));
+    await vi.waitFor(() => expect(last(chat).analysis?.findings).toEqual([]));
+    expect(last(chat).status).toBe("running");
+    release(); await p;
+    expect(last(chat).status).toBe("done");
+  });
+
   it("a complete without a result still finishes honestly with empty data", async () => {
     const { chat, run, sid } = await setup();
     analyzeScript = agen([{ type: "complete" }]);
@@ -328,6 +343,18 @@ describe("plan review flow", () => {
     expect(asks).toHaveLength(2);
     expect(asks[1].opts).toEqual({ mode: "deep", history: [], plan: edited });
     expect(turnOf(chat, sid)).toMatchObject({ status: "done", answer: { content: "ans" }, plan: edited });
+    expect(run.canStart()).toEqual({ ok: true });
+  });
+
+  it("a throwing patchTurn in approve still releases the single-run lock", async () => {
+    const { chat, run, sid } = await setup(true);
+    script = gen(planEvs);
+    await run.startRun(sid, "q");
+    const tid = turnOf(chat, sid).id;
+    const orig = chat.getState().patchTurn;
+    chat.setState({ patchTurn: () => { throw new Error("quota"); } });
+    await expect(run.approvePlan(sid, tid, edited)).rejects.toThrow("quota");
+    chat.setState({ patchTurn: orig });
     expect(run.canStart()).toEqual({ ok: true });
   });
 

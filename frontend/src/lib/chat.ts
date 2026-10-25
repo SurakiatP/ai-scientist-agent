@@ -70,9 +70,8 @@ const PLAN_MAX = 5, PLAN_TERM = 200, PLAN_INSTR = 500;
 const isPlan = (v: unknown): v is Search[] =>
   Array.isArray(v) && v.length > 0 && v.length <= PLAN_MAX &&
   v.every((x) => isObj(x) && isStr(x.term, PLAN_TERM) && x.term.trim() !== "" && isStr(x.instructions, PLAN_INSTR));
-// Write side: clamp to the read limits above so a persisted turn can never fail validation on reload.
-const clampPlan = (p: Search[]): Search[] =>
-  p.slice(0, PLAN_MAX).map((x) => ({ term: x.term.slice(0, PLAN_TERM), instructions: x.instructions.slice(0, PLAN_INSTR) }));
+// Write side: keep at most the server's 5 rows but never edit text the user reviews; an over-long stored plan fails isPlan on reload and the turn is dropped.
+const clampPlan = (p: Search[]): Search[] => p.slice(0, PLAN_MAX);
 
 const STEPS: readonly AnalysisStep[] = ["profiling", "writing_script", "running", "repairing", "storing"];
 const FILE = 100, FILE_NAME = 500, STEP_MAX = 20, SCRIPT = 20_000, TABLE_MAX = 20, TABLE_ROWS = 200,

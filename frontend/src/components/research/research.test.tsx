@@ -42,6 +42,13 @@ describe("ProgressCard", () => {
     expect(screen.getAllByText(t.branchDone)).toHaveLength(1);
     expect(container.querySelectorAll("[aria-live]")).toHaveLength(1);
   });
+  it("an unanswered search shows Not summarised once writing starts, never Searching", () => {
+    const writing = prog({ ...busy, phase: "writing", answered: ["alpha"], writing: true });
+    const { container } = render(<ProgressCard turn={turn(writing, { plan: writing.searches })} />);
+    expect(container.querySelector('[data-state="skipped"]')).not.toBeNull();
+    expect(screen.queryByText(t.rowSearching)).toBeNull();
+    expect(screen.getByText(t.rowSkipped)).toBeInTheDocument();
+  });
   it("shows the queue position while waiting", () => {
     render(<ProgressCard turn={turn({ phase: "waiting", waiting: 3 })} />);
     expect(screen.getAllByText(`${t.waiting} 3`).length).toBeGreaterThan(0);
