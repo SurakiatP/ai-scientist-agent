@@ -1,0 +1,7 @@
+.venv/
+.python-version
+.env
+node_modules/
+.next/
+__pycache__/
+docs/design/.impeccable/
