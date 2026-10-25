@@ -80,3 +80,28 @@ describe("file api", () => {
     await expect(fetchPreview(id(1), new AbortController().signal)).rejects.toMatchObject({ status: -1 });
   });
 });
+
+describe("presigned helpers", () => {
+  it("presignFile POSTs and validates the answer", async () => {
+    const { presignFile } = await import("./files");
+    const m = vi.fn(async () => new Response(JSON.stringify({ url: "https://f/x?s=1", expires_in: 300, kind: "pdf", inline: true, name: "a.pdf" })));
+    vi.stubGlobal("fetch", m);
+    const r = await presignFile(id(1));
+    expect(r).toMatchObject({ url: "https://f/x?s=1", inline: true, expiresIn: 300 });
+    expect((m.mock.calls[0] as unknown[])[1]).toMatchObject({ method: "POST" });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ url: "javascript:alert(1)", inline: true }))));
+    await expect(presignFile(id(1))).rejects.toThrow();
+  });
+  it("parsePreview handles quotes, caps and json", async () => {
+    const { parsePreview } = await import("./files");
+    const p = parsePreview("a;b\n1;\"x;\"\"y\"\"\"\n" + Array.from({ length: 30 }, (_, i) => `${i};z`).join("\n"), "csv", false);
+    expect(p.columns).toEqual(["a", "b"]);
+    expect(p.rows[0]).toEqual(["1", 'x;"y"']);
+    expect(p.rows).toHaveLength(20);
+    expect(p.truncated).toBe(true);
+    const j = parsePreview('[{"a":1},{"b":{"c":2}}]', "json", false);
+    expect(j.columns).toEqual(["a", "b"]);
+    expect(j.rows[1]).toEqual(["", '{"c":2}']);
+    expect(() => parsePreview("{}", "json", false)).toThrow();
+  });
+});

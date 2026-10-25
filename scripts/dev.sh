@@ -57,11 +57,12 @@ done
 # Local MinIO for uploads/artifacts: loopback only, throwaway dev credentials, data in a named volume.
 # Skipped (uploads answer 503) with DEV_NO_MINIO=1. The sandbox image is built once for analysis.
 if [ -z "${DEV_NO_MINIO:-}" ]; then
+  export MINIO_PUBLIC_ENDPOINT=${MINIO_PUBLIC_ENDPOINT:-http://127.0.0.1:59100} # the browser fetches presigned previews from here
   export MINIO_ENDPOINT=${MINIO_ENDPOINT:-http://127.0.0.1:59100} MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-devaccess} MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-dev-secret-not-for-prod}
   if ! docker ps --format '{{.Names}}' | grep -qx scientist-dev-minio; then
     docker rm -f scientist-dev-minio >/dev/null 2>&1 || true
     docker run -d --name scientist-dev-minio -p 127.0.0.1:59100:9000 -v scientist-dev-minio:/data \
-      -e MINIO_ROOT_USER="$MINIO_ACCESS_KEY" -e MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \
+      -e MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:3000,http://127.0.0.1:3000 -e MINIO_ROOT_USER="$MINIO_ACCESS_KEY" -e MINIO_ROOT_PASSWORD="$MINIO_SECRET_KEY" \
       quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data >/dev/null || die "could not start the local MinIO container."
   fi
   docker image inspect scientist-sandbox:latest >/dev/null 2>&1 || docker build -q -t scientist-sandbox:latest backend/sandbox >/dev/null || die "could not build the sandbox image."

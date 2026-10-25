@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     minio_access_key_file: str = ""
     minio_secret_key_file: str = ""
     minio_bucket: str = "scientist-uploads"
+    # Presigned previews: the browser talks to MinIO directly. Public endpoint = URL the BROWSER reaches (empty = minio_endpoint).
+    minio_public_endpoint: str = ""
+    presign_enabled: bool = True
+    presign_ttl_seconds: int = Field(300, ge=1, le=3600)
     upload_max_bytes_csv: int = 100_000_000
     upload_max_bytes_parquet: int = 100_000_000
     upload_max_bytes_xlsx: int = 25_000_000

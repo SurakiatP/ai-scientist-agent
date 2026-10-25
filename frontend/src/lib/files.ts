@@ -115,3 +115,65 @@ export async function fetchPreview(id: string, signal: AbortSignal): Promise<Pre
   if (!ok) throw new FileApiError(-1);
   return { columns: b.columns as string[], rows: b.rows as string[][], truncated: b.truncated as boolean, total: typeof b.total_rows === "number" ? b.total_rows : null };
 }
+
+// --- Presigned previews (browser -> MinIO directly) ---
+// A presigned URL is a bearer credential for ~5 minutes: keep it in component state only. Never store it, put it in
+// the files store, or log it.
+export type Presigned = { url: string; expiresIn: number; inline: boolean; kind: string; name: string };
+export async function presignFile(id: string, signal?: AbortSignal): Promise<Presigned> {
+  const b = await json(await call(`${id}/presign`, { method: "POST", signal }));
+  if (typeof b.url !== "string" || !/^https?:\/\//.test(b.url) || typeof b.inline !== "boolean") throw new FileApiError(-1);
+  return { url: b.url, expiresIn: typeof b.expires_in === "number" ? b.expires_in : 0, inline: b.inline, kind: typeof b.kind === "string" ? b.kind : "", name: typeof b.name === "string" ? b.name : "" };
+}
+
+// Same caps as the backend preview (routes_files.py).
+const P_BYTES = 1 << 20, P_COLS = 30, P_CELL = 200, P_ROWS = 20;
+const cell = (v: unknown) => (typeof v === "string" ? v : v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v)).slice(0, P_CELL);
+
+function csvRows(text: string, d: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [], f = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"' && f === "") q = true;
+    else if (c === d) { row.push(f); f = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(f); rows.push(row); row = []; f = ""; }
+    else f += c;
+  }
+  if (f !== "" || row.length) { row.push(f); rows.push(row); }
+  return rows;
+}
+
+export function parsePreview(text: string, kind: string, cut: boolean): Preview {
+  text = text.replace(/^﻿/, "");
+  if (kind === "json") {
+    if (cut) throw new FileApiError(413);
+    let data: unknown;
+    try { data = JSON.parse(text); } catch { throw new FileApiError(422); }
+    if (!Array.isArray(data) || !data.length || !data.every((r) => r && typeof r === "object" && !Array.isArray(r))) throw new FileApiError(422);
+    const rows = (data as Record<string, unknown>[]).slice(0, P_ROWS);
+    const cols = [...new Set(rows.flatMap((r) => Object.keys(r)))].slice(0, P_COLS);
+    return { columns: cols.map((c) => c.slice(0, P_CELL)), rows: rows.map((r) => cols.map((c) => cell(r[c]))), truncated: data.length > P_ROWS, total: data.length };
+  }
+  if (cut) text = text.slice(0, text.lastIndexOf("\n") + 1); // drop the half row at the cut
+  const head = text.slice(0, 4096).split("\n")[0];
+  const d = [",", ";", "\t", "|"].reduce((a, b) => (head.split(b).length > head.split(a).length ? b : a));
+  const all = csvRows(text, d).filter((r) => r.length > 1 || r[0] !== "");
+  const [header = [], ...data] = all;
+  return { columns: header.slice(0, P_COLS).map(cell), rows: data.slice(0, P_ROWS).map((r) => r.slice(0, P_COLS).map(cell)), truncated: cut || data.length > P_ROWS, total: cut ? null : data.length };
+}
+
+// First 1 MB of a presigned csv/json. Needs the bucket's CORS. 403 = the link expired; status 0 = blocked or offline.
+export async function fetchPresignedPreview(url: string, kind: string, signal: AbortSignal): Promise<Preview> {
+  let res: Response;
+  try { res = await fetch(url, { headers: { Range: `bytes=0-${P_BYTES - 1}` }, referrerPolicy: "no-referrer", credentials: "omit", signal }); } catch (e) {
+    if (signal.aborted) throw e;
+    throw new FileApiError(0);
+  }
+  if (!res.ok) throw new FileApiError(res.status);
+  const text = await res.text();
+  const total = Number(res.headers.get("content-range")?.split("/")[1]);
+  const cut = res.status === 206 ? Number.isFinite(total) && total > P_BYTES : text.length >= P_BYTES;
+  return parsePreview(text.slice(0, P_BYTES), kind, cut);
+}

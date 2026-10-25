@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from "@mui/material";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
-import { checkName, deleteFile, fetchPreview, FileApiError, renameFile, useFilesStore, type FileEntry, type Preview } from "@/lib/files";
+import { checkName, deleteFile, downloadUrl, fetchPresignedPreview, fetchPreview, FileApiError, presignFile, renameFile, useFilesStore, type FileEntry, type Preview } from "@/lib/files";
 import { srOnly } from "@/lib/config";
 import { skeletonBar } from "@/lib/motion";
 import { useT } from "@/lib/prefs";
@@ -28,51 +28,115 @@ function Frame({ id, title, onClose, children, actions, maxWidth = 480 }: { id: 
   );
 }
 
+const TABULAR = ["csv", "json"];
+const sizeText = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`);
+
+function PreviewSkeleton({ label }: { label: string }) {
+  return (
+    <Box>
+      <Box role="status" sx={srOnly}>{label}</Box>
+      <Box aria-hidden sx={{ border: 1, borderColor: "divider", borderRadius: 2, overflow: "hidden" }}>
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <Box key={i} sx={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 3, px: 2, height: i === 0 ? 40 : 33, alignItems: "center", borderTop: i ? 1 : 0, borderColor: "divider", bgcolor: i === 0 ? "action.hover" : undefined }}>
+            {[0, 1, 2].map((c) => <Box key={c} sx={{ ...skeletonBar(i + c), height: i === 0 ? 12 : 10, width: i === 0 ? "50%" : `${90 - ((i + c) % 3) * 20}%` }} />)}
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+function TablePreview({ p, name }: { p: Preview; name: string }) {
+  const t = useT();
+  if (p.columns.length === 0) return <Alert severity="info" role="status">{t.previewEmpty}</Alert>;
+  return (
+    <>
+      <Box role="region" aria-label={`${t.filePreview}: ${name}`} tabIndex={0} sx={{ overflow: "auto", maxHeight: "55vh", border: 1, borderColor: "divider", borderRadius: 2 }}>
+        <Table size="small" stickyHeader>
+          <TableHead><TableRow>{p.columns.map((c, i) => <TableCell key={i} sx={{ fontWeight: 700, whiteSpace: "nowrap", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", bgcolor: "background.paper" }} title={c}>{c}</TableCell>)}</TableRow></TableHead>
+          <TableBody>
+            {p.rows.map((r, ri) => (
+              <TableRow key={ri}>{p.columns.map((_, ci) => <TableCell key={ci} sx={{ whiteSpace: "nowrap", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis" }} title={r[ci]}>{r[ci] ?? ""}</TableCell>)}</TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Box>
+      <Typography role="status" sx={{ mt: 1, fontSize: "0.8125rem", color: "text.secondary" }}>
+        {p.total !== null && p.truncated ? t.previewShownOf.replace("{n}", String(p.rows.length)).replace("{total}", String(p.total)) : p.truncated ? t.previewShown.replace("{n}", String(p.rows.length)) : ""}
+      </Typography>
+    </>
+  );
+}
+
+type PState =
+  | { s: "load" }
+  | { s: "table"; p: Preview }
+  | { s: "pdf"; url: string }
+  | { s: "nobrowser"; url: string | null } // url = presigned attachment link; null = presign off, download via the proxy
+  | { s: "err"; msg: string; retry: boolean };
+
+// Preview goes browser -> MinIO through a short-lived presigned URL. The URL lives in this component's state only.
+// If presigning is off or unreachable, csv/json fall back to the backend's table preview (the proxy).
 export function PreviewDialog({ file, onClose, onMissing }: { file: FileEntry; onClose: () => void; onMissing: () => void }) {
   const t = useT();
-  const [state, setState] = useState<{ p: Preview } | { err: string } | null>(null);
+  const [state, setState] = useState<PState>({ s: "load" });
+  const [frameReady, setFrameReady] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const ac = new AbortController();
-    fetchPreview(file.id, ac.signal).then((p) => setState({ p }), (e) => {
+    const fail = (e: unknown) => {
       if (ac.signal.aborted) return;
       if (e instanceof FileApiError && e.status === 404) onMissing();
-      setState({ err: previewMessage(e, t) });
+      setState({ s: "err", msg: previewMessage(e, t), retry: false });
+    };
+    const proxy = () => fetchPreview(file.id, ac.signal).then((p) => !ac.signal.aborted && setState({ s: "table", p }), fail);
+    presignFile(file.id, ac.signal).then(async (ps) => {
+      if (ac.signal.aborted) return;
+      if (ps.kind === "pdf" && ps.inline) { setState({ s: "pdf", url: ps.url }); return; }
+      if (!TABULAR.includes(ps.kind)) { setState({ s: "nobrowser", url: ps.url }); return; }
+      try {
+        const p = await fetchPresignedPreview(ps.url, ps.kind, ac.signal);
+        if (!ac.signal.aborted) setState({ s: "table", p });
+      } catch (e) {
+        if (ac.signal.aborted) return;
+        if (e instanceof FileApiError && e.status === 403) { setState({ s: "err", msg: t.previewExpired, retry: true }); return; }
+        if (e instanceof FileApiError && (e.status === 413 || e.status === 422)) { fail(e); return; }
+        await proxy(); // CORS blocked, storage unreachable from the browser, ...
+      }
+    }, async (e) => {
+      if (ac.signal.aborted) return;
+      if (e instanceof FileApiError && e.status === 404) { fail(e); return; }
+      if (TABULAR.includes(file.kind)) await proxy();
+      else if (e instanceof FileApiError && (e.status === 501 || e.status === 0 || e.status === 503)) setState({ s: "nobrowser", url: null });
+      else fail(e);
     });
     return () => ac.abort();
-  }, [file.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const p = state && "p" in state ? state.p : null;
+  }, [file.id, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
+  const title = `${t.filePreview}: ${file.name}`;
   return (
-    <Frame id="file-preview-title" title={`${t.filePreview}: ${file.name}`} onClose={onClose} maxWidth={960}>
-      {!state && (
+    <Frame id="file-preview-title" title={title} onClose={onClose} maxWidth={960}>
+      {state.s === "load" && <PreviewSkeleton label={t.previewLoading} />}
+      {state.s === "err" && (
+        <Alert severity="info" role="status" action={state.retry ? <Button color="inherit" size="small" onClick={() => { setState({ s: "load" }); setFrameReady(false); setAttempt((n) => n + 1); }} sx={{ minHeight: 44 }}>{t.previewRetry}</Button> : undefined}>{state.msg}</Alert>
+      )}
+      {state.s === "table" && <TablePreview p={state.p} name={file.name} />}
+      {state.s === "pdf" && (
         <Box>
-          <Box role="status" sx={srOnly}>{t.previewLoading}</Box>
-          <Box aria-hidden sx={{ border: 1, borderColor: "divider", borderRadius: 2, overflow: "hidden" }}>
-            {[0, 1, 2, 3, 4, 5].map((i) => (
-              <Box key={i} sx={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 3, px: 2, height: i === 0 ? 40 : 33, alignItems: "center", borderTop: i ? 1 : 0, borderColor: "divider", bgcolor: i === 0 ? "action.hover" : undefined }}>
-                {[0, 1, 2].map((c) => <Box key={c} sx={{ ...skeletonBar(i + c), height: i === 0 ? 12 : 10, width: i === 0 ? "50%" : `${90 - ((i + c) % 3) * 20}%` }} />)}
-              </Box>
-            ))}
+          <Box sx={{ position: "relative", height: "65vh", border: 1, borderColor: "divider", borderRadius: 2, overflow: "hidden", bgcolor: "background.paper" }}>
+            {!frameReady && <Box sx={{ position: "absolute", inset: 0, p: 2 }}><PreviewSkeleton label={t.previewLoading} /></Box>}
+            {/* No sandbox attribute on purpose: Chrome refuses to render its PDF viewer inside a sandboxed frame. The origin is MinIO, not this app, and no referrer is sent. */}
+            <iframe src={state.url} title={title} referrerPolicy="no-referrer" onLoad={() => setFrameReady(true)} style={{ width: "100%", height: "100%", border: 0 }} />
           </Box>
+          <Button component="a" href={state.url} target="_blank" rel="noopener noreferrer" size="small" sx={{ mt: 1, minHeight: 44 }}>{t.previewOpenTab}</Button>
         </Box>
       )}
-      {state && "err" in state && <Alert severity="info" role="status">{state.err}</Alert>}
-      {p && (p.columns.length === 0 ? <Alert severity="info" role="status">{t.previewEmpty}</Alert> : (
-        <>
-          <Box role="region" aria-label={`${t.filePreview}: ${file.name}`} tabIndex={0} sx={{ overflow: "auto", maxHeight: "55vh", border: 1, borderColor: "divider", borderRadius: 2 }}>
-            <Table size="small" stickyHeader>
-              <TableHead><TableRow>{p.columns.map((c, i) => <TableCell key={i} sx={{ fontWeight: 700, whiteSpace: "nowrap", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", bgcolor: "background.paper" }} title={c}>{c}</TableCell>)}</TableRow></TableHead>
-              <TableBody>
-                {p.rows.map((r, ri) => (
-                  <TableRow key={ri}>{p.columns.map((_, ci) => <TableCell key={ci} sx={{ whiteSpace: "nowrap", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis" }} title={r[ci]}>{r[ci] ?? ""}</TableCell>)}</TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Box>
-          <Typography role="status" sx={{ mt: 1, fontSize: "0.8125rem", color: "text.secondary" }}>
-            {p.total !== null && p.truncated ? t.previewShownOf.replace("{n}", String(p.rows.length)).replace("{total}", String(p.total)) : p.truncated ? t.previewShown.replace("{n}", String(p.rows.length)) : ""}
-          </Typography>
-        </>
-      ))}
+      {state.s === "nobrowser" && (
+        <Box sx={{ border: 1, borderColor: "divider", borderRadius: 2, p: 3, display: "grid", gap: 1.5, justifyItems: "start" }}>
+          <Typography sx={{ fontWeight: 600 }}>{t.previewNoBrowser}</Typography>
+          <Typography sx={{ color: "text.secondary", fontSize: "0.875rem", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{`${file.name} · ${file.kind.toUpperCase()} · ${sizeText(file.size)}`}</Typography>
+          <Button component="a" variant="outlined" href={state.url ?? downloadUrl(file.id)} download={file.name} rel="noopener noreferrer" sx={{ minHeight: 44 }}>{t.download}</Button>
+        </Box>
+      )}
     </Frame>
   );
 }

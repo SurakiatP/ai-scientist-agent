@@ -209,3 +209,61 @@ async def test_preview_415_404(c):
     assert (await c.get(f"/v1/files/{fid}/preview")).status_code == 415
     assert (await c.get("/v1/files/" + "a" * 32 + "/preview")).status_code == 404
     assert (await c.get("/v1/files/BAD/preview")).status_code == 404
+
+
+# --- presign ---
+def _signing(store):
+    import boto3
+    from botocore.config import Config
+    from scientist.object_store import ObjectStore
+    store.public_client = boto3.client("s3", endpoint_url="http://127.0.0.1:59100", region_name="us-east-1",
+                                       aws_access_key_id="a", aws_secret_access_key="b",
+                                       config=Config(signature_version="s3v4", s3={"addressing_style": "path"}))
+    store.bucket = "bkt"
+    store.presign_get = lambda *a, **k: ObjectStore.presign_get(store, *a, **k)
+
+
+async def test_presign_inline_pdf_and_attachment_xlsx(c, store):
+    _signing(store)
+    pdf = (await up(c, "r p.pdf", b"%PDF-1", "application/pdf")).json()["id"]
+    r = await c.post(f"/v1/files/{pdf}/presign")
+    j = r.json()
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+    assert j["url"].startswith("http://127.0.0.1:59100/bkt/" + pdf) and "X-Amz-Expires=300" in j["url"]
+    assert "response-content-disposition=inline" in j["url"] and "response-content-type=application%2Fpdf" in j["url"]
+    assert j["inline"] and j["kind"] == "pdf" and j["expires_in"] == 300 and j["name"] == "r p.pdf"
+    assert "X-Amz-Signature" in j["url"] and "SignedHeaders=host" in j["url"]
+    x = (await up(c, "a.xlsx", b"PK\x03\x04")).json()["id"]
+    u = (await c.post(f"/v1/files/{x}/presign")).json()
+    assert not u["inline"] and "response-content-disposition=attachment" in u["url"]
+    assert "octet-stream" in u["url"]
+
+
+async def test_presign_errors(c, store):
+    _signing(store)
+    fid = (await up(c, "a.csv", b"a")).json()["id"]
+    assert (await c.post("/v1/files/" + "0" * 32 + "/presign")).status_code == 404
+    assert (await c.post("/v1/files/nope/presign")).status_code == 404
+    async def boom(key):
+        raise RuntimeError
+    store.head = boom
+    assert (await c.post(f"/v1/files/{fid}/presign")).status_code == 503
+
+
+async def test_presign_ttl_setting_and_disabled(env, store, monkeypatch):
+    _signing(store)
+    monkeypatch.setenv("PRESIGN_TTL_SECONDS", "60")
+    get_settings.cache_clear()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(store=store)), base_url="http://t") as c:
+        fid = (await up(c, "a.csv", b"a")).json()["id"]
+        assert "X-Amz-Expires=60" in (await c.post(f"/v1/files/{fid}/presign")).json()["url"]
+    monkeypatch.setenv("PRESIGN_TTL_SECONDS", "99999")
+    get_settings.cache_clear()
+    with pytest.raises(Exception):
+        get_settings()
+    monkeypatch.setenv("PRESIGN_TTL_SECONDS", "300")
+    monkeypatch.setenv("PRESIGN_ENABLED", "false")
+    get_settings.cache_clear()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(store=store)), base_url="http://t") as c:
+        fid = (await up(c, "a.csv", b"a")).json()["id"]
+        assert (await c.post(f"/v1/files/{fid}/presign")).status_code == 501

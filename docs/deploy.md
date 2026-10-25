@@ -3,7 +3,7 @@
 Stack (`infra/compose.yaml`): `caddy` (80/443, automatic TLS) -> `frontend` (3000) and `backend` (8000, routes `/v1/*`); `minio` on 127.0.0.1 only. Only 22/80/443 are public.
 
 ## 1. VM
-Ubuntu 24.04. Use `infra/deploy/cloud-init.yaml` (edit SSH key, repo, tag) or install Docker + compose plugin by hand. Point a DNS A record for your domain at the VM.
+Ubuntu 24.04. Use `infra/deploy/cloud-init.yaml` (edit SSH key, repo, tag) or install Docker + compose plugin by hand. Point DNS A records for your domain **and `files.<domain>`** at the VM (`files.` serves presigned file previews from MinIO through Caddy, GET/HEAD only; `MINIO_PUBLIC_ENDPOINT` in `app.env` must be `https://files.<domain>`). Set `PRESIGN_ENABLED=false` to proxy previews through the backend instead.
 
 ## 2. Secrets
 `infra/deploy/bootstrap.sh` (`sudo`) creates `/etc/ai-scientist/private/` with random `minio-access-key` / `minio-secret-key` (mode 0640, group 10001) and copies `app.env.example` to `app.env` (0600). Edit `app.env`: set `DOMAIN`, `ACME_EMAIL`, `OPENROUTER_API_KEY`. The key lives only there, never in an image or the repo. `deploy.sh` refuses to run while `CHANGE_ME` remains.

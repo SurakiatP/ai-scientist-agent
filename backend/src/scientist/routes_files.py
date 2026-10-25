@@ -13,7 +13,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from starlette.datastructures import UploadFile
 
-from scientist.object_store import ObjectMissing
+from scientist.object_store import ObjectMissing, presign_policy
 
 router = APIRouter()
 ID = re.compile(r"^[0-9a-f]{32}$")
@@ -198,3 +198,17 @@ async def preview(request: Request, file_id: str, rows: int = Query(MAX_ROWS, ge
     cols = list(dict.fromkeys(k for r in shown for k in r))[:MAX_COLS]
     return {"columns": [c[:MAX_CELL] for c in cols], "rows": [[_cell(r.get(c)) for c in cols] for r in shown],
             "truncated": len(data) > rows, "total_rows": len(data)}
+
+
+@router.post("/v1/files/{file_id}/presign")
+async def presign(file_id: str, request: Request, response: Response):
+    """Short-lived direct-to-MinIO GET link. POST so caches and prefetchers never touch it."""
+    response.headers["Cache-Control"] = "no-store"
+    s = request.app.state.settings
+    if not s.presign_enabled:
+        raise HTTPException(501, "presign disabled")  # frontend falls back to the proxy preview
+    st, key = _store(request), _key(file_id)
+    h = await _meta(st, key)
+    ctype, inline = presign_policy(h["name"])
+    url = st.presign_get(key, filename=h["name"], content_type=ctype, inline=inline, ttl=s.presign_ttl_seconds)
+    return {"url": url, "expires_in": s.presign_ttl_seconds, "kind": h["kind"], "inline": inline, "name": h["name"]}

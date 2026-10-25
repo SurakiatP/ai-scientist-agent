@@ -1,10 +1,21 @@
 """S3-compatible object store (MinIO): sync boto3 wrapped in asyncio.to_thread. Keys are opaque; the API proxies bytes."""
 import asyncio
 from pathlib import Path
+from urllib.parse import quote
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
+
+# Presigned responses: only these types may render inside the browser; everything else downloads.
+INLINE_TYPES = {"pdf": "application/pdf", "csv": "text/csv; charset=utf-8", "json": "application/json"}
+
+
+def presign_policy(name: str) -> tuple[str, bool]:
+    """(Content-Type, inline) for a file name, by extension allowlist."""
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return (INLINE_TYPES[ext], True) if ext in INLINE_TYPES else ("application/octet-stream", False)
+
 
 MISSING = {"404", "NoSuchKey", "NoSuchBucket", "NotFound"}
 
@@ -14,8 +25,17 @@ class ObjectMissing(Exception):
 
 
 class ObjectStore:
-    def __init__(self, client, bucket: str):
+    def __init__(self, client, bucket: str, public_client=None):
         self.client, self.bucket = client, bucket
+        self.public_client = public_client or client  # signs URLs for the host the browser can reach
+
+    def presign_get(self, key: str, *, filename: str, content_type: str, inline: bool, ttl: int) -> str:
+        """GET-only URL, signed locally (no network call) with the public endpoint's host."""
+        disp = f"{'inline' if inline else 'attachment'}; filename*=UTF-8''{quote(filename, safe='')}"
+        return self.public_client.generate_presigned_url(
+            "get_object", ExpiresIn=ttl, HttpMethod="GET",
+            Params={"Bucket": self.bucket, "Key": key, "ResponseContentType": content_type,
+                    "ResponseContentDisposition": disp})
 
     async def ping(self) -> None:
         await asyncio.to_thread(self.client.head_bucket, Bucket=self.bucket)
@@ -67,16 +87,19 @@ def _secret(value: str, file: str) -> str:
 
 def create_store(settings) -> ObjectStore:
     """Build the client and create the bucket if absent (idempotent). Raises if MinIO is unreachable."""
-    client = boto3.client(
-        "s3", endpoint_url=settings.minio_endpoint, region_name="us-east-1",
-        aws_access_key_id=_secret(settings.minio_access_key, settings.minio_access_key_file),
-        aws_secret_access_key=_secret(settings.minio_secret_key, settings.minio_secret_key_file),
-        config=Config(signature_version="s3v4", s3={"addressing_style": "path"},
-                      retries={"max_attempts": 2}, connect_timeout=2, read_timeout=30))
+    def make(endpoint):
+        return boto3.client(
+            "s3", endpoint_url=endpoint, region_name="us-east-1",
+            aws_access_key_id=_secret(settings.minio_access_key, settings.minio_access_key_file),
+            aws_secret_access_key=_secret(settings.minio_secret_key, settings.minio_secret_key_file),
+            config=Config(signature_version="s3v4", s3={"addressing_style": "path"},
+                          retries={"max_attempts": 2}, connect_timeout=2, read_timeout=30))
+    client = make(settings.minio_endpoint)
+    public = make(settings.minio_public_endpoint or settings.minio_endpoint)
     try:
         client.head_bucket(Bucket=settings.minio_bucket)
     except ClientError as e:
         if e.response.get("Error", {}).get("Code") not in MISSING:
             raise
         client.create_bucket(Bucket=settings.minio_bucket)
-    return ObjectStore(client, settings.minio_bucket)
+    return ObjectStore(client, settings.minio_bucket, public)

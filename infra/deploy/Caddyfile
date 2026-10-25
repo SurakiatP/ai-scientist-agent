@@ -3,6 +3,18 @@
 	email {$ACME_EMAIL}
 }
 
+# Presigned file links. Same path and Host as signed (S3 signatures cover both), so no prefix and no rewrite. Read-only.
+files.{$DOMAIN} {
+	{$CADDY_TLS}
+	@ro method GET HEAD
+	handle @ro {
+		reverse_proxy minio:9000
+	}
+	handle {
+		respond "method not allowed" 405
+	}
+}
+
 {$DOMAIN} {
 	{$CADDY_TLS}
 	header {

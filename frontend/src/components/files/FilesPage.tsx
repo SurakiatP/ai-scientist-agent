@@ -8,7 +8,7 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import UploadFileRoundedIcon from "@mui/icons-material/UploadFileRounded";
 import { PERSONAL, useChatStore } from "@/lib/chat";
 import { srOnly, UI } from "@/lib/config";
-import { ANALYZABLE, downloadUrl, fetchMeta, FileApiError, registerUpload, useAttach, useFilesStore, type FileEntry } from "@/lib/files";
+import { ANALYZABLE, downloadUrl, fetchMeta, FileApiError, presignFile, registerUpload, useAttach, useFilesStore, type FileEntry } from "@/lib/files";
 import { useHydrated } from "@/lib/history";
 import { canAnimate, enterRise, enterRow, EXIT_MS, leaveRow } from "@/lib/motion";
 import { usePrefs, useT } from "@/lib/prefs";
@@ -17,7 +17,8 @@ import { focusKebab, KebabMenu, type MenuAction } from "@/components/shell/Sessi
 import { projectName } from "@/components/shell/ProjectSwitcher";
 import { DeleteDialog, PreviewDialog, RenameDialog } from "./FileDialogs";
 
-const ACCEPT = ".csv,.xlsx,.parquet,.json";
+// The Files page keeps documents too (the composer stays data-only: csv, xlsx, parquet, json).
+const ACCEPT = ".csv,.xlsx,.parquet,.json,.pdf,.docx";
 const size = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`);
 type Dialog = { kind: "preview" | "rename" | "delete"; id: string } | null;
 // ok: the server has it. missing: it answered 404. A network/503 failure stays unknown, never "missing".
@@ -97,7 +98,12 @@ export function FilesPage() {
     useAttach.setState({ file: { id: f.id, name: f.name, size: f.size } });
     router.push("/chat");
   };
-  const download = (f: FileEntry) => { const a = document.createElement("a"); a.href = downloadUrl(f.id); a.download = f.name; document.body.append(a); a.click(); a.remove(); };
+  const download = async (f: FileEntry) => {
+    // Prefer a presigned attachment link (bytes come straight from storage); fall back to the backend proxy.
+    let href = downloadUrl(f.id);
+    try { href = (await presignFile(f.id)).url; } catch {}
+    const a = document.createElement("a"); a.href = href; a.download = f.name; a.rel = "noopener noreferrer"; document.body.append(a); a.click(); a.remove();
+  };
   const actions = (f: FileEntry): MenuAction[] => {
     const others = projects.filter((p) => p.id !== f.projectId);
     return [
