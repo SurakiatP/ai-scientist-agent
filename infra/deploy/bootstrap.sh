@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# First install on a fresh VM (run as root). Idempotent: existing secrets are kept.
+# First install on a fresh VM. Run as root: sudo infra/deploy/bootstrap.sh. Idempotent: existing secrets are kept.
 set -euo pipefail
+[ "$(id -u)" -eq 0 ] || { echo "run as root: sudo $0" >&2; exit 1; }
 PRIVATE=/etc/ai-scientist/private
 CACHE=/var/lib/ai-scientist/cache
 SRC="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -9,6 +10,8 @@ install -d -m 0750 "$PRIVATE" /var/backups/ai-scientist "$CACHE"
 for f in minio-access-key minio-secret-key; do
   [ -f "$PRIVATE/$f" ] || (umask 077 && openssl rand -hex 24 > "$PRIVATE/$f")
 done
+# Cache must be readable by the backend (uid 10001) but not writable by it.
+chmod 0755 "$CACHE"
 # Compose bind-mounts file secrets with host owner/mode; the minio user (10001) reads them via this group.
 chgrp 10001 "$PRIVATE/minio-access-key" "$PRIVATE/minio-secret-key"
 chmod 0640 "$PRIVATE/minio-access-key" "$PRIVATE/minio-secret-key"

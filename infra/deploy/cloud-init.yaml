@@ -6,7 +6,7 @@ users:
   - name: deploy
     groups: [docker]
     shell: /bin/bash
-    sudo: false
+    sudo: ["ALL=(root) NOPASSWD: /usr/local/bin/ai-scientist-deploy"]
     ssh_authorized_keys:
       - ssh-ed25519 CHANGE_ME
 write_files:
