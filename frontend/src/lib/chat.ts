@@ -2,12 +2,13 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { isItem, newId, safeStorage, storageFull, useHistoryStore } from "./history";
 import type { Progress } from "./progress";
-import type { Reference } from "./sse";
+import type { AskMode, Reference } from "./sse";
 
 export type Turn = {
   id: string; question: string; createdAt: number;
   status: "running" | "done" | "refused" | "error" | "stopped" | "interrupted";
   progress: Progress;
+  mode?: AskMode;
   answer?: { content: string; references: Reference[] };
   refused?: string; error?: string;
 };
@@ -58,6 +59,7 @@ const clampPatch = (p: Partial<Turn>): Partial<Turn> => ({
 const isTurn = (v: unknown): v is Turn => {
   const t = v as Turn | null;
   if (!t || !isStr(t.id, 100) || !isStr(t.question, 4000) || !isNum(t.createdAt) || !STATUSES.includes(t.status) || !isProgress(t.progress)) return false;
+  if (t.mode !== undefined && t.mode !== "deep" && t.mode !== "quick") return false;
   if (t.refused !== undefined && !isStr(t.refused, 20_000)) return false;
   if (t.error !== undefined && !isStr(t.error, 2048)) return false;
   return t.answer === undefined || (!!t.answer && isItem({ id: "x", question: "", createdAt: 0, answer: t.answer.content, references: t.answer.references }));

@@ -1,16 +1,15 @@
 "use client";
 import { useState, type KeyboardEvent } from "react";
-import { Box, Chip, IconButton, InputBase, Tooltip, Typography } from "@mui/material";
+import { Box, IconButton, InputBase, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from "@mui/material";
 import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
-import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import { create } from "zustand";
-import { useChatStore } from "@/lib/chat";
 import { useStorageFull } from "@/lib/history";
 import { ease, enterPop } from "@/lib/motion";
 import { useT } from "@/lib/prefs";
 import { canStart, startRun, stopRun, useRunState } from "@/lib/run";
+import type { AskMode } from "@/lib/sse";
 import { MAX_QUESTION } from "@/lib/strings";
 
 // Shared draft so starter chips / "ask follow-up" can fill the one composer. In memory only.
@@ -26,9 +25,9 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const text = useDraft((s) => s.drafts[sessionId] ?? ""), set = useDraft((s) => s.set);
   const setText = (v: string) => set(sessionId, v);
   const [err, setErr] = useState("");
+  const [mode, setMode] = useState<AskMode>("deep");
   const run = useRunState();
   const full = useStorageFull();
-  const hasTurns = useChatStore((s) => (s.sessions.find((x) => x.id === sessionId)?.turns.length ?? 0) > 0);
   const [composing, setComposing] = useState(false);
   const busy = !!run.turnId, mine = busy && run.sessionId === sessionId;
   // icon pops only on a send<->stop change in this session, never on mount or session switch
@@ -42,7 +41,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
     if (!canStart().ok) { setErr(t.busyElsewhere); return; } // text stays; never dropped silently
     setErr("");
     setText(""); // startRun adds the turn synchronously; a refusal rejects before any state change
-    startRun(sessionId, q).catch((e: unknown) => {
+    startRun(sessionId, q, { mode }).catch((e: unknown) => {
       if (!useDraft.getState().drafts[sessionId]) set(sessionId, q); // restore unless the user already typed again
       setErr(e instanceof Error && e.message === "busy" ? t.busyElsewhere : t.startFailed);
     });
@@ -75,11 +74,14 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               <IconButton disabled aria-label={`${t.attach}: ${t.attachReason}`}><AttachFileRoundedIcon /></IconButton>
             </span>
           </Tooltip>
-          <Tooltip title={t.modeReason}>
-            <span tabIndex={0} role="group" aria-label={`${t.modeChip}. ${t.modeReason}`} style={{ display: "inline-flex", alignItems: "center", minHeight: 44 }}>
-              <Chip size="small" variant="outlined" icon={<LayersOutlinedIcon />} label={t.modeChip} sx={{ height: 32 }} />
-            </span>
-          </Tooltip>
+          <ToggleButtonGroup
+            exclusive size="small" value={mode} aria-label={t.modeLabel}
+            onChange={(_, v: AskMode | null) => { if (v) setMode(v); }}
+            sx={{ "& .MuiToggleButton-root": { minHeight: 44, px: 1.5, textTransform: "none", typography: "body2" } }}
+          >
+            <ToggleButton value="deep">{t.modeDeep}</ToggleButton>
+            <ToggleButton value="quick">{t.modeQuick}</ToggleButton>
+          </ToggleButtonGroup>
           <Box sx={{ flex: 1 }} />
           {counter && (
             <Typography sx={{ fontSize: "0.75rem", fontVariantNumeric: "tabular-nums", color: over ? "error.main" : "text.secondary" }}>
@@ -93,7 +95,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
         </Box>
       </Box>
       <Typography id="composer-note" role="status" sx={{ mt: 0.75, px: 1, fontSize: "0.75rem", color: over || (full && !note) ? "error.main" : "text.secondary", minHeight: "1.2em" }}>
-        {note || (full ? t.storageFull : hasTurns ? t.followUpNote : "")}
+        {note || (full ? t.storageFull : "")}
       </Typography>
     </Box>
   );

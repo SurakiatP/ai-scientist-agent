@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { streamAsk, type AskEvent } from "./sse";
+import { streamAsk, type AskEvent, type AskOptions } from "./sse";
 
 const enc = new TextEncoder();
 function mockFetch(chunks: string[], init: { status?: number; json?: unknown } = {}) {
@@ -10,18 +10,18 @@ function mockFetch(chunks: string[], init: { status?: number; json?: unknown } =
       c.close();
     },
   });
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () =>
-      status === 200
-        ? new Response(body, { status })
-        : new Response(JSON.stringify(init.json ?? {}), { status }),
-    ),
-  );
+  const f = vi.fn(async (...args: [string, RequestInit]) => {
+    void args; // tests inspect the request through f.mock.calls
+    return status === 200
+      ? new Response(body, { status })
+      : new Response(JSON.stringify(init.json ?? {}), { status });
+  });
+  vi.stubGlobal("fetch", f);
+  return f;
 }
-async function collect(signal = new AbortController().signal) {
+async function collect(signal = new AbortController().signal, opts?: AskOptions) {
   const out: AskEvent[] = [];
-  for await (const e of streamAsk("q", signal)) out.push(e);
+  for await (const e of streamAsk("q", signal, opts)) out.push(e);
   return out;
 }
 afterEach(() => vi.unstubAllGlobals());
@@ -78,5 +78,23 @@ describe("streamAsk", () => {
     const out: AskEvent[] = [];
     for await (const e of streamAsk("q", ac.signal)) { out.push(e); ac.abort(); }
     expect(out).toEqual([{ type: "waiting", position: 1 }]);
+  });
+  it("sends non-default mode, history, plan and plan_only", async () => {
+    const f = mockFetch(['data: {"type":"complete"}\n\n']);
+    await collect(undefined, {
+      mode: "quick",
+      history: [{ question: "q0", answer: "a0" }],
+      plan: [{ term: "t", instructions: "i" }],
+      planOnly: true,
+    });
+    expect(JSON.parse(String(f.mock.calls[0][1]?.body))).toEqual({
+      question: "q", mode: "quick", history: [{ question: "q0", answer: "a0" }],
+      plan: [{ term: "t", instructions: "i" }], plan_only: true,
+    });
+  });
+  it("omits deep mode, empty history/plan and plan_only", async () => {
+    const f = mockFetch(['data: {"type":"complete"}\n\n']);
+    await collect(undefined, { mode: "deep", history: [], plan: [], planOnly: false });
+    expect(JSON.parse(String(f.mock.calls[0][1]?.body))).toEqual({ question: "q" });
   });
 });

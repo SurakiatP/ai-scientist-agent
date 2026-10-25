@@ -10,6 +10,9 @@ export type Paper = {
 };
 export type Reference = { id: string; paper: Paper; status: "verified" | "unverified" | "unknown" };
 export type Search = { term: string; instructions: string };
+export type AskMode = "deep" | "quick";
+export type HistoryTurn = { question: string; answer: string };
+export type AskOptions = { mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; planOnly?: boolean };
 
 export type AskEvent =
   | { type: "refused"; reason: string }
@@ -37,13 +40,19 @@ function parse(block: string): AskEvent | null {
 
 const clean = (m: string) => m.replace(/^Value error, /, "");
 
-export async function* streamAsk(question: string, signal: AbortSignal): AsyncGenerator<AskEvent> {
+export async function* streamAsk(question: string, signal: AbortSignal, opts: AskOptions = {}): AsyncGenerator<AskEvent> {
+  // Send only what differs from the backend defaults.
+  const body: { question: string; mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; plan_only?: boolean } = { question };
+  if (opts.mode === "quick") body.mode = "quick";
+  if (opts.history?.length) body.history = opts.history;
+  if (opts.plan?.length) body.plan = opts.plan;
+  if (opts.planOnly) body.plan_only = true;
   let res: Response;
   try {
     res = await fetch(`${API_BASE}/v1/async/ask`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify(body),
       signal,
     });
   } catch {

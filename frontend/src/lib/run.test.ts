@@ -1,9 +1,14 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AskEvent } from "./sse";
+import { emptyProgress } from "./progress";
+import type { Turn } from "./chat";
+import type { AskEvent, AskOptions } from "./sse";
 
 let script: (signal: AbortSignal) => AsyncGenerator<AskEvent>;
-vi.mock("./sse", () => ({ streamAsk: (_q: string, signal: AbortSignal) => script(signal) }));
+let asks: { question: string; opts: AskOptions | undefined }[] = [];
+vi.mock("./sse", () => ({
+  streamAsk: (question: string, signal: AbortSignal, opts?: AskOptions) => { asks.push({ question, opts }); return script(signal); },
+}));
 
 const ref = { id: "R1", status: "verified", paper: { title: "P", authors: [], year: null, doi: null, pmid: null, url: "u" } } as never;
 const gen = (evs: AskEvent[]) => async function* () { for (const e of evs) yield e; };
@@ -15,7 +20,7 @@ async function setup() {
 }
 const last = (chat: Awaited<ReturnType<typeof setup>>["chat"]) => chat.getState().sessions[0].turns.at(-1)!;
 
-beforeEach(() => { script = gen([]); });
+beforeEach(() => { script = gen([]); asks = []; });
 
 describe("run controller", () => {
   it("done run stores answer and references", async () => {
@@ -25,6 +30,35 @@ describe("run controller", () => {
     await run.startRun(sid, "q");
     expect(last(chat)).toMatchObject({ status: "done", answer: { content: "ans", references: [ref] } });
     expect(run.canStart()).toEqual({ ok: true });
+  });
+  it("history has the last three answered turns, skipping unfinished ones", async () => {
+    const { chat, run, sid } = await setup();
+    const add = (q: string, p: Partial<Turn> = {}) =>
+      chat.getState().addTurn(sid, { id: q, question: q, createdAt: 1, status: "done", progress: emptyProgress, ...p });
+    add("q1", { answer: { content: "a1", references: [] } });
+    add("q2", { status: "refused" });
+    add("q3", { answer: { content: "a3", references: [] } });
+    add("q4"); // done but no answer
+    add("q5", { answer: { content: "a5", references: [] } });
+    add("q6", { answer: { content: "a6", references: [] } });
+    add("q7", { answer: { content: "a7", references: [] } });
+    script = gen([{ type: "final_answer", content: "now", references: [] }, { type: "complete" }]);
+    await run.startRun(sid, "now");
+    expect(asks.at(-1)!.opts).toEqual({
+      mode: "deep",
+      history: [
+        { question: "q5", answer: "a5" },
+        { question: "q6", answer: "a6" },
+        { question: "q7", answer: "a7" },
+      ],
+    });
+  });
+  it("quick mode reaches the stream and is stored on the turn", async () => {
+    const { chat, run, sid } = await setup();
+    script = gen([{ type: "final_answer", content: "a", references: [] }, { type: "complete" }]);
+    await run.startRun(sid, "q", { mode: "quick" });
+    expect(asks.at(-1)!.opts).toEqual({ mode: "quick", history: [] });
+    expect(last(chat).mode).toBe("quick");
   });
   it("progress equals folding reduce over events", async () => {
     const { chat, run, sid } = await setup();

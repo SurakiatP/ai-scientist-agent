@@ -47,7 +47,7 @@ describe("Composer", () => {
     fireEvent.keyDown(box(), { key: "Enter", shiftKey: true });
     expect(run.startRun).not.toHaveBeenCalled();
     fireEvent.keyDown(box(), { key: "Enter" });
-    expect(run.startRun).toHaveBeenCalledWith(id, "hello");
+    expect(run.startRun).toHaveBeenCalledWith(id, "hello", { mode: "deep" });
     expect(box().value).toBe("");
   });
 
@@ -120,12 +120,20 @@ describe("Composer", () => {
     expect(run.startRun).not.toHaveBeenCalled();
   });
 
-  it("follow-up note only once the session has turns", () => {
-    const { unmount } = render(<Composer sessionId={mk()} />);
-    expect(screen.queryByText(t.followUpNote)).toBeNull();
-    unmount();
-    render(<Composer sessionId={mk([turn("done")])} />);
-    expect(screen.getByText(t.followUpNote)).toBeInTheDocument();
+  it("mode selector defaults to deep, toggles, and sends the selected mode", () => {
+    const id = mk();
+    render(<Composer sessionId={id} />);
+    expect(screen.getByRole("group", { name: t.modeLabel })).toBeInTheDocument();
+    const deep = screen.getByRole("button", { name: t.modeDeep });
+    const quick = screen.getByRole("button", { name: t.modeQuick });
+    expect(deep).toHaveAttribute("aria-pressed", "true");
+    expect(quick).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(quick);
+    expect(quick).toHaveAttribute("aria-pressed", "true");
+    expect(deep).toHaveAttribute("aria-pressed", "false");
+    type("q");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(run.startRun).toHaveBeenCalledWith(id, "q", { mode: "quick" });
   });
 });
 

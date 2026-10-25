@@ -3,7 +3,7 @@ import { useChatStore } from "./chat";
 import { newId } from "./history";
 import { usePrefs } from "./prefs";
 import { emptyProgress, reduce, type Progress } from "./progress";
-import { streamAsk, type AskEvent, type Reference } from "./sse";
+import { streamAsk, type AskEvent, type AskMode, type HistoryTurn, type Reference } from "./sse";
 import { strings } from "./strings";
 
 type RunState = { sessionId: string | null; turnId: string | null };
@@ -35,20 +35,26 @@ export function errorText(e: Extract<AskEvent, { type: "error" }>): string {
 }
 const cutOffText = () => strings[usePrefs.getState().lang].cutOff;
 
-export async function startRun(sessionId: string, question: string): Promise<void> {
+export async function startRun(sessionId: string, question: string, opts: { mode?: AskMode } = {}): Promise<void> {
   if (!canStart().ok) throw new Error("busy");
-  if (!useChatStore.getState().sessions.some((x) => x.id === sessionId)) throw new Error("no such session"); // before any state or stream
+  const session = useChatStore.getState().sessions.find((x) => x.id === sessionId);
+  if (!session) throw new Error("no such session"); // before any state or stream
+  const mode: AskMode = opts.mode === "quick" ? "quick" : "deep";
+  // Earlier turns are context, not new questions: only completed answers, oldest first, last three.
+  const history: HistoryTurn[] = session.turns
+    .flatMap((t) => (t.status === "done" && t.answer ? [{ question: t.question, answer: t.answer.content }] : []))
+    .slice(-3);
   const turnId = newId();
   const c = (ac = new AbortController());
   const store = () => useChatStore.getState();
-  store().addTurn(sessionId, { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress });
+  store().addTurn(sessionId, { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, mode });
   setState({ sessionId, turnId });
   const patch = (p: Parameters<ReturnType<typeof store>["patchTurn"]>[2]) => { if (leaving) return; try { store().patchTurn(sessionId, turnId, p); } catch {} }; // storage must never abort a run
   let progress: Progress = emptyProgress;
   let final: { content: string; references: Reference[] } | null = null;
   let outcome: Parameters<typeof patch>[0] | null = null;
   try {
-    for await (const e of streamAsk(question, c.signal)) {
+    for await (const e of streamAsk(question, c.signal, { mode, history })) {
       progress = reduce(progress, e);
       if (e.type === "final_answer") { final = { content: e.content, references: e.references }; outcome = { status: "done", answer: final }; }
       else if (e.type === "refused") outcome = { status: "refused", refused: e.reason };
