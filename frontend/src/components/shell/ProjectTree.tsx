@@ -155,7 +155,8 @@ export function ProjectTree({ query, onPick }: { query: string; onPick?: () => v
                   sx={{ borderRadius: 1.2, color: "text.secondary", ...coarse(40), width: { xs: 44, "@media (pointer: fine)": 36 }, flexShrink: 0 }}>
                   {expanded ? <FolderOpenOutlinedIcon sx={{ fontSize: 20 }} /> : <FolderOutlinedIcon sx={{ fontSize: 20 }} />}
                 </IconButton>
-                <Button fullWidth color="inherit" aria-current={current ? "true" : undefined} onClick={() => { selectProject(p.id); add(p.id); }}
+                {/* a second click on the open, current project folds it like a dropdown; any other click selects the project and opens it */}
+                <Button fullWidth color="inherit" aria-current={current ? "true" : undefined} onClick={() => { if (current && expanded) { toggle(p.id); return; } selectProject(p.id); add(p.id); }}
                   sx={{ justifyContent: "flex-start", ...UI.row, px: 0.75, borderRadius: 1.2, fontWeight: current ? 600 : 400, fontSize: "0.875rem", minWidth: 0 }}>
                   <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pname}</Box>
                 </Button>

@@ -50,6 +50,17 @@ describe("project tree", () => {
     expect(toggle(t.personal)).toHaveAttribute("aria-expanded", "false");
   });
 
+  it("clicking the open, current project's name folds it, and again unfolds it (dropdown)", () => {
+    render(<AppShell>x</AppShell>);
+    const name = () => within(sb()).getByRole("button", { name: t.personal });
+    expect(toggle(t.personal)).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(name());
+    expect(toggle(t.personal)).toHaveAttribute("aria-expanded", "false");
+    expect(useChatStore.getState().activeProjectId).toBe(PERSONAL);
+    fireEvent.click(name());
+    expect(toggle(t.personal)).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("nested session click selects it", () => {
     const id = seed("Nested question");
     render(<AppShell>x</AppShell>);

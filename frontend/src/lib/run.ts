@@ -25,6 +25,7 @@ const setState = (s: RunState) => { state = s; subs.forEach((f) => f()); };
 export const useRunState = () => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => state, () => idle);
 export const canStart = (): { ok: true } | { ok: false; reason: "busy" } => (state.turnId ? { ok: false, reason: "busy" } : { ok: true });
 export const stopRun = () => ac?.abort();
+export const runningTurnId = () => state.turnId; // sync.ts: a turn running in THIS tab is never overwritten by a remote copy
 
 // The one place error events become user-facing text (stored in the current language).
 export function errorText(e: ApiError): string {

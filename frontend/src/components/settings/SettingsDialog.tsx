@@ -10,6 +10,9 @@ import { useHistoryStore, useHydrated, useStorageFull } from "@/lib/history";
 import { usePrefs, useT } from "@/lib/prefs";
 import { stopRun } from "@/lib/run";
 import { useSettingsOpen } from "@/components/shell/Sidebar";
+import { useSync } from "@/lib/sync";
+import { ImportOld } from "./ImportOld";
+import Link from "next/link";
 
 type Health = "checking" | "ok" | "down";
 
@@ -71,6 +74,7 @@ export function SettingsDialog() {
   const { mode, setMode } = useColorScheme();
   const [confirm, setConfirm] = useState(false);
   const health = useHealth(open);
+  const shared = useSync((s) => s.status) !== "disabled" && hydrated;
   const close = () => { set(false); setConfirm(false); };
   const hs = { checking: t.backendChecking, ok: t.backendOk, down: t.backendDown }[health];
   const curLang = hydrated ? lang : "th";
@@ -106,12 +110,12 @@ export function SettingsDialog() {
               slotProps={{ input: { "aria-labelledby": "reviewplan-l" } }}
             />
           </Section>
-          <Section labelId="data-l" title={t.dataTitle} note={t.dataNote} below>
+          <Section labelId="data-l" title={t.dataTitle} note={shared ? t.dataNoteShared : t.dataNote} below>
             <Stack spacing={1}>
               {full && <Typography role="status" sx={{ fontSize: "0.875rem", color: "error.main" }}>{t.storageFull}</Typography>}
               {confirm ? (
-                <Stack role="group" aria-label={t.deleteAllConfirm} spacing={1}>
-                  <Typography sx={{ fontSize: "0.875rem" }}>{t.deleteAllConfirm}</Typography>
+                <Stack role="group" aria-label={shared ? t.deleteAllSharedConfirm : t.deleteAllConfirm} spacing={1}>
+                  <Typography sx={{ fontSize: "0.875rem" }}>{shared ? t.deleteAllSharedConfirm : t.deleteAllConfirm}</Typography>
                   <Stack direction="row" spacing={1}>
                     <Button color="error" variant="contained" autoFocus sx={{ minHeight: 44 }} onClick={() => {
                       stopRun(); // a live run would otherwise keep writing into a store that no longer has its chat
@@ -131,6 +135,8 @@ export function SettingsDialog() {
               </Typography>
             </Stack>
           </Section>
+          <ImportOld open={open} />
+          {shared && <Button component={Link} href="/usage" onClick={close} color="inherit" variant="outlined" sx={{ alignSelf: "flex-start", minHeight: 44 }}>{t.usageOpen}</Button>}
         </Stack>
       </DialogContent>
     </Dialog>

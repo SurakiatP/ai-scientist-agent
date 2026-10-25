@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { API_BASE } from "./config";
+import { API_BASE, DEFER_HYDRATION } from "./config";
 import { PERSONAL } from "./chat";
-import { safeStorage } from "./history";
+import { dataStorage } from "./history";
 
 // The file LIST lives in this browser (there is no login, so no server-side owner); the server only serves a file to
 // whoever knows its unguessable id. An entry is a pointer, never the bytes.
@@ -46,7 +46,8 @@ export const useFilesStore = create<State>()(
     }),
     {
       name: "scientist-files-v1",
-      storage: createJSONStorage(() => safeStorage),
+      storage: createJSONStorage(() => dataStorage),
+      skipHydration: DEFER_HYDRATION,
       version: 1,
       migrate: (state) => state as State,
       partialize: (s) => ({ files: s.files }),

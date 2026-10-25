@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { isItem, newId, safeStorage, storageFull, useHistoryStore } from "./history";
+import { DEFER_HYDRATION } from "./config";
+import { dataStorage, isItem, newId, safeStorage, storageFull, useHistoryStore } from "./history";
 import type { Progress } from "./progress";
 import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, Reference, Search } from "./sse";
 
@@ -40,7 +41,7 @@ export const PERSONAL = "personal";
 export const MAX_SESSIONS = 200;
 export const MAX_TURNS = 50;
 export const MAX_PROJECTS = 30;
-const personal: Project = { id: PERSONAL, name: "", createdAt: 0 };
+export const personal: Project = { id: PERSONAL, name: "", createdAt: 0 };
 const STATUSES = ["running", "awaiting_plan", "done", "refused", "error", "stopped", "interrupted"];
 
 const isStr = (v: unknown, max = Infinity): v is string => typeof v === "string" && v.length <= max;
@@ -162,7 +163,7 @@ const clampPatch = (p: Partial<Turn>): Partial<Turn> => ({
   ...(p.plan !== undefined && { plan: clampPlan(p.plan) }),
 });
 // Reuses history's item validator for the answer + references (its question/id/createdAt are filled in).
-const isTurn = (v: unknown): v is Turn => {
+export const isTurn = (v: unknown): v is Turn => {
   const t = v as Turn | null;
   if (!t || !isStr(t.id, 100) || !isStr(t.question, 4000) || !isNum(t.createdAt) || !STATUSES.includes(t.status) || !isProgress(t.progress)) return false;
   if (t.mode !== undefined && t.mode !== "deep" && t.mode !== "quick" && t.mode !== "chat") return false;
@@ -175,18 +176,18 @@ const isTurn = (v: unknown): v is Turn => {
   if (t.analysis !== undefined && !isAnalysis(t.analysis)) return false;
   return t.answer === undefined || (!!t.answer && isItem({ id: "x", question: "", createdAt: 0, answer: t.answer.content, references: t.answer.references }));
 };
-const isSession = (v: unknown): v is Session => {
+export const isSession = (v: unknown): v is Session => {
   const s = v as Session | null;
   return !!s && isStr(s.id, 100) && isStr(s.projectId, 100) && isStr(s.title, 200) && isNum(s.createdAt) && isNum(s.updatedAt) &&
     Array.isArray(s.turns);
 };
-const isProject = (v: unknown): v is Project => {
+export const isProject = (v: unknown): v is Project => {
   const p = v as Project | null;
   return !!p && isStr(p.id, 100) && isStr(p.name, 100) && isNum(p.createdAt);
 };
 
 // Newest activity first; the oldest sessions past the cap are dropped.
-const capSessions = (s: Session[]) => [...s].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SESSIONS);
+export const capSessions = (s: Session[]) => [...s].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SESSIONS);
 const title = (q: string) => q.trim().slice(0, 60);
 
 type State = {
@@ -279,7 +280,8 @@ export const useChatStore = create<State>()(
     }),
     {
       name: "scientist-chat-v1",
-      storage: createJSONStorage(() => safeStorage),
+      storage: createJSONStorage(() => dataStorage),
+      skipHydration: DEFER_HYDRATION, // sync.ts hydrates only in browser-only mode, so the old data never flashes when the shared database is on
       version: 1,
       migrate: (state) => state as State,
       partialize: (s) => ({ projects: s.projects, sessions: s.sessions, activeId: s.activeId, activeProjectId: s.activeProjectId, legacyImported: s.legacyImported }),

@@ -1,3 +1,8 @@
+// Persisted data stores (chats, files) wait for the sync layer to decide between the shared database and browser-only mode.
+// Tests hydrate synchronously, as before.
+export const DEFER_HYDRATION = process.env.NODE_ENV !== "test";
+export const gate = { writes: !DEFER_HYDRATION }; // false = the shared database is the source of truth: localStorage keeps the old browser data untouched
+
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 // Page background per scheme. Plain module (theme.ts is "use client", so a server layout cannot read its values).

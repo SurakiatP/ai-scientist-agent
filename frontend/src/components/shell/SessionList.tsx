@@ -1,12 +1,13 @@
 "use client";
 import { useState } from "react";
-import { Box, List, ListItemButton, Typography } from "@mui/material";
+import { Box, Button, List, ListItemButton, Typography } from "@mui/material";
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
 import { UI } from "@/lib/config";
 import { useChatStore, type Session } from "@/lib/chat";
 import { useHydrated } from "@/lib/history";
 import { usePrefs, useT } from "@/lib/prefs";
 import { stopRun, useRunState } from "@/lib/run";
+import { loadMore, useSync } from "@/lib/sync";
 import { useTreeOpen } from "./ProjectTree";
 import { projectName } from "./ProjectSwitcher";
 import { ago, focusKebab, InlineConfirm, InlineRename, SessionMenu } from "./SessionMenu";
@@ -20,6 +21,7 @@ export function SessionList({ query, onPick }: { query: string; onPick?: () => v
   const treeOpen = useTreeOpen((s) => s.open), projects = useChatStore((s) => s.projects), activeProjectId = useChatStore((s) => s.activeProjectId);
   const sessions = hydrated ? storeSessions.filter((s) => s.turns.length || s.title) : []; // blank chats are not history
   const { sessionId: runningId } = useRunState();
+  const hasMore = useSync((s) => s.hasMore);
   const [edit, setEdit] = useState<{ id: string; mode: "rename" | "delete" } | null>(null);
   const done = (id: string) => { setEdit(null); focusKebab(id); };
   const q = query.trim().toLowerCase();
@@ -30,6 +32,7 @@ export function SessionList({ query, onPick }: { query: string; onPick?: () => v
   const rows = q ? all : all.slice(0, 8);
   if (!rows.length) return q && !sessions.some(match) ? <Typography sx={{ px: 1.25, fontSize: "0.8125rem", color: "text.secondary" }}>{t.noMatches}</Typography> : null;
   return (
+    <>
     <List dense disablePadding aria-label={t.recents}>
       {rows.map((s) => edit?.id === s.id ? (
         <Box key={s.id} sx={{ px: 0.5 }}>
@@ -63,5 +66,7 @@ export function SessionList({ query, onPick }: { query: string; onPick?: () => v
         </Box>
       ))}
     </List>
+    {hasMore && <Button color="inherit" onClick={() => void loadMore()} sx={{ mt: 0.5, width: "100%", justifyContent: "flex-start", px: 1.25, fontSize: "0.8125rem", color: "text.secondary" }}>{t.loadMore}</Button>}
+    </>
   );
 }

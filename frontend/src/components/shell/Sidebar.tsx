@@ -11,6 +11,9 @@ import LanguageRoundedIcon from "@mui/icons-material/LanguageRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import ViewSidebarOutlinedIcon from "@mui/icons-material/ViewSidebarOutlined";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
+import { SyncChip } from "@/components/sync/SyncUI";
+import { useSync } from "@/lib/sync";
 import { create } from "zustand";
 import { UI } from "@/lib/config";
 import { useHydrated } from "@/lib/history";
@@ -38,7 +41,8 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
   const lang = usePrefs((s) => s.lang), setLang = usePrefs((s) => s.setLang);
   const hydrated = useHydrated();
   const goChat = useGoChat();
-  const onFiles = usePathname() === "/files";
+  const path = usePathname(), onFiles = path === "/files", onTrash = path === "/trash";
+  const shared = useSync((s) => s.status) !== "disabled" && hydrated;
   const newSession = useChatStore((s) => s.newSession), setActive = useChatStore((s) => s.setActive);
   const storeActive = useChatStore((s) => s.activeProjectId), storeSessions = useChatStore((s) => s.sessions);
   const activeProjectId = hydrated ? storeActive : PERSONAL;
@@ -81,8 +85,13 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
         <SessionList query={query} onPick={() => { onPick?.(); goChat(); }} />
       </Box>
       <Stack sx={{ borderTop: 1, borderColor: "divider", pt: 1, flexShrink: 0 }}>
+        <SyncChip />
         <Button component={Link} href="/files" color="inherit" startIcon={<FolderCopyOutlinedIcon />} onClick={() => onPick?.()} aria-current={onFiles ? "page" : undefined}
           sx={{ ...rowSx, bgcolor: onFiles ? "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)" : "transparent", fontWeight: onFiles ? 600 : 400 }}>{t.files}</Button>
+        {shared && (
+          <Button component={Link} href="/trash" color="inherit" startIcon={<DeleteOutlineRoundedIcon />} onClick={() => onPick?.()} aria-current={onTrash ? "page" : undefined}
+            sx={{ ...rowSx, bgcolor: onTrash ? "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)" : "transparent", fontWeight: onTrash ? 600 : 400 }}>{t.trashTitle}</Button>
+        )}
         <Button color="inherit" startIcon={<SettingsOutlinedIcon />} endIcon={<ChevronRightRoundedIcon />} onClick={() => useSettingsOpen.getState().set(true)}
           sx={{ ...rowSx, "& .MuiButton-endIcon": { ml: "auto" } }}>{t.settings}</Button>
         <Button color="inherit" startIcon={<LanguageRoundedIcon />} endIcon={<ChevronRightRoundedIcon />} onClick={() => setLang(lang === "en" ? "th" : "en")}

@@ -5,6 +5,7 @@ import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import { checkName, deleteFile, downloadUrl, fetchPresignedPreview, fetchPreview, FileApiError, presignFile, renameFile, useFilesStore, type FileEntry, type Preview } from "@/lib/files";
 import { srOnly } from "@/lib/config";
 import { skeletonBar } from "@/lib/motion";
+import { useSync } from "@/lib/sync";
 import { useT } from "@/lib/prefs";
 import type { Strings } from "@/lib/strings";
 
@@ -176,10 +177,11 @@ export function RenameDialog({ file, onClose, onMissing }: { file: FileEntry; on
 export function DeleteDialog({ file, onClose, onRemove = (id) => useFilesStore.getState().remove(id) }: { file: FileEntry; onClose: () => void; onRemove?: (id: string) => void }) {
   const t = useT();
   const [err, setErr] = useState(""), [busy, setBusy] = useState(false);
+  const shared = useSync((s) => s.status) !== "disabled"; // shared database: the file goes to the trash, the stored object is purged after 7 days
   const go = async () => {
     if (busy) return;
     setBusy(true); setErr("");
-    try { await deleteFile(file.id); } catch (e) {
+    try { if (!shared) await deleteFile(file.id); } catch (e) {
       // 404: already gone from the server, so only the local entry is left to remove. Anything else: keep the entry and say why.
       if (!(e instanceof FileApiError && e.status === 404)) { setErr(apiMessage(e, t)); setBusy(false); return; }
     }
@@ -190,7 +192,7 @@ export function DeleteDialog({ file, onClose, onRemove = (id) => useFilesStore.g
     <Frame id="file-delete-title" title={t.deleteFileTitle} onClose={onClose}
       actions={<><Button color="inherit" autoFocus onClick={onClose} sx={{ minHeight: 44 }}>{t.cancel}</Button><Button color="error" variant="contained" disabled={busy} onClick={go} sx={{ minHeight: 44 }}>{t.deleteItem}</Button></>}>
       <Typography sx={{ fontWeight: 600, overflowWrap: "anywhere" }}>{file.name}</Typography>
-      <Typography sx={{ mt: 0.5, color: "text.secondary" }}>{t.deleteFileBody}</Typography>
+      <Typography sx={{ mt: 0.5, color: "text.secondary" }}>{shared ? t.deleteFileBodyTrash : t.deleteFileBody}</Typography>
       {err && <Alert severity="error" role="alert" sx={{ mt: 2 }}>{err}</Alert>}
     </Frame>
   );

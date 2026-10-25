@@ -13,11 +13,13 @@ import { useReportPanel } from "@/lib/exportReport";
 import { useInspector } from "@/lib/inspector";
 import { useChatStore } from "@/lib/chat";
 import { useHydrated } from "@/lib/history";
+import { useSync } from "@/lib/sync";
 
 export default function ChatPage() {
-  const hydrated = useHydrated();
+  const ready = useSync((s) => s.ready), shared = useSync((s) => s.status) !== "disabled";
+  const hydrated = useHydrated() && ready; // the data (shared database or browser) is in the cache
   const active = useChatStore((s) => s.sessions.find((x) => x.id === s.activeId));
-  useEffect(() => { useChatStore.getState().importLegacyHistory(); }, []); // no-op after the first import
+  useEffect(() => { if (hydrated && !shared) useChatStore.getState().importLegacyHistory(); }, [hydrated, shared]); // no-op after the first import; never into the shared database
   useEffect(() => { // always have a valid active session; reuse an empty one instead of piling up blanks
     if (!hydrated || active) return;
     const s = useChatStore.getState();
