@@ -6,7 +6,7 @@ import { emptyProgress } from "@/lib/progress";
 import { EmptyChat } from "./EmptyChat";
 import { Thread } from "./Thread";
 
-vi.mock("@/lib/run", () => ({ useRunState: () => ({ sessionId: null, turnId: null }), startRun: vi.fn(), stopRun: vi.fn(), canStart: () => ({ ok: true }) }));
+vi.mock("@/lib/run", () => ({ useRunState: () => ({ sessionId: null, turnId: null }), startRun: vi.fn(), stopRun: vi.fn(), approvePlan: vi.fn(), cancelPlan: vi.fn(), canStart: () => ({ ok: true }) }));
 
 let n = 0;
 const turn = (): Turn => ({ id: `t${n++}`, question: "Q", createdAt: 1, status: "done", progress: emptyProgress });

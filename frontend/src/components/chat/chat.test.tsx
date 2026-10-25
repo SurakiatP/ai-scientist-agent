@@ -11,11 +11,13 @@ import { Composer, useDraft } from "./Composer";
 import { EmptyChat } from "./EmptyChat";
 import { Thread } from "./Thread";
 
-const run = vi.hoisted(() => ({ sessionId: null as string | null, turnId: null as string | null, startRun: vi.fn(async () => {}), startAnalysis: vi.fn(async () => {}), stopRun: vi.fn() }));
+const run = vi.hoisted(() => ({ sessionId: null as string | null, turnId: null as string | null, startRun: vi.fn(async () => {}), startAnalysis: vi.fn(async () => {}), approvePlan: vi.fn(async () => {}), cancelPlan: vi.fn(), stopRun: vi.fn() }));
 vi.mock("@/lib/run", () => ({
   useRunState: () => ({ sessionId: run.sessionId, turnId: run.turnId }),
   startRun: run.startRun,
   startAnalysis: run.startAnalysis,
+  approvePlan: run.approvePlan,
+  cancelPlan: run.cancelPlan,
   stopRun: run.stopRun,
   canStart: () => (run.turnId ? { ok: false, reason: "busy" } : { ok: true }),
 }));
@@ -38,7 +40,8 @@ beforeEach(() => {
   useChatStore.getState().clearAll();
   usePrefs.setState({ lang: "th" });
   run.sessionId = run.turnId = null;
-  run.startRun.mockReset(); run.startRun.mockImplementation(async () => {}); run.startAnalysis.mockReset(); run.startAnalysis.mockImplementation(async () => {}); run.stopRun.mockClear();
+  run.startRun.mockReset(); run.startRun.mockImplementation(async () => {}); run.startAnalysis.mockReset(); run.startAnalysis.mockImplementation(async () => {});
+  run.approvePlan.mockReset(); run.approvePlan.mockImplementation(async () => {}); run.cancelPlan.mockClear(); run.stopRun.mockClear();
   upload.fn.mockReset();
   useDraft.setState({ drafts: {} });
 });
@@ -249,6 +252,64 @@ describe("Thread", () => {
     expect(container.querySelector('[aria-live="polite"]')).not.toBeNull();
     expect(container.querySelector("strong")?.textContent).toBe("bold");
     expect(container.querySelector("script")).toBeNull();
+  });
+});
+
+describe("Plan review", () => {
+  const planTurn = (p: Partial<Turn> = {}): Turn => ({
+    id: "turn-1", question: "Q1", createdAt: Date.now(), status: "awaiting_plan",
+    progress: emptyProgress, plan: [{ term: "first term", instructions: "" }, { term: "second term", instructions: "go" }],
+    ...p,
+  });
+  const begin = () => {
+    render(<AgentMessage sessionId="s" turn={planTurn()} />);
+    fireEvent.click(screen.getByRole("button", { name: t.editPlan }));
+  };
+
+  it("an awaiting turn shows the editable plan card instead of the progress strip", () => {
+    render(<AgentMessage sessionId="s" turn={planTurn()} />);
+    expect(screen.getByText(t.planEditableTitle)).toBeInTheDocument();
+    expect(screen.getByText(t.awaitPlanNote)).toBeInTheDocument();
+    expect(screen.queryByText(t.searching)).toBeNull(); // the progress strip stands down: nothing has run yet
+  });
+
+  it("wires the plan card's start to approvePlan with the edited rows", () => {
+    begin();
+    fireEvent.change(screen.getAllByLabelText(new RegExp(`^${t.planTerm}`))[0], { target: { value: "edited term" } });
+    fireEvent.click(screen.getByRole("button", { name: t.planStart }));
+    expect(run.approvePlan).toHaveBeenCalledWith("s", "turn-1", [
+      { term: "edited term", instructions: "" }, { term: "second term", instructions: "go" },
+    ]);
+    expect(run.cancelPlan).not.toHaveBeenCalled();
+  });
+
+  it("wires the plan card's cancel to cancelPlan", () => {
+    begin();
+    fireEvent.click(screen.getByRole("button", { name: t.cancel }));
+    expect(run.cancelPlan).toHaveBeenCalledWith("s", "turn-1");
+    expect(run.approvePlan).not.toHaveBeenCalled();
+  });
+
+  it("a failed approval is said out loud, not swallowed", async () => {
+    run.approvePlan.mockRejectedValueOnce(new Error("busy"));
+    begin();
+    fireEvent.click(screen.getByRole("button", { name: t.planStart }));
+    expect(await screen.findByText(t.startFailed)).toBeInTheDocument();
+  });
+
+  it("a running turn shows the approved plan read-only as the plan used", () => {
+    render(<AgentMessage sessionId="s" turn={planTurn({ status: "running", progress: { ...emptyProgress, phase: "searching" } })} />);
+    expect(screen.getByText(t.planUsedTitle)).toBeInTheDocument();
+    expect(screen.getByText("first term")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t.editPlan })).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull(); // the review window is closed
+    expect(screen.queryByText(t.researchPlan)).toBeNull(); // no duplicate proposed-plan listing
+  });
+
+  it("a running turn without a reviewed plan keeps the plain proposed listing", () => {
+    render(<AgentMessage sessionId="s" turn={turn("running", { progress: { ...emptyProgress, searches: [{ term: "x", instructions: "" }], phase: "searching" } })} />);
+    expect(screen.getByText(t.researchPlan)).toBeInTheDocument();
+    expect(screen.queryByText(t.planUsedTitle)).toBeNull();
   });
 });
 

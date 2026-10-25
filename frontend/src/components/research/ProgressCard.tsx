@@ -6,6 +6,7 @@ import type { Turn } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
 import type { Progress } from "@/lib/progress";
 import { ease, enterRise, prefersReduced, stageCheckSx, stageDotSx, stageFillSx, stageRingSx, stageSettleSx } from "@/lib/motion";
+import { PlanCard } from "./PlanCard";
 import type { Strings } from "@/lib/strings";
 
 // Backend has no separate "check" phase: stage 4 is only reached when the run is done.
@@ -101,24 +102,32 @@ export function ProgressCard({ turn }: { turn: Turn }) {
           {running && <Elapsed since={turn.createdAt} />}
         </Stack>
         <Stages p={p} running={running} />
-        {(p.reasoning || p.searches.length > 0) && (
+        {turn.plan ? (
+          // The run goes by the plan the user reviewed: show it read-only, in place of a model-proposed listing.
           <Box>
-            <Typography component="h3" sx={{ fontSize: "0.75rem", fontWeight: 700, color: "text.secondary", letterSpacing: "0.03em" }}>{t.researchPlan}</Typography>
-            <Typography sx={{ fontSize: "0.75rem", color: "text.secondary", mt: 0.25 }}>{t.planNote}</Typography>
-            {p.reasoning && <Typography sx={{ mt: 1, fontSize: "0.875rem", lineHeight: 1.7, color: "text.secondary", overflowWrap: "anywhere" }}>{p.reasoning}</Typography>}
-            {p.searches.length > 0 && (
-              <Box component="ul" sx={{ m: 0, mt: 1, p: 0, listStyle: "none" }}>
-                {p.searches.map((s, i) => (
-                  <Stack component="li" key={`${s.term}#${i}`} direction="row" useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", gap: 1, py: 1, borderTop: i === 0 ? 0 : 1, borderColor: "divider", ...(i >= rows0 ? enterRise : {}) }}>
-                    <Typography sx={{ width: 20, flexShrink: 0, fontSize: "0.6875rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{String(i + 1).padStart(2, "0")}</Typography>
-                    <Typography sx={{ flex: "1 1 160px", minWidth: 0, fontSize: "0.875rem", lineHeight: 1.5, overflowWrap: "anywhere" }}>{s.term}</Typography>
-                    {s.term in p.sources && <Chip size="small" variant="outlined" label={`${t.found} ${p.sources[s.term]} ${p.sources[s.term] === 1 ? t.paper : t.papers}`} />}
-                    {p.answered.includes(s.term) && <Chip size="small" variant="outlined" icon={<CheckRoundedIcon />} label={t.branchDone} sx={{ color: "evidence.verified", borderColor: "evidence.verified", "& .MuiChip-icon": { color: "inherit", fontSize: 14 } }} />}
-                  </Stack>
-                ))}
-              </Box>
-            )}
+            <PlanCard searches={turn.plan} editable={false} heading={t.planUsedTitle} onApprove={() => {}} onCancel={() => {}} />
+            {p.reasoning && <Typography sx={{ mt: 1.5, fontSize: "0.875rem", lineHeight: 1.7, color: "text.secondary", overflowWrap: "anywhere" }}>{p.reasoning}</Typography>}
           </Box>
+        ) : (
+          (p.reasoning || p.searches.length > 0) && (
+            <Box>
+              <Typography component="h3" sx={{ fontSize: "0.75rem", fontWeight: 700, color: "text.secondary", letterSpacing: "0.03em" }}>{t.researchPlan}</Typography>
+              <Typography sx={{ fontSize: "0.75rem", color: "text.secondary", mt: 0.25 }}>{t.planNote}</Typography>
+              {p.reasoning && <Typography sx={{ mt: 1, fontSize: "0.875rem", lineHeight: 1.7, color: "text.secondary", overflowWrap: "anywhere" }}>{p.reasoning}</Typography>}
+              {p.searches.length > 0 && (
+                <Box component="ul" sx={{ m: 0, mt: 1, p: 0, listStyle: "none" }}>
+                  {p.searches.map((s, i) => (
+                    <Stack component="li" key={`${s.term}#${i}`} direction="row" useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", gap: 1, py: 1, borderTop: i === 0 ? 0 : 1, borderColor: "divider", ...(i >= rows0 ? enterRise : {}) }}>
+                      <Typography sx={{ width: 20, flexShrink: 0, fontSize: "0.6875rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{String(i + 1).padStart(2, "0")}</Typography>
+                      <Typography sx={{ flex: "1 1 160px", minWidth: 0, fontSize: "0.875rem", lineHeight: 1.5, overflowWrap: "anywhere" }}>{s.term}</Typography>
+                      {s.term in p.sources && <Chip size="small" variant="outlined" label={`${t.found} ${p.sources[s.term]} ${p.sources[s.term] === 1 ? t.paper : t.papers}`} />}
+                      {p.answered.includes(s.term) && <Chip size="small" variant="outlined" icon={<CheckRoundedIcon />} label={t.branchDone} sx={{ color: "evidence.verified", borderColor: "evidence.verified", "& .MuiChip-icon": { color: "inherit", fontSize: 14 } }} />}
+                    </Stack>
+                  ))}
+                </Box>
+              )}
+            </Box>
+          )
         )}
       </Stack>
     </Box>

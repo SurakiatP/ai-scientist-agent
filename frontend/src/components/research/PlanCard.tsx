@@ -23,9 +23,11 @@ function Badge({ n }: { n: number }) {
   );
 }
 
-export function PlanCard({ searches, editable, onApprove, onCancel }: {
+export function PlanCard({ searches, editable, heading, onApprove, onCancel }: {
   searches: PlanSearch[];
   editable: boolean;
+  /** Card title; defaults to the editable-plan wording. Read-only use (the approved plan) passes its own. */
+  heading?: string;
   onApprove: (plan: PlanSearch[]) => void;
   onCancel: () => void;
 }) {
@@ -57,7 +59,7 @@ export function PlanCard({ searches, editable, onApprove, onCancel }: {
     <Box sx={{ border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.raised", p: { xs: 1.5, sm: 2 } }}>
       <Stack spacing={2}>
         <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1, flexWrap: "wrap" }}>
-          <Typography component="h3" sx={{ fontWeight: 600, fontSize: "0.9375rem" }}>{t.planEditableTitle}</Typography>
+          <Typography component="h3" sx={{ fontWeight: 600, fontSize: "0.9375rem" }}>{heading ?? t.planEditableTitle}</Typography>
           {editable && !editing && (
             <Button variant="outlined" size="small" color="inherit" startIcon={<EditOutlinedIcon fontSize="small" />} sx={{ minHeight: 44, borderColor: "divider", color: "text.primary" }} onClick={edit}>
               {t.editPlan}

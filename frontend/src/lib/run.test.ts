@@ -16,13 +16,16 @@ vi.mock("./sse", () => ({
 const ref = { id: "R1", status: "verified", paper: { title: "P", authors: [], year: null, doi: null, pmid: null, url: "u" } } as never;
 const gen = (evs: AskEvent[]) => async function* () { for (const e of evs) yield e; };
 const agen = (evs: AnalyzeEvent[]) => async function* () { for (const e of evs) yield e; };
-async function setup() {
+async function setup(reviewPlan = false) {
   localStorage.clear(); vi.resetModules();
+  (await import("./prefs")).usePrefs.setState({ reviewPlan });
   const chat = (await import("./chat")).useChatStore;
   const run = await import("./run");
   return { chat, run, sid: chat.getState().newSession() };
 }
 const last = (chat: Awaited<ReturnType<typeof setup>>["chat"]) => chat.getState().sessions[0].turns.at(-1)!;
+const turnOf = (chat: Awaited<ReturnType<typeof setup>>["chat"], sid: string) =>
+  chat.getState().sessions.find((s) => s.id === sid)!.turns.at(-1)!;
 
 beforeEach(() => { script = gen([]); analyzeScript = agen([]); asks = []; analyzes = []; });
 
@@ -278,5 +281,158 @@ describe("analysis controller", () => {
       window.dispatchEvent(ev);
       expect(last(chat)).toMatchObject({ status: "interrupted", analysis: { steps: ["running"] } });
     } finally { window.dispatchEvent(new Event("pageshow")); }
+  });
+});
+
+describe("plan review flow", () => {
+  const proposed = [{ term: "a", instructions: "" }, { term: "b", instructions: "more" }];
+  const strategy: AskEvent = { type: "strategy", reasoning: "why", searches: proposed };
+  const planEvs: AskEvent[] = [strategy, { type: "complete" }];
+  const edited = [{ term: "a!", instructions: "go" }, { term: "b!", instructions: "" }];
+
+  it("a deep run with reviewPlan stores the proposed plan and waits without a search run", async () => {
+    const { chat, run, sid } = await setup(true);
+    script = gen(planEvs);
+    await run.startRun(sid, "q");
+    expect(asks).toHaveLength(1); // exactly the plan fetch: no search stream yet
+    expect(asks[0].opts).toEqual({ mode: "deep", history: [], planOnly: true });
+    expect(turnOf(chat, sid)).toMatchObject({ status: "awaiting_plan", plan: proposed, mode: "deep" });
+    expect(run.canStart()).toEqual({ ok: true }); // the lock was released while waiting
+  });
+
+  it("holds the single-run lock only while the plan streams, not while waiting", async () => {
+    const { chat, run, sid } = await setup(true);
+    let release!: () => void;
+    script = async function* () { await new Promise<void>((r) => (release = r)); yield strategy; yield { type: "complete" }; };
+    const p = run.startRun(sid, "q");
+    await Promise.resolve();
+    expect(run.canStart()).toEqual({ ok: false, reason: "busy" }); // the fetch itself is the run
+    release();
+    await p;
+    expect(turnOf(chat, sid).status).toBe("awaiting_plan");
+    expect(run.canStart()).toEqual({ ok: true });
+    // another session can run while the first waits for review
+    const sid2 = chat.getState().newSession();
+    script = gen([{ type: "final_answer", content: "x", references: [] }, { type: "complete" }]);
+    await run.startRun(sid2, "q2", { mode: "quick" });
+    expect(chat.getState().sessions.find((s) => s.id === sid2)!.turns[0].status).toBe("done");
+  });
+
+  it("approve runs the real stream with the edited plan in the request body", async () => {
+    const { chat, run, sid } = await setup(true);
+    script = gen(planEvs);
+    await run.startRun(sid, "q");
+    const tid = turnOf(chat, sid).id;
+    script = gen([{ type: "final_answer", content: "ans", references: [] }, { type: "complete" }]);
+    await run.approvePlan(sid, tid, edited);
+    expect(asks).toHaveLength(2);
+    expect(asks[1].opts).toEqual({ mode: "deep", history: [], plan: edited });
+    expect(turnOf(chat, sid)).toMatchObject({ status: "done", answer: { content: "ans" }, plan: edited });
+    expect(run.canStart()).toEqual({ ok: true });
+  });
+
+  it("approve streams the last three answered turns as history", async () => {
+    const { chat, run, sid } = await setup(true);
+    const seed = (q: string) => chat.getState().addTurn(sid, { id: q, question: q, createdAt: 1, status: "done", progress: emptyProgress, answer: { content: `a-${q}`, references: [] } });
+    seed("q1"); seed("q2"); seed("q3"); seed("q4");
+    script = gen(planEvs);
+    await run.startRun(sid, "q");
+    script = gen([{ type: "final_answer", content: "x", references: [] }, { type: "complete" }]);
+    await run.approvePlan(sid, turnOf(chat, sid).id, edited);
+    expect(asks[1].opts?.history).toEqual([
+      { question: "q2", answer: "a-q2" }, { question: "q3", answer: "a-q3" }, { question: "q4", answer: "a-q4" },
+    ]);
+  });
+
+  it("approve is refused while another run holds the lock, and the turn stays waiting", async () => {
+    const { chat, run, sid } = await setup(true);
+    script = gen(planEvs);
+    await run.startRun(sid, "q");
+    const tid = turnOf(chat, sid).id;
+    const sid2 = chat.getState().newSession();
+    let release!: () => void;
+    script = async function* () { await new Promise<void>((r) => (release = r)); };
+    const p = run.startRun(sid2, "q2"); // plan fetch pending elsewhere
+    await Promise.resolve();
+    expect(turnOf(chat, sid).status).toBe("awaiting_plan");
+    await expect(run.approvePlan(sid, tid, edited)).rejects.toThrow("busy");
+    expect(asks).toHaveLength(2); // only the two plan fetches; no search stream started
+    release();
+    await p;
+  });
+
+  it("approve rejects a missing, non-waiting or already-approved turn without streaming", async () => {
+    const { chat, run, sid } = await setup(true);
+    script = gen(planEvs);
+    await run.startRun(sid, "q");
+    const tid = turnOf(chat, sid).id;
+    await expect(run.approvePlan("no-session", tid, edited)).rejects.toThrow();
+    await expect(run.approvePlan(sid, "no-turn", edited)).rejects.toThrow();
+    expect(asks).toHaveLength(1);
+    script = gen([{ type: "final_answer", content: "x", references: [] }, { type: "complete" }]);
+    await run.approvePlan(sid, tid, edited); // firsthand approval succeeds
+    expect(turnOf(chat, sid).status).toBe("done");
+    script = gen(planEvs); // a second approval of the same turn is guarded, not a live stream
+    await expect(run.approvePlan(sid, tid, edited)).rejects.toThrow("not awaiting");
+    expect(asks).toHaveLength(2);
+  });
+
+  it("cancel marks the waiting turn stopped; it stays stopped and cannot be approved", async () => {
+    const { chat, run, sid } = await setup(true);
+    script = gen(planEvs);
+    await run.startRun(sid, "q");
+    const tid = turnOf(chat, sid).id;
+    run.cancelPlan(sid, tid);
+    expect(turnOf(chat, sid)).toMatchObject({ status: "stopped", plan: proposed });
+    script = gen([{ type: "final_answer", content: "x", references: [] }, { type: "complete" }]);
+    await expect(run.approvePlan(sid, tid, edited)).rejects.toThrow();
+    expect(turnOf(chat, sid).status).toBe("stopped");
+    expect(asks).toHaveLength(1);
+  });
+
+  it("cancel ignores a turn that is not waiting for review", async () => {
+    const { chat, run, sid } = await setup();
+    chat.getState().addTurn(sid, { id: "done-1", question: "d", createdAt: 1, status: "done", progress: emptyProgress });
+    run.cancelPlan(sid, "done-1");
+    expect(chat.getState().sessions[0].turns[0].status).toBe("done");
+    run.cancelPlan(sid, "missing");
+  });
+
+  it("reviewPlan off skips the pause and streams the search directly", async () => {
+    const { chat, run, sid } = await setup(false);
+    script = gen(planEvs); // a strategy event arrives as usual for a full run
+    await run.startRun(sid, "q");
+    expect(asks).toHaveLength(1);
+    expect(asks[0].opts).toEqual({ mode: "deep", history: [] });
+    expect(turnOf(chat, sid).progress.searches).toEqual(proposed); // folded into live progress, not stored as the plan
+    expect(turnOf(chat, sid)).toMatchObject({ status: "error" }); // stream ended without an answer
+  });
+
+  it("quick mode never pauses, even with reviewPlan on", async () => {
+    const { chat, run, sid } = await setup(true);
+    script = gen([{ type: "final_answer", content: "a", references: [] }, { type: "complete" }]);
+    await run.startRun(sid, "q", { mode: "quick" });
+    expect(asks).toHaveLength(1);
+    expect(asks[0].opts).toEqual({ mode: "quick", history: [] });
+    expect(turnOf(chat, sid)).toMatchObject({ status: "done", answer: { content: "a" } });
+    expect(turnOf(chat, sid).plan).toBeUndefined();
+  });
+
+  it("a refused plan stores the refusal", async () => {
+    const { chat, run, sid } = await setup(true);
+    script = gen([{ type: "refused", reason: "off topic" }]);
+    await run.startRun(sid, "q");
+    expect(turnOf(chat, sid)).toMatchObject({ status: "refused", refused: "off topic" });
+  });
+
+  it("a plan stream that dies without a proposal is cut off", async () => {
+    const { chat, run, sid } = await setup(true);
+    script = gen([]);
+    await run.startRun(sid, "q");
+    expect(turnOf(chat, sid)).toMatchObject({ status: "error", error: "การเชื่อมต่อสิ้นสุดก่อนที่คำตอบจะเสร็จสมบูรณ์" });
+    script = gen([{ type: "error", message: "", code: "network" }]); // the next question fails the same way
+    await run.startRun(sid, "q2");
+    expect(turnOf(chat, sid)).toMatchObject({ status: "error", error: "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้" });
+    expect(run.canStart()).toEqual({ ok: true });
   });
 });

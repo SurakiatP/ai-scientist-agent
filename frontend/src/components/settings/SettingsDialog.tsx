@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Button, Dialog, DialogContent, DialogTitle, FormControl, FormControlLabel, FormLabel, IconButton, Radio, RadioGroup, Stack, Typography, useColorScheme } from "@mui/material";
+import { Button, Dialog, DialogContent, DialogTitle, FormControl, FormControlLabel, FormLabel, IconButton, Radio, RadioGroup, Stack, Switch, Typography, useColorScheme } from "@mui/material";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import { API_BASE } from "@/lib/config";
 import { useChatStore } from "@/lib/chat";
@@ -32,6 +32,8 @@ export function SettingsDialog() {
   const { open, set } = useSettingsOpen();
   const lang = usePrefs((s) => s.lang);
   const setLang = usePrefs((s) => s.setLang);
+  const reviewPlan = usePrefs((s) => s.reviewPlan);
+  const setReviewPlan = usePrefs((s) => s.setReviewPlan);
   const { mode, setMode } = useColorScheme();
   const [confirm, setConfirm] = useState(false);
   const health = useHealth(open);
@@ -59,6 +61,18 @@ export function SettingsDialog() {
               <FormControlLabel value="dark" control={<Radio />} label={t.themeDark} sx={{ minHeight: 44 }} />
               <FormControlLabel value="system" control={<Radio />} label={t.themeSystem} sx={{ minHeight: 44 }} />
             </RadioGroup>
+          </FormControl>
+          <FormControl>
+            <FormLabel id="reviewplan-l">{t.reviewPlan}</FormLabel>
+            <Stack direction="row" useFlexGap spacing={1.5} sx={{ alignItems: "center" }}>
+              <Switch
+                checked={hydrated ? reviewPlan : true}
+                onChange={(_, v) => setReviewPlan(v)}
+                slotProps={{ input: { "aria-labelledby": "reviewplan-l" } }}
+                sx={{ mb: -0.75 }}
+              />
+              <Typography sx={{ fontSize: "0.875rem", color: "text.secondary", lineHeight: 1.7, minWidth: 0 }}>{t.reviewPlanNote}</Typography>
+            </Stack>
           </FormControl>
           <Stack spacing={1}>
             <Typography component="h3" sx={{ fontSize: "0.875rem", fontWeight: 700 }}>{t.dataTitle}</Typography>

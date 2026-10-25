@@ -5,20 +5,31 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { safeStorage, useHydrated } from "./history";
 import { strings, type Lang, type Strings } from "./strings";
 
-type State = { lang: Lang; setLang: (l: Lang) => void; sidebarCollapsed: boolean; setSidebarCollapsed: (c: boolean) => void };
+type State = {
+  lang: Lang; setLang: (l: Lang) => void;
+  sidebarCollapsed: boolean; setSidebarCollapsed: (c: boolean) => void;
+  reviewPlan: boolean; setReviewPlan: (v: boolean) => void;
+};
 
 export const usePrefs = create<State>()(
   persist(
-    (set) => ({ lang: "th", setLang: (lang) => set({ lang }), sidebarCollapsed: false, setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }) }),
+    (set) => ({
+      lang: "th", setLang: (lang) => set({ lang }),
+      sidebarCollapsed: false, setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+      reviewPlan: true, setReviewPlan: (reviewPlan) => set({ reviewPlan }),
+    }),
     {
       name: "scientist-prefs-v1",
       storage: createJSONStorage(() => safeStorage),
       version: 1,
-      partialize: (s) => ({ lang: s.lang, sidebarCollapsed: s.sidebarCollapsed }),
-      // unknown/garbage values fall back to defaults (th, expanded)
+      partialize: (s) => ({ lang: s.lang, sidebarCollapsed: s.sidebarCollapsed, reviewPlan: s.reviewPlan }),
+      // unknown/garbage values fall back to defaults (th, expanded, review on)
       merge: (p, cur) => {
-        const x = (p ?? {}) as { lang?: unknown; sidebarCollapsed?: unknown };
-        return { ...cur, lang: x.lang === "en" ? "en" : "th", sidebarCollapsed: x.sidebarCollapsed === true };
+        const x = (p ?? {}) as { lang?: unknown; sidebarCollapsed?: unknown; reviewPlan?: unknown };
+        return {
+          ...cur, lang: x.lang === "en" ? "en" : "th", sidebarCollapsed: x.sidebarCollapsed === true,
+          reviewPlan: x.reviewPlan !== false, // only an explicit opt-out disables the plan pause
+        };
       },
     },
   ),

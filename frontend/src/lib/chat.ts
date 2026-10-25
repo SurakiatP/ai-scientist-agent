@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { isItem, newId, safeStorage, storageFull, useHistoryStore } from "./history";
 import type { Progress } from "./progress";
-import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, Reference } from "./sse";
+import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, Reference, Search } from "./sse";
 
 // What the analyze stream taught us about this turn. Every field is optional because events arrive one at a time.
 export type TurnAnalysis = {
@@ -19,10 +19,11 @@ export type TurnAnalysis = {
 
 export type Turn = {
   id: string; question: string; createdAt: number;
-  status: "running" | "done" | "refused" | "error" | "stopped" | "interrupted";
+  status: "running" | "awaiting_plan" | "done" | "refused" | "error" | "stopped" | "interrupted";
   progress: Progress;
   mode?: AskMode;
   kind?: "analysis";
+  plan?: Search[]; // the approved plan: stored while awaiting review and kept as "the plan used" after approval
   answer?: { content: string; references: Reference[] };
   analysis?: TurnAnalysis;
   refused?: string; error?: string;
@@ -35,7 +36,7 @@ export const MAX_SESSIONS = 200;
 export const MAX_TURNS = 50;
 export const MAX_PROJECTS = 30;
 const personal: Project = { id: PERSONAL, name: "", createdAt: 0 };
-const STATUSES = ["running", "done", "refused", "error", "stopped", "interrupted"];
+const STATUSES = ["running", "awaiting_plan", "done", "refused", "error", "stopped", "interrupted"];
 
 const isStr = (v: unknown, max = Infinity): v is string => typeof v === "string" && v.length <= max;
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -63,6 +64,15 @@ const clampRef = (r: Reference): Reference => ({
     doi: r.paper.doi?.slice(0, 2048) ?? null, pmid: r.paper.pmid?.slice(0, 2048) ?? null, url: (r.paper.url ?? "").slice(0, 2048),
   },
 });
+
+// The review plan: at most 5 searches, every term non-empty (PlanCard blocks an empty term) and size-bounded.
+const PLAN_MAX = 5, PLAN_TERM = 200, PLAN_INSTR = 500;
+const isPlan = (v: unknown): v is Search[] =>
+  Array.isArray(v) && v.length > 0 && v.length <= PLAN_MAX &&
+  v.every((x) => isObj(x) && isStr(x.term, PLAN_TERM) && x.term.trim() !== "" && isStr(x.instructions, PLAN_INSTR));
+// Write side: clamp to the read limits above so a persisted turn can never fail validation on reload.
+const clampPlan = (p: Search[]): Search[] =>
+  p.slice(0, PLAN_MAX).map((x) => ({ term: x.term.slice(0, PLAN_TERM), instructions: x.instructions.slice(0, PLAN_INSTR) }));
 
 const STEPS: readonly AnalysisStep[] = ["profiling", "writing_script", "running", "repairing", "storing"];
 const FILE = 100, FILE_NAME = 500, STEP_MAX = 20, SCRIPT = 20_000, TABLE_MAX = 20, TABLE_ROWS = 200,
@@ -145,6 +155,7 @@ const clampPatch = (p: Partial<Turn>): Partial<Turn> => ({
   ...(p.refused !== undefined && { refused: p.refused.slice(0, REASON) }),
   ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef) } }),
   ...(p.analysis && { analysis: clampAnalysis(p.analysis) }),
+  ...(p.plan !== undefined && { plan: clampPlan(p.plan) }),
 });
 // Reuses history's item validator for the answer + references (its question/id/createdAt are filled in).
 const isTurn = (v: unknown): v is Turn => {
@@ -152,6 +163,8 @@ const isTurn = (v: unknown): v is Turn => {
   if (!t || !isStr(t.id, 100) || !isStr(t.question, 4000) || !isNum(t.createdAt) || !STATUSES.includes(t.status) || !isProgress(t.progress)) return false;
   if (t.mode !== undefined && t.mode !== "deep" && t.mode !== "quick") return false;
   if (t.kind !== undefined && t.kind !== "analysis") return false;
+  if (t.plan !== undefined && !isPlan(t.plan)) return false;
+  if (t.status === "awaiting_plan" && !t.plan) return false; // an awaiting turn must carry the plan it waits for
   if (t.refused !== undefined && !isStr(t.refused, 20_000)) return false;
   if (t.error !== undefined && !isStr(t.error, 2048)) return false;
   if (t.analysis !== undefined && !isAnalysis(t.analysis)) return false;

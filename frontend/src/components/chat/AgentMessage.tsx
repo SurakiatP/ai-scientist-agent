@@ -1,16 +1,17 @@
 "use client";
-import { memo } from "react";
+import { memo, useState } from "react";
 import { Box, Button, Stack, Typography } from "@mui/material";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import ReplyRoundedIcon from "@mui/icons-material/ReplyRounded";
 import { AnswerView } from "@/components/AnswerView";
 import { ReferenceList } from "@/components/ReferenceList";
 import { AnalysisArtifact } from "@/components/research/AnalysisArtifact";
+import { PlanCard, type PlanSearch } from "@/components/research/PlanCard";
 import { ProgressCard } from "@/components/research/ProgressCard";
 import { ReportActions } from "@/components/research/ReportActions";
 import type { Turn } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
-import { startAnalysis, startRun, useRunState } from "@/lib/run";
+import { approvePlan, cancelPlan, startAnalysis, startRun, useRunState } from "@/lib/run";
 import { focusComposer } from "./Composer";
 import { Starters } from "./EmptyChat";
 import { Time } from "./UserMessage";
@@ -20,6 +21,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const busy = !!useRunState().turnId;
   const { status } = turn;
   const analysis = turn.analysis;
+  const [planErr, setPlanErr] = useState(false); // approval can still fail (a run started elsewhere): say so, never idle silently
   const retry = () => {
     if (analysis) startAnalysis(sessionId, turn.question, analysis.fileId, analysis.fileName).catch(() => {});
     else startRun(sessionId, turn.question).catch(() => {});
@@ -32,7 +34,18 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
         <Typography sx={{ fontSize: "0.8125rem", fontWeight: 700, color: "primary.main" }}>{t.brand}</Typography>
         <Time ts={turn.createdAt} />
       </Box>
-      {analysis ? <AnalysisArtifact turn={turn} /> : status === "running" && <ProgressCard turn={turn} />}
+      {analysis ? <AnalysisArtifact turn={turn} /> : status === "awaiting_plan" && !!turn.plan ? (
+        // Plan review holds the turn: the plan card stands in for the progress strip until the user decides.
+        <Stack spacing={1.5}>
+          <PlanCard
+            searches={turn.plan} editable
+            onApprove={(plan: PlanSearch[]) => { setPlanErr(false); approvePlan(sessionId, turn.id, plan).catch(() => setPlanErr(true)); }}
+            onCancel={() => { setPlanErr(false); try { cancelPlan(sessionId, turn.id); } catch {} }}
+          />
+          <Typography aria-live="polite" sx={{ fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{t.awaitPlanNote}</Typography>
+          {planErr && <Typography role="status" sx={{ fontSize: "0.8125rem", color: "error.main" }}>{t.startFailed}</Typography>}
+        </Stack>
+      ) : status === "running" && <ProgressCard turn={turn} />}
       {status === "done" && !analysis && turn.answer && (
         <>
           <AnswerView content={turn.answer.content} references={turn.answer.references} scope={scope} />

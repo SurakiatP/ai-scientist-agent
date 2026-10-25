@@ -23,4 +23,23 @@ describe("prefs store", () => {
     localStorage.setItem(KEY, "{not json");
     expect((await load()).getState().lang).toBe("th");
   });
+
+  it("reviewPlan defaults to true", async () => {
+    expect((await load()).getState().reviewPlan).toBe(true);
+  });
+  it("persists setReviewPlan", async () => {
+    const s = await load();
+    s.getState().setReviewPlan(false);
+    expect(s.getState().reviewPlan).toBe(false);
+    expect(JSON.parse(localStorage.getItem(KEY)!).state.reviewPlan).toBe(false);
+    vi.resetModules();
+    expect((await load()).getState().reviewPlan).toBe(false);
+  });
+  it("reads garbage or missing reviewPlan as true, explicit false survives reload", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ state: { reviewPlan: "off" }, version: 1 }));
+    expect((await load()).getState().reviewPlan).toBe(true);
+    vi.resetModules();
+    localStorage.setItem(KEY, JSON.stringify({ state: { reviewPlan: false }, version: 1 }));
+    expect((await load()).getState().reviewPlan).toBe(false);
+  });
 });

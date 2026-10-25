@@ -164,3 +164,62 @@ describe("analysis turns", () => {
     expect(s.getState().sessions[0].turns[0]).toMatchObject({ status: "interrupted", analysis: { steps: ["running"] } });
   });
 });
+
+describe("plan turns", () => {
+  const plan = [{ term: "t1", instructions: "i1" }, { term: "t2", instructions: "" }];
+  const awaiting = (over: Record<string, unknown> = {}, id = "p1") => ({ ...turn(id, "awaiting_plan"), plan, ...over });
+
+  it("an awaiting_plan turn survives a reload with its plan", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [awaiting()])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns[0]).toMatchObject({ status: "awaiting_plan", plan });
+  });
+
+  it("a finished turn keeps its approved plan as the plan used", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [awaiting({ status: "done" }, "p2")])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns[0]).toMatchObject({ status: "done", plan });
+  });
+
+  it("drops turns whose stored plan is malformed, or an awaiting one without a plan", async () => {
+    const bad = [
+      awaiting({ plan: [] }, "a"),
+      awaiting({ plan: [{ term: "", instructions: "" }] }, "b"),
+      awaiting({ plan: [{ term: 1, instructions: "" }] }, "c"),
+      awaiting({ plan: [{ term: "t", instructions: 9 }] }, "d"),
+      awaiting({ plan: [...plan, plan[0], plan[0], plan[0], plan[0]] }, "e"), // six rows: one past the cap
+      awaiting({ plan: undefined }, "f"),
+      awaiting({ plan: "nope" }, "g"),
+    ];
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [...bad, awaiting({}, "good")])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns.map((t) => t.id)).toEqual(["good"]);
+  });
+
+  it("a whole-session term over the limit still fails the turn (write clamps keep this unreachable)", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [awaiting({ plan: [{ term: "x".repeat(201), instructions: "" }] }, "big")])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns).toEqual([]);
+  });
+
+  it("clamps oversized plan writes so they reload", async () => {
+    const s = await load();
+    const id = s.getState().newSession();
+    const big = { term: "x".repeat(9999), instructions: "y".repeat(9999) };
+    s.getState().addTurn(id, { ...turn("a", "awaiting_plan"), plan: Array.from({ length: 8 }, () => ({ ...big })) } as never);
+    vi.resetModules();
+    const t = (await load()).getState().sessions[0].turns[0];
+    expect(t.status).toBe("awaiting_plan");
+    expect(t.plan).toHaveLength(5);
+    for (const row of t.plan!) {
+      expect(row.term).toHaveLength(200);
+      expect(row.instructions).toHaveLength(500);
+    }
+  });
+
+  it("rehydrates a running plan turn as interrupted, the waiting one stays waiting", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [turn("r", "running"), awaiting()])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns.map((t) => t.status)).toEqual(["interrupted", "awaiting_plan"]);
+  });
+});
