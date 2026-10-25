@@ -15,7 +15,7 @@ export type HistoryTurn = { question: string; answer: string };
 export type AskOptions = { mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; planOnly?: boolean };
 
 export type StreamCode = "malformed" | "network" | "http";
-export type ApiError = { message: string; code?: StreamCode };
+export type ApiError = { message: string; code?: StreamCode; status?: number };
 export type StreamError = ApiError & { type: "error" };
 
 export type AskEvent =
@@ -89,7 +89,7 @@ async function* stream(url: string, init: RequestInit, signal: AbortSignal): Asy
     return;
   }
   if (!res.ok || !res.body) {
-    yield { type: "error", message: await failureDetail(res), code: "http" };
+    yield { type: "error", message: await failureDetail(res), code: "http", status: res.status };
     return;
   }
   const reader = res.body.getReader();
@@ -183,4 +183,12 @@ export async function uploadFile(file: File, signal: AbortSignal): Promise<Uploa
   }
   const kind = typeof data.kind === "string" ? data.kind : typeof data.content_type === "string" ? data.content_type : "";
   return { id: data.id, name: data.name, size: data.size, kind };
+}
+
+export type PreviewStage = "queued" | "preparing" | "layout" | "rendering";
+export type PreviewEvent = { type: "preview_status"; stage: PreviewStage } | { type: "preview_ready"; id: string; pages: number; bytes: number } | StreamError;
+
+export async function* streamPreview(payload: unknown, signal: AbortSignal): AsyncGenerator<PreviewEvent> {
+  const init: RequestInit = { method: "POST", headers: { "Content-Type": "application/json", Accept: "text/event-stream" }, body: JSON.stringify(payload), signal };
+  for await (const e of stream(`${API_BASE}/v1/async/reports/preview`, init, signal)) yield e as PreviewEvent;
 }

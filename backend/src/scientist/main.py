@@ -15,6 +15,8 @@ from scientist.routes_ask import router as ask_router
 from scientist.routes_analyze import router as analyze_router
 from scientist.routes_files import router as files_router
 from scientist.routes_reports import router as reports_router
+from scientist.routes_preview import router as preview_router
+from scientist.preview_store import PreviewStore
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +51,8 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     app = FastAPI(title="scientist", lifespan=lifespan)
     app.state.settings, app.state.gate = settings, RunGate(settings.max_concurrent_runs)
     app.state.analyze_gate = RunGate(settings.sandbox_max_concurrent)
+    app.state.preview_gate = RunGate(settings.preview_max_concurrent)
+    app.state.previews = PreviewStore(settings.preview_max_entries, settings.preview_ttl_seconds)
     app.state.store = store
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins,
                        allow_methods=["*"], allow_headers=["*"])
@@ -56,6 +60,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     app.include_router(files_router)
     app.include_router(analyze_router)
     app.include_router(reports_router)
+    app.include_router(preview_router)
 
     @app.get("/v1/health")
     async def health():

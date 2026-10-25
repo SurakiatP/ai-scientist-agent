@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     sandbox_max_concurrent: int = 3
     sandbox_output_max_bytes: int = 10_000_000
     analyze_max_tokens: int = 3000
+    preview_max_concurrent: int = 2  # document previews rendering at once; up to 10 more may wait, the rest get 429
+    preview_ttl_seconds: int = 600
+    preview_max_entries: int = 20
     contact_email: str = ""  # sent as mailto in the citation-check User-Agent (Crossref/NCBI polite pool)
 
 

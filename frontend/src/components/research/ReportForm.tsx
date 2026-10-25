@@ -1,17 +1,19 @@
 "use client";
 import { srOnly } from "@/lib/config";
-import { useEffect, useState } from "react";
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, MenuItem, Stack, Switch, TextField, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, MenuItem, Stack, Switch, Tab, Tabs, TextField, Typography, useMediaQuery, useTheme } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
 import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import type { Turn } from "@/lib/chat";
-import { draftIssue, errorText, initialDraft, LIM, blocksOf, useExport, type Draft, type Format } from "@/lib/exportReport";
+import { draftIssue, errorText, initialDraft, LIM, blocksOf, toPayload, useExport, type Draft, type Format } from "@/lib/exportReport";
 import { skeletonBar } from "@/lib/motion";
+import { usePreview } from "@/lib/preview";
 import { usePrefs, useT } from "@/lib/prefs";
 import type { Lang } from "@/lib/strings";
+import { PreviewPane } from "./PreviewPane";
 
 const fill = (s: string, v: Record<string, number>) => Object.entries(v).reduce((a, [k, n]) => a.replace(`{${k}}`, String(n)), s);
 const hidden = srOnly;
@@ -25,10 +27,11 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   const { busy, error, done, run } = useExport();
   useEffect(() => { useExport.getState().reset(); return () => useExport.getState().reset(); }, []);
   const issue = draftIssue(d);
+  const [view, setView] = useState<"edit" | "preview">("edit"); // narrow screens show one pane at a time
+  const preview = usePreview(useMemo(() => (issue ? null : toPayload(d, "pdf", turn)), [d, issue, turn]));
   const set = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
   const edit = (i: number, p: Partial<Draft["sections"][number]>) => set({ sections: d.sections.map((s, k) => (k === i ? { ...s, ...p } : s)) });
   const move = (i: number, by: -1 | 1) => { const a = [...d.sections]; [a[i], a[i + by]] = [a[i + by], a[i]]; set({ sections: a }); };
-  const refCount = d.refs ? Math.min(turn.answer?.references.length ?? 0, LIM.refs) : 0;
   const make = (f: Format) => { if (!issue) void run(d, f, turn); };
   return (
     <Dialog open onClose={busy ? undefined : onClose} fullScreen={full} maxWidth="lg" fullWidth aria-labelledby="rf-title">
@@ -36,9 +39,13 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
         <Box component="span" sx={{ flex: 1 }}>{t.fTitle}</Box>
         <IconButton aria-label={t.fCancel} onClick={onClose} disabled={!!busy} sx={{ width: 44, height: 44 }}><CloseRoundedIcon /></IconButton>
       </DialogTitle>
+      <Tabs value={view} onChange={(_, v) => setView(v)} variant="fullWidth" sx={{ display: { md: "none" }, borderBottom: 1, borderColor: "divider" }}>
+        <Tab value="edit" label={t.pvEditTab} sx={{ minHeight: 44 }} />
+        <Tab value="preview" label={t.pvTab} sx={{ minHeight: 44 }} />
+      </Tabs>
       <DialogContent dividers>
-        <Box sx={{ display: "grid", gap: 3, gridTemplateColumns: { xs: "1fr", md: "minmax(0,1fr) 280px" } }}>
-          <Stack spacing={2}>
+        <Box sx={{ display: "grid", gap: 3, gridTemplateColumns: { xs: "1fr", md: "minmax(0,1fr) minmax(300px,380px)" } }}>
+          <Stack spacing={2} sx={{ display: { xs: view === "edit" ? "flex" : "none", md: "flex" } }}>
             <TextField label={t.fDocTitle} value={d.title} onChange={(e) => set({ title: e.target.value })} required error={!d.title.trim()} helperText={!d.title.trim() ? t.fNeedTitle : `${d.title.length}/${LIM.title}`} slotProps={{ htmlInput: { maxLength: LIM.title } }} fullWidth />
             <TextField label={t.fSubtitle} value={d.subtitle} onChange={(e) => set({ subtitle: e.target.value })} slotProps={{ htmlInput: { maxLength: LIM.subtitle } }} fullWidth />
             <Stack direction="row" useFlexGap sx={{ gap: 2, flexWrap: "wrap", alignItems: "center" }}>
@@ -71,18 +78,8 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
               <Button variant="outlined" color="inherit" startIcon={<AddRoundedIcon />} disabled={d.sections.length >= LIM.sections} onClick={() => set({ sections: [...d.sections, { heading: "", text: "" }] })} sx={{ borderColor: "divider" }}>{t.fAdd}</Button>
             </Box>
           </Stack>
-          <Box component="aside" aria-label={t.fOutline} sx={{ alignSelf: "start", position: { md: "sticky" }, top: 0, border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.raised", p: 2 }}>
-            <Typography component="h3" sx={{ fontSize: "0.9375rem", fontWeight: 700, mb: 1 }}>{t.fOutline}</Typography>
-            <Typography sx={{ fontSize: "1rem", fontWeight: 700, overflowWrap: "anywhere" }}>{d.title || "—"}</Typography>
-            {d.subtitle && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{d.subtitle}</Typography>}
-            <Box component="ol" sx={{ m: 0, mt: 1.5, pl: 2.5, display: "grid", gap: 0.75 }}>
-              {d.sections.map((s, i) => (
-                <li key={i}><Typography component="span" sx={{ fontSize: "0.875rem", overflowWrap: "anywhere" }}>{s.heading || "—"}</Typography>{" "}
-                  <Typography component="span" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>({t.reportParagraphs.replace("{n}", String(blocksOf(s.text).length))})</Typography></li>
-              ))}
-            </Box>
-            {d.refs && refCount > 0 && <Typography sx={{ mt: 1.5, fontSize: "0.8125rem", color: "text.secondary" }}>{fill(t.fRefsN, { n: refCount })}</Typography>}
-            <Typography sx={{ mt: 1.5, fontSize: "0.75rem", color: "text.secondary", lineHeight: 1.6 }}>{t.idCheckNote}</Typography>
+          <Box sx={{ display: { xs: view === "preview" ? "block" : "none", md: "block" }, alignSelf: "start", position: { md: "sticky" }, top: 0 }}>
+            <PreviewPane p={preview} issue={!!issue} />
           </Box>
         </Box>
       </DialogContent>

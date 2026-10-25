@@ -13,6 +13,8 @@ const pop = keyframes`from { opacity: 0; transform: scale(0.5) rotate(-30deg); }
 const flash = keyframes`from { background-color: color-mix(in srgb, var(--mui-palette-primary-main) 34%, transparent); }`;
 
 const once = (k: ReturnType<typeof keyframes>, ms: number) => ({ [NO_PREF]: { animation: `${k} ${ms}ms ${ease} both` } });
+const fade = keyframes`from { opacity: 0; }`;
+export const enterFade = once(fade, 240);
 export const enterRise = once(rise, 320);
 export const enterSlide = once(slide, 280);
 export const enterPop = once(pop, 220);

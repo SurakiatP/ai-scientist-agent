@@ -56,7 +56,7 @@ describe("streamAsk", () => {
   });
   it("yields an error with the detail on a non-200 response", async () => {
     mockFetch([], { status: 422, json: { detail: [{ msg: "too long" }] } });
-    expect(await collect()).toEqual([{ type: "error", message: "too long", code: "http" }]);
+    expect(await collect()).toEqual([{ type: "error", message: "too long", code: "http", status: 422 }]);
   });
   it("stops when aborted", async () => {
     const ac = new AbortController();
@@ -130,7 +130,7 @@ describe("streamAnalyze", () => {
     expect((await collectAnalyze())[0]).toEqual({ type: "error", message: "", code: "network" });
 
     mockFetch([], { status: 422, json: { detail: [{ msg: "Value error, question is empty" }] } });
-    expect((await collectAnalyze())[0]).toEqual({ type: "error", message: "question is empty", code: "http" });
+    expect((await collectAnalyze())[0]).toEqual({ type: "error", message: "question is empty", code: "http", status: 422 });
   });
 
   it("stops yielding after abort", async () => {
