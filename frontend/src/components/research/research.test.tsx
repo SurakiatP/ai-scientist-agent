@@ -49,15 +49,33 @@ describe("ProgressCard", () => {
 });
 
 describe("ProgressPanel", () => {
-  it("compact counts equal the progress data", () => {
+  const states = (c: HTMLElement) => [...c.querySelectorAll("[data-step]")].map((x) => x.getAttribute("data-state"));
+  it("shows only counts the backend provides", () => {
     render(<ProgressPanel turn={turn(busy)} />);
-    expect(screen.getByText(t.stagesDone).nextSibling).toHaveTextContent("1/4");
-    expect(screen.getByText(t.sourcesFound).nextSibling).toHaveTextContent("7");
-    expect(screen.getByText(t.branchesDone).nextSibling).toHaveTextContent("1/2");
+    expect(screen.getByText(t.papersFound).nextSibling).toHaveTextContent("7");
+    expect(screen.getByText(t.searchesPlanned).nextSibling).toHaveTextContent("2");
+    expect(screen.getByText(t.searchesSummarised).nextSibling).toHaveTextContent("1");
+    expect(screen.getByText("1 / 4")).toBeInTheDocument();
+    expect(screen.getByText(t.idCheckNote)).toBeInTheDocument();
   });
-  it("marks all four stages done when finished", () => {
+  it("shows zeros, not invented numbers, for an empty run", () => {
+    render(<ProgressPanel turn={turn({})} />);
+    for (const k of [t.papersFound, t.searchesPlanned, t.searchesSummarised]) expect(screen.getByText(k).nextSibling).toHaveTextContent("0");
+  });
+  it("maps each phase to step states", () => {
+    const run = (ph: Progress["phase"], extra: Partial<Progress> = {}) => { const r = render(<ProgressPanel turn={turn({ phase: ph, ...extra })} />); const s = states(r.container); r.unmount(); return s; };
+    expect(run("planning")).toEqual(["active", "pending", "pending", "pending"]);
+    expect(run("searching")).toEqual(["done", "active", "pending", "pending"]);
+    expect(run("writing")).toEqual(["done", "done", "active", "pending"]);
+    expect(run("done")).toEqual(["done", "done", "done", "done"]);
+    expect(run("waiting", { waiting: 3 })).toEqual(["pending", "pending", "pending", "pending"]);
+  });
+  it("shows queue position while waiting and 4 / 4 when done", () => {
+    const r = render(<ProgressPanel turn={turn({ phase: "waiting", waiting: 3 })} />);
+    expect(screen.getByText(`${t.waiting} 3`)).toBeInTheDocument();
+    r.unmount();
     render(<ProgressPanel turn={turn({ ...busy, phase: "done" }, { status: "done" })} />);
-    expect(screen.getByText(t.stagesDone).nextSibling).toHaveTextContent("4/4");
+    expect(screen.getByText("4 / 4")).toBeInTheDocument();
   });
 });
 
