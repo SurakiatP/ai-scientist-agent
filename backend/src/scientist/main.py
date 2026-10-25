@@ -11,6 +11,7 @@ from scientist.gate import RunGate
 from scientist.object_store import ObjectStore, create_store
 from scientist.hermes import BranchRunner, HermesRuntime, sweep_containers
 from scientist.routes_ask import router as ask_router
+from scientist.routes_analyze import router as analyze_router
 from scientist.routes_files import router as files_router
 
 log = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                        allow_methods=["*"], allow_headers=["*"])
     app.include_router(ask_router)
     app.include_router(files_router)
+    app.include_router(analyze_router)
 
     @app.get("/v1/health")
     async def health():

@@ -41,6 +41,16 @@ class Settings(BaseSettings):
     upload_max_bytes_docx: int = 30_000_000
     upload_max_files: int = 10  # file parts accepted per request
     upload_max_total_bytes: int = 200_000_000  # request body cap
+    # data-analysis sandbox (docker run limits; see sandbox/ and scientist/sandbox.py)
+    sandbox_image: str = "scientist-sandbox:latest"
+    sandbox_mem: str = "2g"  # also --memory-swap, so swap is off
+    sandbox_cpus: float = 1.0
+    sandbox_timeout_s: int = 60
+    sandbox_pids: int = 128
+    sandbox_max_rows: int = 2_000_000
+    sandbox_max_concurrent: int = 3
+    sandbox_output_max_bytes: int = 10_000_000
+    analyze_max_tokens: int = 3000
     contact_email: str = ""  # sent as mailto in the citation-check User-Agent (Crossref/NCBI polite pool)
 
 
