@@ -13,12 +13,11 @@ import { ReferenceList } from "@/components/ReferenceList";
 import { AnalysisArtifact } from "@/components/research/AnalysisArtifact";
 import { PlanCard, type PlanSearch } from "@/components/research/PlanCard";
 import { ProgressCard } from "@/components/research/ProgressCard";
-import { ReportArtifact } from "@/components/research/ReportArtifact";
+import { ReportArtifact, reportId } from "@/components/research/ReportArtifact";
 import type { Turn } from "@/lib/chat";
 import { useInspector } from "@/lib/inspector";
-import { usePrefs, useT } from "@/lib/prefs";
+import { useT } from "@/lib/prefs";
 import { LogoMark } from "@/components/landing/Dropdown";
-import { downloadReport } from "@/components/research/ReportActions";
 import { approvePlan, cancelPlan, startAnalysis, startRun, useRunState } from "@/lib/run";
 import { focusComposer } from "./Composer";
 import { Starters } from "./EmptyChat";
@@ -26,7 +25,11 @@ import { avatarSx, Time } from "./UserMessage";
 
 function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }) {
   const t = useT();
-  const lang = usePrefs((x) => x.lang);
+  const [reportOpen, setReportOpen] = useState(false);
+  const showReport = () => { // jump to the report card and expand it; no second download path
+    setReportOpen(true);
+    setTimeout(() => { document.getElementById(reportId(turn.id))?.scrollIntoView?.({ block: "nearest" }); document.getElementById(`${reportId(turn.id)}-toggle`)?.focus(); }, 0);
+  };
   const busy = !!useRunState().turnId;
   const { status } = turn;
   const analysis = turn.analysis;
@@ -76,9 +79,9 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
             <Button variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={focusComposer}>{t.askFollowUp}</Button>
             <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={refs.length === 0} sx={{ borderColor: "divider" }}
               onClick={(e) => openInspector({ ...scope, refId: refs[0].id }, e.currentTarget)}>{t.openEvidence}</Button>
-            <Button variant="outlined" color="inherit" startIcon={<BarChartRoundedIcon />} sx={{ borderColor: "divider" }} onClick={() => downloadReport(sessionId, turn, lang)}>{t.makeReport}</Button>
+            <Button variant="outlined" color="inherit" startIcon={<BarChartRoundedIcon />} sx={{ borderColor: "divider" }} aria-controls={reportId(turn.id)} onClick={showReport}>{t.makeReport}</Button>
           </Stack>
-          <ReportArtifact sessionId={sessionId} turn={turn} />
+          <ReportArtifact sessionId={sessionId} turn={turn} open={reportOpen} onToggle={() => setReportOpen((o) => !o)} />
         </>
       )}
       {text && status === "refused" ? (

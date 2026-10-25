@@ -6,7 +6,7 @@ import { usePrefs } from "@/lib/prefs";
 import { API_BASE } from "@/lib/config";
 import { strings } from "@/lib/strings";
 import type { Turn, TurnAnalysis } from "@/lib/chat";
-import { AnalysisArtifact, formatSeconds, missingPercent, stepSeconds } from "./AnalysisArtifact";
+import { AnalysisArtifact, cellText, formatSeconds, missingPercent, stepSeconds } from "./AnalysisArtifact";
 
 const t = strings.en;
 const base = (analysis: TurnAnalysis, status: Turn["status"] = "done"): Turn => ({
@@ -138,5 +138,15 @@ describe("AnalysisArtifact", () => {
     tab(t.analysisTabCode);
     fireEvent.click(screen.getByRole("button", { name: t.analysisCopyCode }));
     expect(await screen.findByText(t.copyFailed)).toBeInTheDocument();
+  });
+});
+
+describe("cellText", () => {
+  it("formats numbers for display only", () => {
+    expect(cellText(0.6666666667)).toBe("0.67");
+    expect(cellText(66.6666666667)).toBe("66.67");
+    expect(cellText(12345)).toBe("12,345");
+    expect(cellText("0.6666666667")).toBe("0.6666666667");
+    expect(formatSeconds(0.01)).toBe("<0.1 s");
   });
 });

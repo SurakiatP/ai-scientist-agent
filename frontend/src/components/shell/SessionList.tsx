@@ -23,7 +23,7 @@ export function SessionList({ query, onPick }: { query: string; onPick?: () => v
   const hydrated = useHydrated(); // persisted store is browser-only: first render must match the server
   const activeId = useChatStore((s) => s.activeId), setActive = useChatStore((s) => s.setActive);
   const storeSessions = useChatStore((s) => s.sessions), store = useChatStore.getState();
-  const sessions = hydrated ? storeSessions : [];
+  const sessions = hydrated ? storeSessions.filter((s) => s.turns.length || s.title) : []; // blank chats are not history
   const { sessionId: runningId } = useRunState();
   const [edit, setEdit] = useState<{ id: string; mode: "rename" | "delete" } | null>(null);
   const done = (id: string) => { setEdit(null); focusKebab(id); };

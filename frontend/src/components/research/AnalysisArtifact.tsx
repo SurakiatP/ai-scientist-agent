@@ -32,6 +32,7 @@ export function stepSeconds(timings: Record<string, number> | undefined, step: A
 
 export function formatSeconds(seconds: number, unit: { minute: string; second: string } = { minute: "min", second: "s" }): string {
   const round = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1);
+  if (seconds > 0 && seconds < 0.05) return `<0.1 ${unit.second}`; // never "0.0"
   if (seconds < 60) return `${round(seconds)} ${unit.second}`;
   const m = Math.floor(seconds / 60), s = Math.round((seconds % 60) * 10) / 10;
   return s ? `${m} ${unit.minute} ${round(s)} ${unit.second}` : `${m} ${unit.minute}`;
@@ -49,7 +50,9 @@ export function missingPercent(a: TurnAnalysis): number | null {
 }
 
 const artifactHref = (url: string) => (/^\/[^/]/.test(url) ? API_BASE + url : "");
-const cellText = (v: unknown) => (v === null || v === undefined ? "—" : typeof v === "string" ? v : typeof v === "object" ? JSON.stringify(v) : String(v));
+// Display only (CSV downloads keep the stored values): integers as-is, other numbers max 2 decimals, thousands separators.
+export const cellText = (v: unknown) => (v === null || v === undefined ? "—" : typeof v === "number" && Number.isFinite(v) ? v.toLocaleString("en-US", { maximumFractionDigits: 2 }) : typeof v === "string" ? v : typeof v === "object" ? JSON.stringify(v) : String(v));
+const numericCols = (table: { columns: unknown[]; rows: unknown[][] }) => table.columns.map((_, ci) => { const vals = table.rows.map((r) => r?.[ci]).filter((v) => v !== null && v !== undefined); return vals.length > 0 && vals.every((v) => typeof v === "number"); });
 const stepLabel = (s: AnalysisStep, t: Strings) => ({
   profiling: t.analysisStepProfiling, writing_script: t.analysisStepWriting, running: t.analysisStepRunning,
   repairing: t.analysisStepRepairing, storing: t.analysisStepStoring,
@@ -173,7 +176,7 @@ function Tables({ a, t }: { a: TurnAnalysis; t: Strings }) {
   const tables = a.tables ?? [];
   return (
     <Stack spacing={2}>
-      {!tables.length ? <Empty>{t.analysisNoTables}</Empty> : tables.map((table, i) => (
+      {!tables.length ? <Empty>{t.analysisNoTables}</Empty> : tables.map((table, i) => { const num = numericCols(table); return (
         <Box key={`${table.name}#${i}`}>
           <Stack direction="row" useFlexGap sx={{ alignItems: "baseline", justifyContent: "space-between", gap: 1, mb: 0.75 }}>
             <Typography component="h4" sx={{ m: 0, fontSize: "0.875rem", fontWeight: 700, overflowWrap: "anywhere" }}>{table.name || t.analysisTable}</Typography>
@@ -185,7 +188,7 @@ function Tables({ a, t }: { a: TurnAnalysis; t: Strings }) {
               <Box component="thead">
                 <Box component="tr">
                   {table.columns.map((c, ci) => (
-                    <Box component="th" key={`${c}#${ci}`} scope="col" sx={{ position: "sticky", top: 0, bgcolor: "surface.shell", borderBottom: 1, borderColor: "divider", px: 1.25, py: 1, textAlign: "left", fontWeight: 700, whiteSpace: "nowrap" }}>{c}</Box>
+                    <Box component="th" key={`${c}#${ci}`} scope="col" sx={{ position: "sticky", top: 0, bgcolor: "surface.shell", borderBottom: 1, borderColor: "divider", px: 1.25, py: 1, textAlign: num[ci] ? "right" : "left", fontWeight: 700, whiteSpace: "nowrap" }}>{c}</Box>
                   ))}
                 </Box>
               </Box>
@@ -193,7 +196,7 @@ function Tables({ a, t }: { a: TurnAnalysis; t: Strings }) {
                 {table.rows.map((row, ri) => (
                   <Box component="tr" key={ri} sx={{ "&:nth-of-type(even)": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 4%, transparent)" } }}>
                     {table.columns.map((_, ci) => (
-                      <Box component="td" key={ci} sx={{ borderTop: 1, borderColor: "divider", px: 1.25, py: 0.9, verticalAlign: "top", minWidth: 72, maxWidth: 320, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontVariantNumeric: "tabular-nums" }}>
+                      <Box component="td" key={ci} sx={{ borderTop: 1, borderColor: "divider", px: 1.25, py: 0.9, verticalAlign: "top", minWidth: 72, textAlign: num[ci] ? "right" : "left", maxWidth: 320, whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontVariantNumeric: "tabular-nums" }}>
                         {cellText(row?.[ci])}
                       </Box>
                     ))}
@@ -203,7 +206,7 @@ function Tables({ a, t }: { a: TurnAnalysis; t: Strings }) {
             </Box>
           </Box>
         </Box>
-      ))}
+      ); })}
     </Stack>
   );
 }
@@ -214,6 +217,7 @@ function Preview({ a, t }: { a: TurnAnalysis; t: Strings }) {
   const fig = (a.artifacts ?? []).find((x) => x.kind === "figure" && artifactHref(x.url));
   if (!table && !fig) return null;
   const rows = table?.rows.slice(0, 5) ?? [];
+  const num = table ? numericCols(table) : [];
   const head = { fontSize: "0.8125rem", fontWeight: 700, mb: 0.75, overflowWrap: "anywhere" } as const;
   return (
     <Box sx={{ display: "grid", gap: 2, gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))" }}>
@@ -223,12 +227,12 @@ function Preview({ a, t }: { a: TurnAnalysis; t: Strings }) {
           <Box sx={{ maxWidth: "100%", overflowX: "auto", border: 1, borderColor: "divider", borderRadius: 1.5, scrollbarWidth: "thin" }}>
             <Box component="table" sx={{ borderCollapse: "collapse", width: "100%", fontSize: "0.75rem" }}>
               <Box component="thead"><Box component="tr">
-                {table.columns.map((c, ci) => <Box component="th" key={`${c}#${ci}`} scope="col" sx={{ bgcolor: "surface.shell", borderBottom: 1, borderColor: "divider", px: 1, py: 0.75, textAlign: "left", fontWeight: 700, whiteSpace: "nowrap" }}>{c}</Box>)}
+                {table.columns.map((c, ci) => <Box component="th" key={`${c}#${ci}`} scope="col" sx={{ bgcolor: "surface.shell", borderBottom: 1, borderColor: "divider", px: 1, py: 0.75, textAlign: num[ci] ? "right" : "left", fontWeight: 700, whiteSpace: "nowrap" }}>{c}</Box>)}
               </Box></Box>
               <Box component="tbody">
                 {rows.map((row, ri) => (
                   <Box component="tr" key={ri}>
-                    {table.columns.map((_, ci) => <Box component="td" key={ci} sx={{ borderTop: 1, borderColor: "divider", px: 1, py: 0.6, maxWidth: 200, overflowWrap: "anywhere", fontVariantNumeric: "tabular-nums" }}>{cellText(row?.[ci])}</Box>)}
+                    {table.columns.map((_, ci) => <Box component="td" key={ci} sx={{ borderTop: 1, borderColor: "divider", px: 1, py: 0.6, maxWidth: 200, textAlign: num[ci] ? "right" : "left", overflowWrap: "anywhere", fontVariantNumeric: "tabular-nums" }}>{cellText(row?.[ci])}</Box>)}
                   </Box>
                 ))}
               </Box>

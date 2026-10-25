@@ -211,11 +211,14 @@ export const useChatStore = create<State>()(
       projects: [personal], sessions: [], activeId: null, activeProjectId: PERSONAL, legacyImported: false,
       newSession: (projectId) => {
         const id = newId(), now = Date.now();
+        let reused = "";
         set((s) => {
           const pid = projectId && hasProject(s, projectId) ? projectId : PERSONAL;
+          const blank = s.sessions.find((x) => x.projectId === pid && !x.turns.length && !x.title); // never pile up blank chats
+          if (blank) { reused = blank.id; return { activeId: blank.id, activeProjectId: pid }; }
           return { sessions: capSessions([{ id, projectId: pid, title: "", createdAt: now, updatedAt: now, turns: [] }, ...s.sessions]), activeId: id, activeProjectId: pid };
         });
-        return id;
+        return reused || id;
       },
       setActive: (id) =>
         set((s) => {

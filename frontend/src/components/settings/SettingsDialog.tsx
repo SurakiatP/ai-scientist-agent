@@ -2,9 +2,8 @@
 import { useEffect, useState } from "react";
 import { Box, Button, Dialog, DialogContent, DialogTitle, IconButton, Radio, RadioGroup, Stack, Switch, Typography, useColorScheme } from "@mui/material";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
-import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
+import LanguageOutlinedIcon from "@mui/icons-material/LanguageOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
-import SettingsBrightnessOutlinedIcon from "@mui/icons-material/SettingsBrightnessOutlined";
 import { API_BASE } from "@/lib/config";
 import { useChatStore } from "@/lib/chat";
 import { useHistoryStore, useHydrated, useStorageFull } from "@/lib/history";
@@ -28,38 +27,37 @@ function useHealth(open: boolean): Health {
   return h;
 }
 
-// One selectable card: a real radio (name = title, description linked) so keyboard and screen readers behave like a plain radio group.
-function OptionCard({ id, value, title, desc, icon, checked }: { id: string; value: string; title: string; desc: string; icon?: React.ReactNode; checked: boolean }) {
+// One short radio option: label wraps the real radio so keyboard and screen readers behave like a plain radio group.
+function Option({ id, value, title, checked }: { id: string; value: string; title: string; checked: boolean }) {
   return (
     <Box component="label" htmlFor={id} sx={{
-      display: "flex", alignItems: "flex-start", gap: 1.25, minHeight: 44, p: 1.75, borderRadius: 2, cursor: "pointer",
-      border: 1, borderColor: checked ? "primary.main" : "divider", bgcolor: checked ? "color-mix(in srgb, var(--mui-palette-primary-main) 8%, transparent)" : "transparent",
-      boxShadow: checked ? "0 0 0 1px var(--mui-palette-primary-main) inset" : "none",
+      display: "flex", alignItems: "center", gap: 0.5, minHeight: 44, pr: 1.5, borderRadius: 2, cursor: "pointer", whiteSpace: "nowrap",
+      fontSize: "0.9375rem", fontWeight: checked ? 700 : 500,
       "&:focus-within": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 },
-      "&:hover": { borderColor: "primary.main" },
     }}>
-      <Radio id={id} value={value} disableRipple sx={{ p: 0.5, mt: -0.25, "&.Mui-focusVisible": { outline: 0 } }}
-        slotProps={{ input: { "aria-label": title, "aria-describedby": `${id}-d` } }} />
-      {icon && <Box aria-hidden sx={{ color: "primary.main", display: "grid", mt: 0.25 }}>{icon}</Box>}
-      <Box sx={{ minWidth: 0 }}>
-        <Typography sx={{ fontWeight: 700, fontSize: "0.9375rem", lineHeight: 1.5 }}>{title}</Typography>
-        <Typography id={`${id}-d`} sx={{ fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.6 }}>{desc}</Typography>
-      </Box>
+      <Radio id={id} value={value} disableRipple checked={checked} sx={{ p: 1, "&.Mui-focusVisible": { outline: 0 } }} slotProps={{ input: { "aria-label": title } }} />
+      {title}
     </Box>
   );
 }
 
-function Section({ labelId, title, note, children, cols }: { labelId: string; title: string; note?: string; children: React.ReactNode; cols: number }) {
+// Settings row: icon + title/description left, compact radio group (or control) right; stacks under 600px.
+function Section({ labelId, title, note, icon, below, children }: { labelId: string; title: string; note?: string; icon?: React.ReactNode; below?: boolean; children: React.ReactNode }) {
   return (
-    <Box component="section" sx={{ display: "grid", gap: 2, gridTemplateColumns: { xs: "1fr", md: "150px 1fr" }, p: 2, border: 1, borderColor: "divider", borderRadius: 3, bgcolor: "surface.raised" }}>
-      <Box>
-        <Typography id={labelId} component="h3" sx={{ fontSize: "0.9375rem", fontWeight: 700, lineHeight: 1.4 }}>{title}</Typography>
-        {note && <Typography sx={{ mt: 0.5, fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.6 }}>{note}</Typography>}
+    <Box component="section" sx={{ display: "flex", flexDirection: below ? "column" : { xs: "column", sm: "row" }, alignItems: below ? "stretch" : { sm: "center" }, justifyContent: "space-between", gap: { xs: 1.25, sm: 2 }, px: 2, py: 1.5, border: 1, borderColor: "divider", borderRadius: 3, bgcolor: "surface.raised" }}>
+      <Box sx={{ display: "flex", gap: 1.5, minWidth: 0, flex: 1 }}>
+        {icon && <Box aria-hidden sx={{ color: "primary.main", display: "grid", mt: 0.25, flexShrink: 0 }}>{icon}</Box>}
+        <Box sx={{ minWidth: 0 }}>
+          <Typography id={labelId} component="h3" sx={{ fontSize: "0.9375rem", fontWeight: 700, lineHeight: 1.4 }}>{title}</Typography>
+          {note && <Typography sx={{ mt: 0.25, fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.5 }}>{note}</Typography>}
+        </Box>
       </Box>
-      <Box sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: `repeat(${cols}, minmax(0, 1fr))` }, alignContent: "start" }}>{children}</Box>
+      {children}
     </Box>
   );
 }
+
+const group = { display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 0.5, px: 1, border: 1, borderColor: "divider", borderRadius: 2, flexShrink: 0 } as const;
 
 export function SettingsDialog() {
   const full = useStorageFull();
@@ -78,7 +76,7 @@ export function SettingsDialog() {
   const curLang = hydrated ? lang : "th";
   const curMode = mode ?? "system";
   return (
-    <Dialog open={open} onClose={close} fullWidth maxWidth="sm" aria-labelledby="settings-title" slotProps={{ paper: { sx: { borderRadius: 3, backgroundImage: "none", bgcolor: "background.default" } } }}>
+    <Dialog open={open} onClose={close} fullWidth maxWidth={false} aria-labelledby="settings-title" slotProps={{ paper: { sx: { maxWidth: 640, borderRadius: 3, backgroundImage: "none", bgcolor: "background.default" } } }}>
       <DialogTitle id="settings-title" sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", pb: 0.5 }}>
         <Box component="span">
           <Typography component="span" sx={{ display: "block", fontSize: "1.375rem", fontWeight: 700, lineHeight: 1.3 }}>{t.settingsTitle}</Typography>
@@ -87,32 +85,29 @@ export function SettingsDialog() {
         <IconButton aria-label={t.close} onClick={close} sx={{ width: 44, height: 44 }}><CloseRoundedIcon /></IconButton>
       </DialogTitle>
       <DialogContent>
-        <Stack spacing={2} sx={{ pt: 1.5 }}>
-          <Section labelId="lang-l" title={t.language} note={t.langNote} cols={2}>
-            <RadioGroup aria-labelledby="lang-l" value={curLang} onChange={(_, v) => setLang(v === "en" ? "en" : "th")} sx={{ display: "contents" }}>
-              <OptionCard id="lang-th" value="th" title="ไทย" desc={t.langThDesc} checked={curLang === "th"} />
-              <OptionCard id="lang-en" value="en" title="English" desc={t.langEnDesc} checked={curLang === "en"} />
+        <Stack spacing={1.5} sx={{ pt: 1 }}>
+          <Section labelId="lang-l" title={t.language} note={t.langNote} icon={<LanguageOutlinedIcon />}>
+            <RadioGroup aria-labelledby="lang-l" value={curLang} onChange={(_, v) => setLang(v === "en" ? "en" : "th")} sx={group}>
+              <Option id="lang-th" value="th" title="ไทย" checked={curLang === "th"} />
+              <Option id="lang-en" value="en" title="English" checked={curLang === "en"} />
             </RadioGroup>
           </Section>
-          <Section labelId="theme-l" title={t.themeLabel} note={t.themeNote} cols={3}>
-            <RadioGroup aria-labelledby="theme-l" value={curMode} onChange={(_, v) => setMode(v as "light" | "dark" | "system")} sx={{ display: "contents" }}>
-              <OptionCard id="theme-light" value="light" title={t.themeLight} desc={t.themeLightDesc} icon={<LightModeOutlinedIcon />} checked={curMode === "light"} />
-              <OptionCard id="theme-dark" value="dark" title={t.themeDark} desc={t.themeDarkDesc} icon={<DarkModeOutlinedIcon />} checked={curMode === "dark"} />
-              <OptionCard id="theme-system" value="system" title={t.themeSystem} desc={t.themeSystemDesc} icon={<SettingsBrightnessOutlinedIcon />} checked={curMode === "system"} />
+          <Section labelId="theme-l" title={t.themeLabel} note={t.themeNote} icon={<LightModeOutlinedIcon />}>
+            <RadioGroup aria-labelledby="theme-l" value={curMode} onChange={(_, v) => setMode(v as "light" | "dark" | "system")} sx={group}>
+              <Option id="theme-light" value="light" title={t.themeLight} checked={curMode === "light"} />
+              <Option id="theme-dark" value="dark" title={t.themeDark} checked={curMode === "dark"} />
+              <Option id="theme-system" value="system" title={t.themeSystem} checked={curMode === "system"} />
             </RadioGroup>
           </Section>
-          <Section labelId="reviewplan-l" title={t.reviewPlan} cols={1}>
-            <Stack direction="row" useFlexGap spacing={1.5} sx={{ alignItems: "center", p: 1.75, border: 1, borderColor: "divider", borderRadius: 2 }}>
-              <Switch
-                checked={hydrated ? reviewPlan : true}
-                onChange={(_, v) => setReviewPlan(v)}
-                slotProps={{ input: { "aria-labelledby": "reviewplan-l" } }}
-              />
-              <Typography sx={{ fontSize: "0.875rem", color: "text.secondary", lineHeight: 1.7, minWidth: 0 }}>{t.reviewPlanNote}</Typography>
-            </Stack>
+          <Section labelId="reviewplan-l" title={t.reviewPlan} note={t.reviewPlanNote}>
+            <Switch
+              checked={hydrated ? reviewPlan : true}
+              onChange={(_, v) => setReviewPlan(v)}
+              slotProps={{ input: { "aria-labelledby": "reviewplan-l" } }}
+            />
           </Section>
-          <Section labelId="data-l" title={t.dataTitle} note={t.dataNote} cols={1}>
-            <Stack spacing={1} sx={{ p: 1.75, border: 1, borderColor: "divider", borderRadius: 2 }}>
+          <Section labelId="data-l" title={t.dataTitle} note={t.dataNote} below>
+            <Stack spacing={1}>
               {full && <Typography role="status" sx={{ fontSize: "0.875rem", color: "error.main" }}>{t.storageFull}</Typography>}
               {confirm ? (
                 <Stack role="group" aria-label={t.deleteAllConfirm} spacing={1}>

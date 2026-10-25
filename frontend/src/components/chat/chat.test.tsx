@@ -164,7 +164,9 @@ describe("Composer", () => {
   });
 
   it("draft is per session", () => {
-    const a = mk(), b = mk();
+    const a = mk();
+    useChatStore.getState().renameSession(a, "A"); // a named chat is not blank, so the next newSession is a distinct one
+    const b = mk();
     const { unmount } = render(<Composer sessionId={a} />);
     type("only in a");
     unmount();
@@ -221,7 +223,8 @@ describe("Thread", () => {
   it("copy failure shows feedback", async () => {
     Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("no")) }, configurable: true });
     render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "x", references: [] } })} />);
-    fireEvent.click(screen.getByRole("button", { name: t.copyAnswer }));
+    fireEvent.click(screen.getByRole("button", { name: t.makeReport })); // report card is collapsed until asked for
+    fireEvent.click(await screen.findByRole("button", { name: t.copyAnswer }));
     expect(await screen.findByText(t.copyFailed)).toBeInTheDocument();
   });
 
@@ -381,5 +384,14 @@ describe("English starters", () => {
     render(<EmptyChat sessionId={mk()} />);
     expect(screen.getByRole("button", { name: sampleQuestionsEn[0] })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: sampleQuestions[0] })).toBeNull();
+  });
+});
+
+describe("report card", () => {
+  it("is collapsed by default, expands on Create report draft, and has one download path", async () => {
+    render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "A", references: [] } })} />);
+    expect(screen.queryByRole("button", { name: t.downloadMd })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: t.makeReport }));
+    expect(await screen.findAllByRole("button", { name: t.downloadMd })).toHaveLength(1);
   });
 });

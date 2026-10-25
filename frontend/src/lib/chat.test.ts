@@ -227,3 +227,13 @@ describe("plan turns", () => {
     expect(s.getState().sessions[0].turns.map((t) => t.status)).toEqual(["interrupted", "awaiting_plan"]);
   });
 });
+
+describe("newSession blank reuse", () => {
+  it("returns the existing blank chat of the project instead of piling up", async () => {
+    const store = await load();
+    store.getState().clearAll();
+    const a = store.getState().newSession();
+    expect(store.getState().newSession()).toBe(a);
+    expect(store.getState().sessions).toHaveLength(1);
+  });
+});
