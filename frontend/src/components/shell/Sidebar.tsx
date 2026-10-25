@@ -6,6 +6,7 @@ import { Box, Button, IconButton, InputAdornment, Stack, TextField, Typography }
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import EditSquareIcon from "@mui/icons-material/EditSquare";
+import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import FolderCopyOutlinedIcon from "@mui/icons-material/FolderCopyOutlined";
 import FolderOpenOutlinedIcon from "@mui/icons-material/FolderOpenOutlined";
 import LanguageRoundedIcon from "@mui/icons-material/LanguageRounded";
@@ -63,12 +64,17 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
   return (
     <Stack component="nav" aria-label={t.sidebar} sx={{ height: "100%", p: 1.25, gap: 1, bgcolor: "surface.shell", overflowY: "auto" }}>
       <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", px: 0.5, minHeight: 44 }}>
-        <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-          <Mark /><Typography sx={{ fontWeight: 600, fontSize: "1.0625rem", letterSpacing: "-0.01em" }}>{t.brand}</Typography>
+        {/* the brand is a link to the landing page too (same target as the home icon) */}
+        <Stack component={Link} href="/" aria-label={`${t.brand}: ${t.goHome}`} onClick={() => onPick?.()} direction="row" spacing={1}
+          sx={{ alignItems: "center", minHeight: 44, px: 0.5, mx: -0.5, borderRadius: 1.5, color: "text.primary", textDecoration: "none", "&:hover": { bgcolor: "action.hover" } }}>
+          <Mark /><Typography component="span" sx={{ fontWeight: 600, fontSize: "1.0625rem", letterSpacing: "-0.01em" }}>{t.brand}</Typography>
         </Stack>
-        {onCollapse && (
-          <IconButton aria-label={t.collapseSidebar} onClick={onCollapse} sx={{ color: "text.secondary" }}><ViewSidebarOutlinedIcon /></IconButton>
-        )}
+        <Stack direction="row" sx={{ alignItems: "center" }}>
+          <IconButton component={Link} href="/" aria-label={t.goHome} title={t.goHome} onClick={() => onPick?.()} sx={{ color: "text.secondary" }}><HomeOutlinedIcon /></IconButton>
+          {onCollapse && (
+            <IconButton aria-label={t.collapseSidebar} onClick={onCollapse} sx={{ color: "text.secondary" }}><ViewSidebarOutlinedIcon /></IconButton>
+          )}
+        </Stack>
       </Stack>
       <Button id="new-chat" variant="outlined" startIcon={<EditSquareIcon />} onClick={newChat}
         sx={{ justifyContent: "flex-start", gap: 0.5, px: 1.5, minHeight: { xs: 44, md: 40 }, borderRadius: 1.5, fontSize: "0.875rem", borderColor: "primary.main", bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 12%, transparent)", "&:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 20%, transparent)", borderColor: "primary.main" } }}>
