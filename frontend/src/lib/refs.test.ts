@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sourceHost } from "./refs";
+import { citeLabel, sourceHost } from "./refs";
 
 const p = (o: Record<string, unknown>) => ({ title: "t", authors: [], year: null, doi: null, pmid: null, url: "", ...o }) as never;
 
@@ -18,4 +18,12 @@ describe("sourceHost", () => {
     expect(sourceHost(p({ url: "javascript:alert(1)" }))).toBe("");
     expect(sourceHost(p({ url: "ftp://example.org/x" }))).toBe("");
   });
+});
+
+describe("citeLabel", () => {
+  const q = (o: Partial<Parameters<typeof sourceHost>[0]>) => ({ title: "T", authors: [], year: null, doi: null, pmid: null, url: null, ...o }) as Parameters<typeof sourceHost>[0];
+  it("uses the publisher host when the paper has its own url", () => expect(citeLabel(q({ url: "https://www.nature.com/a" }))).toBe("nature.com"));
+  it("uses author and year when only a DOI resolver is known", () => expect(citeLabel(q({ doi: "10.1000/x", authors: ["Chen J", "Mei J"], year: 2024 }))).toBe("Chen et al. 2024"));
+  it("single author has no et al.", () => expect(citeLabel(q({ doi: "10.1000/x", authors: ["Komor AC"], year: 2016 }))).toBe("Komor 2016"));
+  it("falls back to the host when there is no author or year", () => expect(citeLabel(q({ doi: "10.1000/x" }))).toBe("doi.org"));
 });

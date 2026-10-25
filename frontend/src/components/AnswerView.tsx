@@ -6,7 +6,7 @@ import { Box } from "@mui/material";
 import { useInspector } from "@/lib/inspector";
 import { revealStagger } from "@/lib/motion";
 import { useT } from "@/lib/prefs";
-import { sourceHost } from "@/lib/refs";
+import { citeLabel } from "@/lib/refs";
 import type { Reference } from "@/lib/sse";
 
 // "[1]" / "[2][3]" -> link to #ref-N so a click jumps to (and :target highlights) the reference.
@@ -38,7 +38,7 @@ export function AnswerView({ content, references = [], scope, reveal }: { conten
     const text = (Array.isArray(children) ? children.join("") : String(children ?? "")).replace(/[[\]]/g, "");
     const list = text.split(",").filter(Boolean);
     const first = byId.get(list[0] ?? "");
-    const host = first?.paper ? sourceHost(first.paper) : "";
+    const host = first?.paper ? citeLabel(first.paper) : "";
     const label = first ? `${t.citeRef} ${list.join(", ")}${first.paper ? `: ${first.paper.title}` : ""}` : undefined;
     return { label, body: host ? <><span className="cite-host">{host}</span>{list.length > 1 && <span className="cite-more">+{list.length - 1}</span>}</> : `[${list.join(",")}]` };
   };

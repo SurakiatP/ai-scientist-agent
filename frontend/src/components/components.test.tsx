@@ -71,8 +71,12 @@ describe("AnswerView", () => {
     expect(a).toHaveAttribute("href", "#ref-1");
   });
   it("falls back to [id] when the source has no host", () => {
-    render(<AnswerView references={[ref("1", "unverified", { url: "" })]} content="Claim [1]." />);
+    render(<AnswerView references={[ref("1", "unverified", { url: "", authors: [], year: null })]} content="Claim [1]." />);
     expect(screen.getByRole("link", { name: /1: Paper 1/ })).toHaveTextContent("[1]");
+  });
+  it("shows author and year when the only host is the DOI resolver", () => {
+    render(<AnswerView references={[ref("1", "verified", { url: "", doi: "10.1000/x", authors: ["Chen J", "Mei J"], year: 2024 })]} content="Claim [1]." />);
+    expect(screen.getByRole("link", { name: /1: Paper 1/ })).toHaveTextContent("Chen et al. 2024");
   });
   it("cite keeps unknown ids out of a grouped chip", () => {
     expect(cite("a [1][9]", new Set(["1"]))).toBe("a [[1]](#ref-1)[9]");

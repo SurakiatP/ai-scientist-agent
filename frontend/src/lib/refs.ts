@@ -39,3 +39,13 @@ export function sourceHost(p: Reference["paper"]): string {
   if (!u) return "";
   return new URL(u).hostname.replace(/\.$/, "").replace(/^www\./, "");
 }
+
+// Chip text: the publisher host when the paper has its own url; a resolver host (doi.org) names nobody, so use "Author year".
+const RESOLVERS = new Set(["doi.org", "dx.doi.org", "pubmed.ncbi.nlm.nih.gov"]);
+export function citeLabel(p: Reference["paper"]): string {
+  const host = sourceHost(p);
+  if (host && !RESOLVERS.has(host)) return host;
+  const first = p.authors?.[0]?.trim().split(/[\s,]+/)[0] ?? "";
+  const who = first ? `${first}${(p.authors?.length ?? 0) > 1 ? " et al." : ""}` : "";
+  return [who, p.year ? String(p.year) : ""].filter(Boolean).join(" ") || host;
+}

@@ -5,7 +5,7 @@ import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import { useInspector } from "@/lib/inspector";
-import { checkLabel, paperLink, sourceHost } from "@/lib/refs";
+import { checkLabel, citeLabel, paperLink } from "@/lib/refs";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import LightbulbOutlinedIcon from "@mui/icons-material/LightbulbOutlined";
@@ -24,7 +24,7 @@ function SourcesCompact({ turn, sessionId }: { turn: Turn; sessionId: string }) 
   const t = useT();
   const [openList, setOpenList] = useState(false);
   const refs = turn.answer?.references ?? [];
-  const hosts = [...new Set(refs.map((r) => sourceHost(r.paper)).filter(Boolean))];
+  const hosts = [...new Set(refs.map((r) => citeLabel(r.paper)).filter(Boolean))];
   return (
     <Box sx={{ ...card, p: 0 }}>
       <ButtonBase aria-expanded={openList} aria-controls={`srcs-${turn.id}`} onClick={() => setOpenList(!openList)}
