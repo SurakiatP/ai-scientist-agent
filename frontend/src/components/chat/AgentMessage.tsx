@@ -17,6 +17,7 @@ import { ReportArtifact, reportId } from "@/components/research/ReportArtifact";
 import type { Turn } from "@/lib/chat";
 import { useInspector } from "@/lib/inspector";
 import { useT } from "@/lib/prefs";
+import { strings } from "@/lib/strings";
 import { LogoMark } from "@/components/landing/Dropdown";
 import { approvePlan, cancelPlan, startAnalysis, startRun, useRunState } from "@/lib/run";
 import { focusComposer } from "./Composer";
@@ -39,7 +40,8 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
     else startRun(sessionId, turn.question, { mode: turn.mode }).catch(() => {});
   };
   const scope = { sessionId, turnId: turn.id };
-  const text = status === "refused" ? turn.refused : status === "error" ? turn.error : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
+  // the backend reason is English-only; Thai UI shows the localized scope message instead
+  const text = status === "refused" ? (t === strings.th ? t.refused : turn.refused) : status === "error" ? turn.error : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
   const refs = turn.answer?.references ?? [];
   const openInspector = useInspector((x) => x.open);
   return (

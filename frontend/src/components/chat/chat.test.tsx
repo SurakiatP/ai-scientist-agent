@@ -233,10 +233,15 @@ describe("Thread", () => {
     expect(container.querySelectorAll("article")).toHaveLength(0);
   });
 
-  it("refused reason is plain text without role=alert", () => {
-    render(<Thread sessionId={mk([turn("refused", { refused: "นอกขอบเขต" })])} />);
-    expect(screen.getByText("นอกขอบเขต")).toBeInTheDocument();
+  it("refused turn is plain text without role=alert; Thai shows the localized message, English the backend reason", () => {
+    render(<Thread sessionId={mk([turn("refused", { refused: "Not a scientific research question." })])} />);
+    expect(screen.getByText(strings.th.refused)).toBeInTheDocument();
+    expect(screen.queryByText("Not a scientific research question.")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
+    cleanup();
+    usePrefs.setState({ lang: "en" });
+    render(<Thread sessionId={mk([turn("refused", { refused: "Not a scientific research question." })])} />);
+    expect(screen.getByText("Not a scientific research question.")).toBeInTheDocument();
   });
 
   it("error turn Retry calls startRun with the same question", () => {
