@@ -131,7 +131,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
             <AttachFileRoundedIcon sx={{ transform: "rotate(45deg)" }} />
           </IconButton>
         </Box>
-        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 0.5, py: 0.75, pl: 1.5, pr: 1 }}>
+        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", gap: 0.5, py: 1.25, pl: 1.5, pr: 1 }}> {/* py matches the attach column (my 0.5 + py 0.75) so both centre on the same line */}
           {file && (
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, minHeight: 44, px: 1, border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.shell" }}>
               <DescriptionOutlinedIcon fontSize="small" sx={{ color: file.status === "error" ? "error.main" : "primary.main", flexShrink: 0 }} />
@@ -147,13 +147,13 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               </IconButton>
             </Box>
           )}
-          <Box sx={{ display: "flex", flexWrap: { xs: "wrap", sm: "nowrap" }, alignItems: "flex-end", columnGap: 1, rowGap: 0.5 }}>
+          <Box sx={{ display: "flex", flexWrap: { xs: "wrap", sm: "nowrap" }, alignItems: "center", columnGap: 1, rowGap: 0.5 }}>
             <InputBase
               id="composer" multiline fullWidth minRows={1} maxRows={10} value={text}
               placeholder={file ? t.analysisPlaceholder : t.askPlaceholder} onChange={(e) => { setText(e.target.value); setErr(""); }} onKeyDown={onKeyDown}
               onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
               slotProps={{ input: { "aria-label": t.composerLabel, "aria-describedby": "composer-note" } }}
-              sx={{ flex: { xs: "1 1 100%", sm: "1 1 0" }, minWidth: 0, px: 0.5, py: 0.75, fontSize: "1rem", lineHeight: 1.6, alignItems: "flex-start" }}
+              sx={{ flex: { xs: "1 1 100%", sm: "1 1 0" }, minWidth: 0, minHeight: 44, px: 0.5, py: 0, fontSize: "1rem", lineHeight: 1.6, alignItems: "center", "& textarea": { py: "9px" } }}
             />
             {counter && (
               <Typography sx={{ fontSize: "0.75rem", fontVariantNumeric: "tabular-nums", color: over ? "error.main" : "text.secondary", alignSelf: "center" }}>
