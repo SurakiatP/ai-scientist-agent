@@ -161,10 +161,18 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               </Typography>
             )}
             <Box sx={{ flex: { xs: 1, sm: "none" } }} />
-            <Button color="inherit" variant="outlined" disabled={!!file} aria-haspopup="menu" aria-expanded={!!modeAnchor}
+            {/* deep research = solid fill (the user must see at a glance it is the heavier mode); general search stays outlined */}
+            <Button color="inherit" variant={mode === "deep" ? "contained" : "outlined"} disabled={!!file} aria-haspopup="menu" aria-expanded={!!modeAnchor}
               aria-label={`${t.modeLabel}: ${mode === "deep" ? t.modeDeep : t.modeQuick}`} onClick={(e) => setModeAnchor(e.currentTarget)}
-              startIcon={<LayersOutlinedIcon sx={{ color: "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
-              sx={{ borderRadius: 99, borderColor: "divider", fontWeight: 400, fontSize: "0.875rem", px: 1.5, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap" }}>
+              startIcon={<LayersOutlinedIcon sx={{ color: mode === "deep" ? "inherit" : "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
+              sx={{
+                borderRadius: 99, fontSize: "0.875rem", px: 1.5, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap",
+                ...(mode === "deep"
+                  ? { bgcolor: "primary.main", color: "primary.contrastText", fontWeight: 600, boxShadow: "none", border: 1, borderColor: "primary.main",
+                      "&:hover": { bgcolor: "primary.dark", boxShadow: "none" },
+                      "&.Mui-disabled": { bgcolor: "action.disabledBackground", color: "text.disabled", borderColor: "transparent" } }
+                  : { borderColor: "divider", fontWeight: 400 }),
+              }}>
               {mode === "deep" ? t.modeDeep : t.modeQuick}
             </Button>
             <Menu anchorEl={modeAnchor} open={!!modeAnchor} onClose={() => setModeAnchor(null)} slotProps={{ list: { "aria-label": t.chooseMode } }}>
