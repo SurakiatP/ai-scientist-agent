@@ -9,7 +9,9 @@ import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
 import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import { create } from "zustand";
+import { useChatStore } from "@/lib/chat";
 import { useStorageFull } from "@/lib/history";
+import { registerUpload, useAttach } from "@/lib/files";
 import { ease, enterPop } from "@/lib/motion";
 import { API_BASE } from "@/lib/config";
 import { useT } from "@/lib/prefs";
@@ -71,6 +73,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
       const up = await uploadFile(chosen, ac.signal);
       if (ac.signal.aborted) return;
       setFile({ name: up.name, size: up.size, status: "ready", fileId: up.id });
+      registerUpload(up, useChatStore.getState().sessions.find((x) => x.id === sessionId)?.projectId); // the library keeps it even if the chip is removed
     } catch (e: unknown) {
       if (ac.signal.aborted) return;
       setFile({ name: chosen.name, size: chosen.size, status: "error", error: e instanceof UploadError ? e.message : t.uploadFailed });
@@ -78,6 +81,13 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
       if (upload.current === ac) upload.current = null;
     }
   };
+  const handoff = useAttach((s) => s.file); // "Analyze" from My files: already on the server, so no upload
+  useEffect(() => {
+    if (!handoff) return;
+    useAttach.setState({ file: null });
+    setFile({ name: handoff.name, size: handoff.size, status: "ready", fileId: handoff.id }); // eslint-disable-line react-hooks/set-state-in-effect -- one-shot handoff from another page
+    setTimeout(focusComposer, 0);
+  }, [handoff]);
   const removeFile = () => {
     upload.current?.abort();
     upload.current = null;

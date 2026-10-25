@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UploadError } from "@/lib/sse";
 import { useChatStore, type Turn } from "@/lib/chat";
+import { useAttach, useFilesStore } from "@/lib/files";
 import { usePrefs } from "@/lib/prefs";
 import { emptyProgress } from "@/lib/progress";
 import { MAX_QUESTION, sampleQuestions, strings } from "@/lib/strings";
@@ -101,6 +102,28 @@ describe("Composer", () => {
     expect(run.startAnalysis).toHaveBeenCalledWith(id, "what changed?", "f1", "data.csv");
     expect(run.startRun).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByText("data.csv")).toBeNull());
+  });
+
+  it("a successful upload is added to My files and removing the chip keeps it", async () => {
+    upload.fn.mockResolvedValue({ id: "f1", name: "data.csv", size: 2048, kind: "csv" });
+    useFilesStore.setState({ files: [] });
+    render(<Composer sessionId={mk()} />);
+    fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [new File(["a,b"], "data.csv", { type: "text/csv" })] } });
+    await screen.findByText("data.csv");
+    expect(useFilesStore.getState().files).toMatchObject([{ id: "f1", name: "data.csv", size: 2048, kind: "csv", projectId: "personal" }]);
+    fireEvent.click(screen.getByRole("button", { name: `${t.removeFile}: data.csv` }));
+    expect(useFilesStore.getState().files).toHaveLength(1);
+  });
+
+  it("Analyze from My files attaches the library file without uploading", async () => {
+    render(<Composer sessionId={mk()} />);
+    act(() => useAttach.setState({ file: { id: "f9", name: "lib.csv", size: 10 } }));
+    expect(await screen.findByText("lib.csv")).toBeInTheDocument();
+    expect(upload.fn).not.toHaveBeenCalled();
+    expect(useAttach.getState().file).toBeNull();
+    type("go");
+    fireEvent.click(sendBtn());
+    expect(run.startAnalysis).toHaveBeenCalledWith(expect.any(String), "go", "f9", "lib.csv");
   });
 
   it("upload failure keeps an error chip and blocks Send until removed", async () => {

@@ -1,9 +1,12 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Box, Button, IconButton, InputAdornment, Stack, TextField, Typography } from "@mui/material";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import EditSquareIcon from "@mui/icons-material/EditSquare";
+import FolderCopyOutlinedIcon from "@mui/icons-material/FolderCopyOutlined";
 import FolderOpenOutlinedIcon from "@mui/icons-material/FolderOpenOutlined";
 import LanguageRoundedIcon from "@mui/icons-material/LanguageRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
@@ -13,6 +16,7 @@ import { create } from "zustand";
 import { UI } from "@/lib/config";
 import { useHydrated } from "@/lib/history";
 import { PERSONAL, useChatStore } from "@/lib/chat";
+import { useGoChat } from "@/lib/nav";
 import { usePrefs, useT } from "@/lib/prefs";
 import { focusKebab, InlineConfirm, InlineRename, KebabMenu } from "./SessionMenu";
 import { projectName, selectProject } from "./ProjectSwitcher";
@@ -35,6 +39,8 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
   const t = useT();
   const lang = usePrefs((s) => s.lang), setLang = usePrefs((s) => s.setLang);
   const hydrated = useHydrated();
+  const goChat = useGoChat();
+  const onFiles = usePathname() === "/files";
   const newSession = useChatStore((s) => s.newSession), setActive = useChatStore((s) => s.setActive), addProject = useChatStore((s) => s.addProject);
   const storeProjects = useChatStore((s) => s.projects), storeActive = useChatStore((s) => s.activeProjectId), storeSessions = useChatStore((s) => s.sessions), store = useChatStore.getState();
   const [pedit, setPedit] = useState<{ id: string; mode: "rename" | "delete" } | null>(null);
@@ -50,6 +56,7 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
     const empty = sessions.find((s) => s.projectId === activeProjectId && !s.turns.length);
     if (empty) setActive(empty.id); else newSession(activeProjectId);
     onPick?.();
+    goChat();
     setTimeout(() => document.getElementById("composer")?.focus(), 0); // composer lands in T4
   }
 
@@ -113,9 +120,11 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
         <TextField size="small" type="search" placeholder={t.searchChats} value={query} onChange={(e) => setQuery(e.target.value)} fullWidth
           sx={{ mb: 0.5, "& .MuiOutlinedInput-root": { ...UI.row, borderRadius: 1.5, fontSize: "0.875rem" }, "& fieldset": { borderColor: "transparent" }, "& .MuiOutlinedInput-root:hover fieldset": { borderColor: "divider" } }}
           slotProps={{ htmlInput: { "aria-label": t.searchChats }, input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small" /></InputAdornment> } }} />
-        <SessionList query={query} onPick={onPick} />
+        <SessionList query={query} onPick={() => { onPick?.(); goChat(); }} />
       </Box>
       <Stack sx={{ borderTop: 1, borderColor: "divider", pt: 1 }}>
+        <Button component={Link} href="/files" color="inherit" startIcon={<FolderCopyOutlinedIcon />} onClick={() => onPick?.()} aria-current={onFiles ? "page" : undefined}
+          sx={{ ...rowSx, bgcolor: onFiles ? "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)" : "transparent", fontWeight: onFiles ? 600 : 400 }}>{t.files}</Button>
         <Button color="inherit" startIcon={<SettingsOutlinedIcon />} endIcon={<ChevronRightRoundedIcon />} onClick={() => useSettingsOpen.getState().set(true)}
           sx={{ ...rowSx, "& .MuiButton-endIcon": { ml: "auto" } }}>{t.settings}</Button>
         <Button color="inherit" startIcon={<LanguageRoundedIcon />} endIcon={<ChevronRightRoundedIcon />} onClick={() => setLang(lang === "en" ? "th" : "en")}

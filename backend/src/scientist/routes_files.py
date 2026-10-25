@@ -1,12 +1,16 @@
 """POST/GET/DELETE /v1/files: uploads proxied into MinIO under opaque ids (no presigned URLs)."""
+import csv
 import errno
+import io
+import json
 import re
 import uuid
 from pathlib import PurePosixPath
 from urllib.parse import quote, unquote
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
+from pydantic import BaseModel
 from starlette.datastructures import UploadFile
 
 from scientist.object_store import ObjectMissing
@@ -102,3 +106,95 @@ async def remove(file_id: str, request: Request):
         raise HTTPException(404, "file not found")
     except Exception:
         raise HTTPException(503, "file storage unavailable")
+
+
+PREVIEW_BYTES, MAX_COLS, MAX_CELL, MAX_ROWS = 1 << 20, 30, 200, 20
+
+
+class Rename(BaseModel):
+    name: str
+
+
+async def _meta(st, key: str) -> dict:
+    try:
+        h = await st.head(key)
+    except ObjectMissing:
+        raise HTTPException(404, "file not found")
+    except Exception:
+        raise HTTPException(503, "file storage unavailable")
+    name = unquote(h.get("name", "file"))
+    return {"id": key, "name": name, "size": h["size"], "content_type": h["content_type"],
+            "kind": name.rsplit(".", 1)[-1].lower() if "." in name else "",
+            "created_at": h["last_modified"].isoformat()}
+
+
+@router.get("/v1/files/{file_id}/meta")
+async def meta(file_id: str, request: Request):
+    return await _meta(_store(request), _key(file_id))
+
+
+@router.patch("/v1/files/{file_id}")
+async def rename(file_id: str, body: Rename, request: Request):
+    st, key = _store(request), _key(file_id)
+    old = await _meta(st, key)
+    name = PurePosixPath(body.name.replace("\\", "/")).name.strip()
+    if not 1 <= len(name) <= 120 or any(ord(ch) < 32 or ord(ch) == 127 for ch in name):
+        raise HTTPException(422, "name must be 1-120 characters without control characters")
+    if name.rsplit(".", 1)[-1].lower() != old["kind"] or "." not in name:
+        raise HTTPException(422, f"file extension must stay .{old['kind']}")
+    try:
+        await st.copy_meta(key, old["content_type"], {"name": quote(name)})
+    except ObjectMissing:
+        raise HTTPException(404, "file not found")
+    except Exception:
+        raise HTTPException(503, "file storage unavailable")
+    return {**old, "name": name}
+
+
+def _cell(v) -> str:
+    s = "" if v is None else v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
+    return s[:MAX_CELL]
+
+
+@router.get("/v1/files/{file_id}/preview")
+async def preview(request: Request, file_id: str, rows: int = Query(MAX_ROWS, ge=1, le=MAX_ROWS)):
+    st, key = _store(request), _key(file_id)
+    m = await _meta(st, key)
+    if m["kind"] not in ("csv", "json"):
+        raise HTTPException(415, "preview not available for this file type")
+    try:
+        raw = await st.read_head(key, PREVIEW_BYTES)
+    except ObjectMissing:
+        raise HTTPException(404, "file not found")
+    except Exception:
+        raise HTTPException(503, "file storage unavailable")
+    cut = m["size"] > len(raw)  # only the first 1 MB was read
+    text = raw.decode("utf-8-sig", errors="replace")
+    if m["kind"] == "csv":
+        if cut:
+            text = text[: text.rfind("\n") + 1]  # drop the partial last line
+        try:
+            dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
+        except csv.Error:
+            dialect = csv.excel
+        try:
+            all_rows = list(csv.reader(io.StringIO(text), dialect))
+        except csv.Error:
+            raise HTTPException(422, "could not parse csv")
+        header, data = (all_rows[0] if all_rows else []), all_rows[1:]
+        cols = [_cell(c) for c in header[:MAX_COLS]]
+        out = [[_cell(c) for c in r[:MAX_COLS]] for r in data[:rows]]
+        total = None if cut else len(data)
+        return {"columns": cols, "rows": out, "truncated": cut or len(data) > rows, "total_rows": total}
+    if cut:
+        raise HTTPException(413, "json file too large to preview")
+    try:
+        data = json.loads(text)
+    except ValueError:
+        raise HTTPException(422, "could not parse json")
+    if not isinstance(data, list) or not data or not all(isinstance(r, dict) for r in data):
+        raise HTTPException(422, "preview needs a JSON array of objects")
+    shown = data[:rows]
+    cols = list(dict.fromkeys(k for r in shown for k in r))[:MAX_COLS]
+    return {"columns": [c[:MAX_CELL] for c in cols], "rows": [[_cell(r.get(c)) for c in cols] for r in shown],
+            "truncated": len(data) > rows, "total_rows": len(data)}

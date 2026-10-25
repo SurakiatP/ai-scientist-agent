@@ -34,7 +34,19 @@ class ObjectStore:
 
     async def head(self, key: str) -> dict:
         r = await self._call(lambda: self.client.head_object(Bucket=self.bucket, Key=key))
-        return {"size": r["ContentLength"], "content_type": r["ContentType"], **r["Metadata"]}
+        return {"size": r["ContentLength"], "content_type": r["ContentType"],
+                "last_modified": r["LastModified"], **r["Metadata"]}
+
+    async def read_head(self, key: str, n: int) -> bytes:
+        """First n bytes only (ranged GET)."""
+        return await self._call(lambda: self.client.get_object(
+            Bucket=self.bucket, Key=key, Range=f"bytes=0-{n - 1}")["Body"].read())
+
+    async def copy_meta(self, key: str, content_type: str, metadata: dict[str, str]) -> None:
+        """Rewrite metadata in place: S3 copy onto itself with REPLACE."""
+        await self._call(lambda: self.client.copy_object(
+            Bucket=self.bucket, Key=key, CopySource={"Bucket": self.bucket, "Key": key},
+            MetadataDirective="REPLACE", ContentType=content_type, Metadata=metadata))
 
     async def delete(self, key: str) -> None:
         await asyncio.to_thread(self.client.delete_object, Bucket=self.bucket, Key=key)
