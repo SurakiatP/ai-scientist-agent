@@ -25,6 +25,24 @@ class HistoryTurn(BaseModel):
     answer: str
 
 
+class MemoryRef(BaseModel):
+    id: str = Field(max_length=40)
+    title: str = Field(default="", max_length=500)
+    authors: list[str] = Field(default=[], max_length=50)
+    year: int | None = None
+    doi: str | None = Field(default=None, max_length=200)
+    pmid: str | None = Field(default=None, max_length=20)
+    url: str = Field(default="", max_length=2000)
+    status: Literal["verified", "unverified", "unknown"] = "unknown"
+
+
+class MemoryTurn(BaseModel):
+    """A finished turn of the same session: what "chat" mode may answer from."""
+    question: str
+    answer: str
+    references: list[MemoryRef] = []
+
+
 class PlanSearch(BaseModel):
     term: str = Field(max_length=200)
     instructions: str = Field(default="", max_length=500)
@@ -32,7 +50,8 @@ class PlanSearch(BaseModel):
 
 class AskRequest(BaseModel):
     question: str
-    mode: Literal["deep", "quick"] = "deep"
+    mode: Literal["deep", "quick", "chat"] = "deep"
+    memory: list[MemoryTurn] = []
     history: list[HistoryTurn] = Field(default=[], max_length=20)
     plan: list[PlanSearch] | None = Field(default=None, max_length=20)
     plan_only: bool = False
@@ -51,6 +70,15 @@ class AskRequest(BaseModel):
     @classmethod
     def _clamp_history(cls, v: list[HistoryTurn]) -> list[HistoryTurn]:  # clamp, never 422
         return [HistoryTurn(question=t.question[:2000], answer=t.answer[:2000]) for t in v[-3:]]
+
+    @field_validator("memory")
+    @classmethod
+    def _clamp_memory(cls, v: list[MemoryTurn]) -> list[MemoryTurn]:  # clamp, never 422: newest turns, capped text and refs
+        s, budget, out = get_settings(), get_settings().chat_memory_refs, []
+        for t in reversed([t for t in v if t.answer.strip()][-s.chat_memory_turns:]):
+            refs, budget = t.references[:budget], max(0, budget - len(t.references))
+            out.append(MemoryTurn(question=t.question[:2000], answer=t.answer[:s.chat_memory_answer_chars], references=refs))
+        return out[::-1]
 
     @field_validator("plan")
     @classmethod
@@ -97,9 +125,9 @@ async def _sse(events: AsyncIterator[Event], ping: float) -> AsyncIterator[str]:
 @router.post("/v1/async/ask")
 async def ask_route(body: AskRequest, request: Request) -> StreamingResponse:
     st = request.app.state
-    if body.plan_only and st.gate.free == 0 and len(st.gate.queue) >= st.settings.analyze_max_queue:  # same cap as analyze
+    if (body.plan_only or body.mode == "chat") and st.gate.free == 0 and len(st.gate.queue) >= st.settings.analyze_max_queue:  # same cap as analyze
         raise HTTPException(429, "too many requests queued; try again shortly")
     events = ask(body.question, st.runner, settings=st.settings, client=st.client, gate=st.gate, mode=body.mode,
-                 history=body.history, plan=body.plan, plan_only=body.plan_only)
+                 history=body.history, plan=body.plan, plan_only=body.plan_only, memory=body.memory)
     return StreamingResponse(_sse(events, st.settings.sse_ping_seconds), media_type="text/event-stream",
                              headers=HEADERS)

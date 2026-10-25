@@ -7,19 +7,21 @@ from contextlib import aclosing, suppress
 from pathlib import Path
 
 import httpx
+from pydantic import ValidationError
 
 from scientist import llm
 from scientist.citations import verify_references
 from scientist.config import Settings
-from scientist.events import (BranchAnswer, Complete, Error, Event, FinalAnswer, Reference, Refused, Search,
+from scientist.events import (BranchAnswer, Paper, Complete, Error, Event, FinalAnswer, Reference, Refused, Search,
                               Sources, Strategy, Waiting, arxiv_id, paper_key)
 from scientist.gate import RunGate
-from scientist.guardrail import check_scope
+from scientist.guardrail import OUT_OF_SCOPE, check_scope
 from scientist.hermes import BranchFailed, BranchRunner, InvalidPaper
 
 PROMPTS = Path(__file__).parent / "prompts"
 STRATEGY = (PROMPTS / "strategy.md").read_text()
 SYNTHESIS = (PROMPTS / "synthesis.md").read_text()
+CHAT = (PROMPTS / "chat.md").read_text()
 THAI = re.compile("[฀-๿]")
 DONE = object()
 PLAN_ERROR = "Could not plan a search for this question. Please rephrase it and try again."
@@ -79,9 +81,13 @@ async def _plan(question: str, settings: Settings, mode: str, history: list, pla
 
 async def ask(question: str, runner: BranchRunner, *, settings: Settings, client: httpx.AsyncClient,
               gate: RunGate, mode: str = "deep", history: list = (), plan: list | None = None,
-              plan_only: bool = False) -> AsyncIterator[Event]:
+              plan_only: bool = False, memory: list = ()) -> AsyncIterator[Event]:
     """Scope check, then, holding a gate slot: strategy, branches, citation check (via client), synthesis.
     plan_only stops after the strategy, with no gate slot."""
+    if mode == "chat":
+        async for e in _chat(question, memory, settings, gate):
+            yield e
+        return
     verdict = await check_scope(question, settings=settings)
     if not verdict.in_scope:
         yield Refused(reason=verdict.reason)  # refusals never queue or take a slot
@@ -204,3 +210,69 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
         return
     yield FinalAnswer(content=r.text.strip() + note, references=refs)
     yield Complete()
+
+
+# --- "chat" mode: answer from the session's own earlier turns, no search --------------------------------------------
+MARKER = re.compile(r"\[M(\d+)\]")
+
+
+def _memory_block(memory: list) -> tuple[str, dict[str, Reference]]:
+    """<memory> JSON block plus its references by global id. Each turn's own ids ("[1]") are rewritten to one global
+    scheme ("[M1]", a paper shared by turns keeps one id); markers a turn cannot back are dropped."""
+    refs: dict[str, Reference] = {}
+    by_key: dict[str, Reference] = {}
+    turns = []
+    for t in memory:
+        local: dict[str, str] = {}
+        for r in t.references:
+            try:
+                p = Paper(title=r.title, authors=r.authors, year=r.year, doi=r.doi, pmid=r.pmid, url=r.url)
+            except ValidationError:
+                continue  # a reference the browser mangled is not citable
+            ref = by_key.setdefault(paper_key(p.doi, p.pmid, p.title, p.url),
+                                    Reference(id=f"M{len(by_key) + 1}", paper=p, status=r.status))
+            refs[ref.id] = ref
+            local[r.id] = ref.id
+        text = re.sub(r"\[(\d+)\]", lambda m: f"[{local[m[1]]}]" if m[1] in local else "", t.answer)
+        turns.append({"question": t.question, "answer": text})
+    data = {"references": [{"id": r.id, "status": r.status, **r.paper.model_dump()} for r in refs.values()],
+            "earlier_turns": turns}
+    return "<memory>\n" + json.dumps(data, ensure_ascii=False, indent=1).replace("<", "\\u003c") + "\n</memory>", refs
+
+
+def _cited(text: str, refs: dict[str, Reference]) -> tuple[str, list[Reference]]:
+    """Drop [Mn] markers not in the supplied set; renumber the rest 1.. by first use. Returns text and cited refs."""
+    order: dict[str, Reference] = {}
+
+    def sub(m: re.Match) -> str:
+        if (r := refs.get("M" + m[1])) is None:
+            return ""
+        n = order.setdefault(r.id, Reference(id=str(len(order) + 1), paper=r.paper, status=r.status)).id
+        return f"[{n}]"
+    return MARKER.sub(sub, text), list(order.values())
+
+
+async def _chat(question: str, memory: list, settings: Settings, gate: RunGate) -> AsyncIterator[Event]:
+    """One model call over the browser-supplied memory: no scope model, no strategy, no branches."""
+    if not memory:
+        yield Refused(reason="There are no earlier research results in this session to answer from.")
+        return
+    if len(question) > settings.max_question_chars or OUT_OF_SCOPE.search(question):  # cheap rules only
+        yield Refused(reason="Not a scientific research question.")
+        return
+    async with aclosing(gate.acquire()) as waits:
+        async for position in waits:
+            yield Waiting(position=position)
+    try:
+        block, refs = _memory_block(memory)
+        try:
+            r = await llm.complete(CHAT, f"{block}\n\nQuestion:\n{question}", max_tokens=settings.synthesis_max_tokens,
+                                   settings=settings)
+        except Exception:
+            yield Error(message="Could not write the answer. Please try again.")
+            return
+        text, cited = _cited(r.text.strip(), refs)
+        yield FinalAnswer(content=text, references=cited)
+        yield Complete()
+    finally:
+        gate.release()

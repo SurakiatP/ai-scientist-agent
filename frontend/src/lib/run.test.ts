@@ -462,4 +462,34 @@ describe("plan review flow", () => {
     expect(turnOf(chat, sid)).toMatchObject({ status: "error", error: "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้" });
     expect(run.canStart()).toEqual({ ok: true });
   });
+
+  describe("answer research (chat) mode", () => {
+    const addDone = (chat: Awaited<ReturnType<typeof setup>>["chat"], sid: string, q: string, content: string, refs = [ref] as never[], status: Turn["status"] = "done") =>
+      chat.getState().addTurn(sid, { id: q, question: q, createdAt: 1, status, progress: emptyProgress, answer: { content, references: refs } });
+    it("sends only finished answers as memory, oldest first, with no plan pause and no history", async () => {
+      const { chat, run, sid } = await setup(true); // review-plan ON must not pause chat
+      addDone(chat, sid, "q1", "a1");
+      addDone(chat, sid, "q2", "a2", [], "error");
+      addDone(chat, sid, "q3", "a3");
+      script = gen([{ type: "final_answer", content: "from memory", references: [ref] }, { type: "complete" }]);
+      await run.startRun(sid, "shorter", { mode: "chat" });
+      expect(asks).toHaveLength(1);
+      expect(asks[0].opts).toMatchObject({ mode: "chat", history: [] });
+      expect(asks[0].opts?.planOnly).toBeUndefined();
+      expect(asks[0].opts?.memory?.map((m) => [m.question, m.answer])).toEqual([["q1", "a1"], ["q3", "a3"]]);
+      expect(asks[0].opts?.memory?.[0].references[0]).toEqual({ id: "R1", title: "P", authors: [], year: null, doi: null, pmid: null, url: "u", status: "verified" });
+      expect(last(chat)).toMatchObject({ mode: "chat", status: "done", answer: { content: "from memory" } });
+    });
+    it("clamps memory: newest turns, answer length, reference budget", async () => {
+      const { chat, run, sid } = await setup();
+      for (let i = 0; i < 10; i++) addDone(chat, sid, `q${i}`, "x".repeat(7000), Array.from({ length: 10 }, (_, k) => ({ ...(ref as object), id: String(k) })) as never[]);
+      script = gen([{ type: "complete" }]);
+      await run.startRun(sid, "q", { mode: "chat" });
+      const mem = asks[0].opts!.memory!;
+      expect(mem.map((m) => m.question)).toEqual(["q2", "q3", "q4", "q5", "q6", "q7", "q8", "q9"]);
+      expect(mem.every((m) => m.answer.length === run.MEMORY_ANSWER)).toBe(true);
+      expect(mem.reduce((n, m) => n + m.references.length, 0)).toBe(run.MEMORY_REFS);
+      expect(mem.at(-1)!.references).toHaveLength(10); // the budget goes to the newest turns
+    });
+  });
 });

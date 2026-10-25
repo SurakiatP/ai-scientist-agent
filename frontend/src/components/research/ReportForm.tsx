@@ -5,11 +5,13 @@ import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, 
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import ArrowDownwardRoundedIcon from "@mui/icons-material/ArrowDownwardRounded";
 import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
+import BookmarkAddOutlinedIcon from "@mui/icons-material/BookmarkAddOutlined";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import type { Turn } from "@/lib/chat";
 import { draftIssue, errorText, initialDraft, LIM, blocksOf, toPayload, useExport, type Draft, type Format } from "@/lib/exportReport";
 import { skeletonBar } from "@/lib/motion";
+import { useGoFiles } from "@/lib/nav";
 import { usePreview } from "@/lib/preview";
 import { usePrefs, useT } from "@/lib/prefs";
 import type { Lang } from "@/lib/strings";
@@ -24,7 +26,8 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   const lang = usePrefs((s) => s.lang);
   const full = useMediaQuery(useTheme().breakpoints.down("sm"));
   const [d, setD] = useState<Draft>(() => initialDraft(turn, lang, t));
-  const { busy, error, done, run } = useExport();
+  const { busy, error, saved, upErr, save } = useExport();
+  const goFiles = useGoFiles();
   useEffect(() => { useExport.getState().reset(); return () => useExport.getState().reset(); }, []);
   const issue = draftIssue(d);
   const [view, setView] = useState<"edit" | "preview">("edit"); // narrow screens show one pane at a time
@@ -32,7 +35,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   const set = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
   const edit = (i: number, p: Partial<Draft["sections"][number]>) => set({ sections: d.sections.map((s, k) => (k === i ? { ...s, ...p } : s)) });
   const move = (i: number, by: -1 | 1) => { const a = [...d.sections]; [a[i], a[i + by]] = [a[i + by], a[i]]; set({ sections: a }); };
-  const make = (f: Format) => { if (!issue) void run(d, f, turn); };
+  const make = (f: Format) => { if (!issue) void save(d, f, turn); };
   return (
     <Dialog open onClose={busy ? undefined : onClose} fullScreen={full} maxWidth="lg" fullWidth aria-labelledby="rf-title">
       <DialogTitle id="rf-title" sx={{ display: "flex", alignItems: "center", gap: 1, pr: 1 }}>
@@ -86,11 +89,18 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
       <DialogActions sx={{ display: "block", p: 2 }}>
         {(issue === "limits" || issue === "table") && <Alert severity="warning" sx={{ mb: 1.5 }}>{issue === "table" ? t.fTableWide : t.fTooMany}</Alert>}
         {error && <Alert severity="error" sx={{ mb: 1.5 }}>{errorText(error, t)}</Alert>}
-        <Box role="status" sx={busy || done ? (busy ? hidden : { fontSize: "0.875rem", color: "text.secondary", mb: 1 }) : hidden}>{busy ? t.fBusy : done ? t.fDone : ""}</Box>
+        {upErr !== null && <Alert severity="error" sx={{ mb: 1.5 }}>{upErr ? `${t.fSaveFail} (${upErr})` : t.fSaveFail}</Alert>}
+        {saved && (
+          <Alert severity="success" sx={{ mb: 1.5, alignItems: "center" }} action={<Button color="inherit" size="small" onClick={() => { onClose(); goFiles(); }} sx={{ minHeight: 44 }}>{t.fOpenFiles}</Button>}>
+            {t.fSaved}: <Box component="span" sx={{ fontWeight: 600, overflowWrap: "anywhere" }}>{saved}</Box>
+          </Alert>
+        )}
+        <Box role="status" sx={busy ? { fontSize: "0.875rem", color: "text.secondary", mb: 1 } : hidden}>{busy ? t.fBusy : saved ? t.fSaved : ""}</Box>
         <Stack direction="row" useFlexGap sx={{ gap: 1.5, flexWrap: "wrap" }}>
-          <Button variant="contained" disabled={!!busy || !!issue} onClick={() => make("pdf")}>{t.fMakePdf}</Button>
-          <Button variant="outlined" disabled={!!busy || !!issue} onClick={() => make("docx")}>{t.fMakeDocx}</Button>
+          <Button variant="contained" disabled={!!busy || !!issue} startIcon={<BookmarkAddOutlinedIcon />} onClick={() => make("pdf")}>{t.fSavePdf}</Button>
+          <Button variant="outlined" disabled={!!busy || !!issue} startIcon={<BookmarkAddOutlinedIcon />} onClick={() => make("docx")}>{t.fSaveDocx}</Button>
         </Stack>
+        <Typography variant="body2" sx={{ color: "text.secondary", mt: 1.5 }}>{t.fSaveNote}</Typography>
         {busy && (
           <Stack aria-hidden spacing={1} sx={{ mt: 1.5 }}>
             {["70%", "54%", "38%"].map((w, i) => <Box key={i} sx={{ ...skeletonBar(i), width: w }} />)}

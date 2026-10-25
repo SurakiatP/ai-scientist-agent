@@ -452,4 +452,38 @@ describe("answer tabs", () => {
     render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "x", references: [] } })} />);
     expect(screen.queryByRole("tab")).toBeNull();
   });
+
+  it("Answer research is disabled with a reason in a session with no finished answer", () => {
+    const id = mk();
+    render(<Composer sessionId={id} />);
+    fireEvent.click(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeDeep}` }));
+    const item = screen.getByRole("menuitemradio", { name: new RegExp(t.modeChat) });
+    expect(item).toHaveAttribute("aria-disabled", "true");
+    expect(item).toHaveTextContent(t.modeChatDisabled);
+  });
+
+  it("Answer research is selectable once the session has a finished answer and sends mode chat", () => {
+    const id = mk([{ id: "t1", question: "q", createdAt: 1, status: "done", progress: emptyProgress, answer: { content: "a", references: [] } } as Turn]);
+    render(<Composer sessionId={id} />);
+    fireEvent.click(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeDeep}` }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: new RegExp(t.modeChat) }));
+    expect(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeChat}` })).toBeInTheDocument();
+    type("shorter");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(run.startRun).toHaveBeenCalledWith(id, "shorter", { mode: "chat" });
+  });
+
+  it("a stored chat selection falls back to deep in a session without memory", () => {
+    useMode.setState({ mode: "chat" });
+    const id = mk();
+    render(<Composer sessionId={id} />);
+    expect(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeDeep}` })).toBeInTheDocument();
+  });
+
+  it("chat-mode turn: skeleton while running, caption and no stage strip once done", () => {
+    const { rerender } = render(<AgentMessage sessionId="s" turn={turn("running", { mode: "chat" })} />);
+    expect(screen.getByTestId("answer-skeleton")).toBeInTheDocument();
+    rerender(<AgentMessage sessionId="s" turn={turn("done", { mode: "chat", answer: { content: "ans", references: [] } })} />);
+    expect(screen.getByText(t.chatCaption)).toBeInTheDocument();
+  });
 });

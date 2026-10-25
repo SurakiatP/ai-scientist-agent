@@ -160,7 +160,7 @@ const clampPatch = (p: Partial<Turn>): Partial<Turn> => ({
 const isTurn = (v: unknown): v is Turn => {
   const t = v as Turn | null;
   if (!t || !isStr(t.id, 100) || !isStr(t.question, 4000) || !isNum(t.createdAt) || !STATUSES.includes(t.status) || !isProgress(t.progress)) return false;
-  if (t.mode !== undefined && t.mode !== "deep" && t.mode !== "quick") return false;
+  if (t.mode !== undefined && t.mode !== "deep" && t.mode !== "quick" && t.mode !== "chat") return false;
   if (t.kind !== undefined && t.kind !== "analysis") return false;
   if (t.plan !== undefined && !isPlan(t.plan)) return false;
   if (t.status === "awaiting_plan" && !t.plan) return false; // an awaiting turn must carry the plan it waits for

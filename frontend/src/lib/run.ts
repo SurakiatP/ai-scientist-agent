@@ -3,7 +3,7 @@ import { useChatStore, type Session, type Turn, type TurnAnalysis } from "./chat
 import { newId } from "./history";
 import { usePrefs } from "./prefs";
 import { emptyProgress, reduce, type Progress } from "./progress";
-import { streamAnalyze, streamAsk, type AnalyzeEvent, type ApiError, type AskMode, type HistoryTurn, type Reference, type Search } from "./sse";
+import { streamAnalyze, streamAsk, type AnalyzeEvent, type ApiError, type AskMode, type HistoryTurn, type MemoryRef, type MemoryTurn, type Reference, type Search } from "./sse";
 import { strings } from "./strings";
 
 type RunState = { sessionId: string | null; turnId: string | null };
@@ -41,10 +41,28 @@ const historyFrom = (session: Session) =>
     .flatMap((t) => (t.status === "done" && t.answer ? [{ question: t.question, answer: t.answer.content }] : []))
     .slice(-3);
 
+// "Answer research" memory: this session's own finished answers, oldest first. Same caps as the backend defaults
+// (it clamps again); newest turns win. Nothing leaves the browser except in the request that asks the question.
+export const MEMORY_TURNS = 8, MEMORY_ANSWER = 6000, MEMORY_REFS = 40;
+const memRef = (r: Reference): MemoryRef => ({ id: r.id, title: r.paper.title, authors: r.paper.authors, year: r.paper.year, doi: r.paper.doi, pmid: r.paper.pmid, url: r.paper.url, status: r.status });
+export function memoryFrom(session: Session): MemoryTurn[] {
+  let budget = MEMORY_REFS;
+  return session.turns
+    .filter((t) => t.status === "done" && !!t.answer?.content.trim())
+    .slice(-MEMORY_TURNS)
+    .reverse() // newest first so they get the reference budget
+    .map((t) => {
+      const references = t.answer!.references.slice(0, budget).map(memRef);
+      budget -= references.length;
+      return { question: t.question, answer: t.answer!.content.slice(0, MEMORY_ANSWER), references };
+    })
+    .reverse();
+}
+
 type Patch = Partial<Turn>;
 
 // The real ask stream, shared by startRun (direct runs) and approvePlan (a reviewed plan).
-async function runAsk(question: string, c: AbortController, opts: { mode: AskMode; history: HistoryTurn[]; plan?: Search[] }, patch: (p: Patch) => void): Promise<void> {
+async function runAsk(question: string, c: AbortController, opts: { mode: AskMode; history: HistoryTurn[]; plan?: Search[]; memory?: MemoryTurn[] }, patch: (p: Patch) => void): Promise<void> {
   let progress: Progress = emptyProgress;
   let final: { content: string; references: Reference[] } | null = null;
   let outcome: Patch | null = null;
@@ -66,8 +84,8 @@ export async function startRun(sessionId: string, question: string, opts: { mode
   if (!canStart().ok) throw new Error("busy");
   const session = useChatStore.getState().sessions.find((x) => x.id === sessionId);
   if (!session) throw new Error("no such session"); // before any state or stream
-  const mode: AskMode = opts.mode === "quick" ? "quick" : "deep";
-  // Deep Research can pause for plan review first; Quick mode never pauses.
+  const mode: AskMode = opts.mode === "quick" || opts.mode === "chat" ? opts.mode : "deep";
+  // Deep Research can pause for plan review first; Quick and Answer-research never pause.
   const review = mode === "deep" && usePrefs.getState().reviewPlan;
   const turnId = newId();
   const c = (ac = new AbortController());
@@ -96,7 +114,7 @@ export async function startRun(sessionId: string, question: string, opts: { mode
         return; // the plan fetch is done; the single-run lock is NOT held while the user reviews
       }
     } else {
-      await runAsk(question, c, { mode, history: historyFrom(session) }, patch);
+      await runAsk(question, c, mode === "chat" ? { mode, history: [], memory: memoryFrom(session) } : { mode, history: historyFrom(session) }, patch);
     }
   } finally {
     ac = null;
@@ -112,7 +130,7 @@ export async function approvePlan(sessionId: string, turnId: string, plan: Searc
   const turn = session?.turns.find((t) => t.id === turnId);
   if (!session || !turn) throw new Error("no such turn"); // before any state or stream
   if (turn.status !== "awaiting_plan") throw new Error("not awaiting");
-  const mode: AskMode = turn.mode === "quick" ? "quick" : "deep";
+  const mode: AskMode = turn.mode === "quick" ? "quick" : "deep"; // a plan is only ever reviewed in deep mode
   const c = (ac = new AbortController());
   const store = () => useChatStore.getState();
   setState({ sessionId, turnId });

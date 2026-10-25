@@ -23,7 +23,7 @@ import { useT } from "@/lib/prefs";
 import { strings } from "@/lib/strings";
 import { LogoMark } from "@/components/landing/Dropdown";
 import { approvePlan, cancelPlan, startAnalysis, startRun, useRunState } from "@/lib/run";
-import { focusComposer } from "./Composer";
+import { focusComposer, useMode } from "./Composer";
 import { Starters } from "./EmptyChat";
 import { avatarSx, Time } from "./UserMessage";
 
@@ -52,6 +52,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
       <Box sx={{ display: "flex", gap: 1.5, alignItems: "center", flexWrap: "wrap", mb: 1.5 }}>
         <Box aria-hidden sx={avatarSx}><LogoMark size={24} /></Box>
         <Typography sx={{ fontSize: "0.875rem", fontWeight: 700 }}>{t.brand}</Typography>
+        {turn.mode === "chat" && !analysis && <Chip size="small" variant="outlined" icon={<ChatBubbleOutlineRoundedIcon />} label={t.modeChat} sx={{ borderRadius: 999, borderColor: "primary.main", "& .MuiChip-icon": { color: "primary.main" } }} />}
         {turn.mode === "deep" && !analysis && <Chip size="small" variant="outlined" icon={<LayersOutlinedIcon />} label={t.modeDeep} sx={{ borderRadius: 999, "& .MuiChip-icon": { color: "primary.main" } }} />}
         <Time ts={turn.createdAt} />
       </Box>
@@ -67,10 +68,12 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
           {planErr && <Typography role="status" sx={{ fontSize: "0.8125rem", color: "error.main" }}>{t.startFailed}</Typography>}
         </Stack>
       ) : status === "running" && (
-        <>
-          <ProgressCard turn={turn} />
-          {(turn.progress.phase === "searching" || turn.progress.phase === "writing") && <AnswerSkeleton phase={turn.progress.phase} />}
-        </>
+        turn.mode === "chat" ? <AnswerSkeleton phase="writing" /> : ( // no search stages to show: the answer is written straight from memory
+          <>
+            <ProgressCard turn={turn} />
+            {(turn.progress.phase === "searching" || turn.progress.phase === "writing") && <AnswerSkeleton phase={turn.progress.phase} />}
+          </>
+        )
       )}
       {status === "done" && !analysis && turn.answer && (
         <>
@@ -83,6 +86,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
               <Tab value="sources" id={`tab-sources-${turn.id}`} aria-controls={`panel-sources-${turn.id}`} label={t.tabSources.replace("{n}", String(refs.length))} sx={{ minHeight: 44 }} />
             </Tabs>
           )}
+          {turn.mode === "chat" && <Typography sx={{ mb: 1, fontSize: "0.8125rem", color: "text.secondary" }}>{t.chatCaption}</Typography>}
           <Box role={refs.length ? "tabpanel" : undefined} id={`panel-answer-${turn.id}`} aria-labelledby={refs.length ? `tab-answer-${turn.id}` : undefined} hidden={tab !== "answer"}>
             <AnswerView content={turn.answer.content} references={turn.answer.references} scope={scope} reveal={wasRunning} />
           </Box>
@@ -92,7 +96,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
             </Box>
           )}
           <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 2, flexWrap: "wrap" }}>
-            <Button variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={focusComposer}>{t.askFollowUp}</Button>
+            <Button variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={() => { useMode.getState().set("chat"); focusComposer(); }}>{t.askFollowUp}</Button>
             <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={refs.length === 0} sx={{ borderColor: "divider" }}
               onClick={(e) => openInspector({ ...scope, refId: refs[0].id }, e.currentTarget)}>{t.openEvidence}</Button>
             <Button variant="outlined" color="inherit" startIcon={<BarChartRoundedIcon />} sx={{ borderColor: "divider" }} aria-controls={reportId(turn.id)} onClick={() => openReport(sessionId, turn.id)}>{t.makeReport}</Button>

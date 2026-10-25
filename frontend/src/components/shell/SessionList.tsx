@@ -38,7 +38,7 @@ export function SessionList({ query, onPick }: { query: string; onPick?: () => v
         <Box key={s.id} sx={{ px: 0.5 }}>
           {edit.mode === "rename"
             ? <InlineRename value={s.title} label={t.newName} onCancel={() => done(s.id)} onSave={(v) => { store.renameSession(s.id, v); done(s.id); }} />
-            : <InlineConfirm text={t.deleteChatConfirm} onCancel={() => done(s.id)} onConfirm={() => { if (runningId === s.id) stopRun(); store.deleteSession(s.id); done(s.id); }} />}
+            : <InlineConfirm text={t.deleteChatConfirm} note={t.deleteChatMemoryNote} onCancel={() => done(s.id)} onConfirm={() => { if (runningId === s.id) stopRun(); store.deleteSession(s.id); done(s.id); }} />}
         </Box>
       ) : (
         <Box key={s.id} sx={{

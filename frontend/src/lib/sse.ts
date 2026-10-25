@@ -10,9 +10,11 @@ export type Paper = {
 };
 export type Reference = { id: string; paper: Paper; status: "verified" | "unverified" | "unknown" };
 export type Search = { term: string; instructions: string };
-export type AskMode = "deep" | "quick";
+export type AskMode = "deep" | "quick" | "chat"; // chat = answer from the session's own earlier results, no search
 export type HistoryTurn = { question: string; answer: string };
-export type AskOptions = { mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; planOnly?: boolean };
+export type MemoryRef = { id: string; title: string; authors: string[]; year: number | null; doi: string | null; pmid: string | null; url: string; status: Reference["status"] };
+export type MemoryTurn = { question: string; answer: string; references: MemoryRef[] };
+export type AskOptions = { mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; planOnly?: boolean; memory?: MemoryTurn[] };
 
 export type StreamCode = "malformed" | "network" | "http";
 export type ApiError = { message: string; code?: StreamCode; status?: number };
@@ -124,8 +126,9 @@ async function* stream(url: string, init: RequestInit, signal: AbortSignal): Asy
 
 export async function* streamAsk(question: string, signal: AbortSignal, opts: AskOptions = {}): AsyncGenerator<AskEvent> {
   // Send only what differs from the backend defaults.
-  const body: { question: string; mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; plan_only?: boolean } = { question };
-  if (opts.mode === "quick") body.mode = "quick";
+  const body: { question: string; mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; plan_only?: boolean; memory?: MemoryTurn[] } = { question };
+  if (opts.mode === "quick" || opts.mode === "chat") body.mode = opts.mode;
+  if (opts.mode === "chat" && opts.memory?.length) body.memory = opts.memory;
   if (opts.history?.length) body.history = opts.history;
   if (opts.plan?.length) body.plan = opts.plan;
   if (opts.planOnly) body.plan_only = true;

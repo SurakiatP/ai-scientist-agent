@@ -2,8 +2,10 @@ import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { create } from "zustand";
-import type { Turn } from "./chat";
+import { useChatStore, type Turn } from "./chat";
 import { API_BASE } from "./config";
+import { registerUpload, useFilesStore } from "./files";
+import { uploadFile, UploadError } from "./sse";
 import { doiOf, httpUrl, paperLink } from "./refs";
 import type { Lang, Strings } from "./strings";
 
@@ -182,11 +184,40 @@ export function saveBlob(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+// File name for the library: title without path/reserved characters, Thai kept, <= 120 chars with the extension, " (2)" etc. when taken.
+export function libraryName(title: string, ext: Format, taken: string[]): string {
+  const base = title.replace(/[\u0000-\u001f\u007f\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().replace(/^\.+|\.+$/g, "").trim().slice(0, 100).trim() || "report";
+  const used = new Set(taken.map((n) => n.toLowerCase()));
+  let name = `${base}.${ext}`;
+  for (let i = 2; used.has(name.toLowerCase()); i++) name = `${base} (${i}).${ext}`;
+  return name;
+}
+
 // One export at a time, shared by the panel menu and the form so both show the same honest state.
-type ExportState = { busy: Format | null; error: ExportError | null; done: boolean; run: (d: Draft, f: Format, turn: Turn) => Promise<void>; reset: () => void };
+type ExportState = { busy: Format | null; error: ExportError | null; done: boolean; saved: string | null; upErr: string | null; run: (d: Draft, f: Format, turn: Turn) => Promise<void>; save: (d: Draft, f: Format, turn: Turn) => Promise<void>; reset: () => void };
 export const useExport = create<ExportState>()((set, get) => ({
-  busy: null, error: null, done: false,
-  reset: () => set({ error: null, done: false }),
+  busy: null, error: null, done: false, saved: null, upErr: null,
+  reset: () => set({ error: null, done: false, saved: null, upErr: null }),
+  // Generate, then keep the file in "My files" (upload + library entry). Nothing is downloaded; on failure nothing is added.
+  save: async (d, f, turn) => {
+    if (get().busy) return;
+    set({ busy: f, error: null, done: false, saved: null, upErr: null });
+    let blob: Blob;
+    try {
+      ({ blob } = await requestExport(toPayload(d, f, turn)));
+    } catch (e) {
+      set({ busy: null, error: e === "413" || e === "422" || e === "503" || e === "net" ? e : "other" });
+      return;
+    }
+    try {
+      const name = libraryName(d.title, f, useFilesStore.getState().files.map((x) => x.name));
+      const up = await uploadFile(new File([blob], name, { type: blob.type || (f === "pdf" ? "application/pdf" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document") }), new AbortController().signal);
+      registerUpload(up, useChatStore.getState().activeProjectId);
+      set({ busy: null, saved: up.name });
+    } catch (e) {
+      set({ busy: null, upErr: e instanceof UploadError ? e.message : "" });
+    }
+  },
   run: async (d, f, turn) => {
     if (get().busy) return;
     set({ busy: f, error: null, done: false });

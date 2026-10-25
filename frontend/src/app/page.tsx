@@ -49,9 +49,9 @@ export default function Home() {
     <Box lang={lang} sx={{ position: "relative", overflow: "hidden", "&::before": { content: '""', position: "absolute", inset: 0, height: 900, pointerEvents: "none", backgroundImage: [glow("78%", "0%", 0.2), glow("12%", "42%", 0.12)].join(","), "[data-mui-color-scheme='light'] &": { opacity: 0.45 } } }}>
       <Box component="header" sx={{ position: "relative", borderBottom: 1, borderColor: "divider" }}>
         <Stack direction="row" component="nav" aria-label={L.navLabel} sx={{ ...wrap, minHeight: 72, alignItems: "center", gap: { xs: 0.5, md: 1 } }}>
-          <Box component={Link} href="/" aria-label={L.brand} sx={{ display: "flex", alignItems: "center", gap: 1.25, color: "primary.main", textDecoration: "none", mr: { md: 6 }, ...ring }}>
+          <Box component={Link} href="/" aria-label={L.brand} sx={{ display: "flex", alignItems: "center", gap: 1.25, color: "primary.main", textDecoration: "none", mr: { xs: 1, md: 6 }, minHeight: 44, ...ring }}>
             <LogoMark />
-            <Typography component="span" noWrap sx={{ fontSize: "1.375rem", fontWeight: 600, letterSpacing: "-0.01em", color: "text.primary" }}>{L.brand}</Typography>
+            <Typography component="span" noWrap sx={{ fontSize: { xs: "1.1875rem", sm: "1.375rem" }, fontWeight: 600, letterSpacing: "-0.01em", color: "text.primary" }}>{L.brand}</Typography>
           </Box>
           <Stack direction="row" sx={{ display: { xs: "none", md: "flex" }, gap: 4, mr: "auto" }}>
             {navItems.map((n) => (

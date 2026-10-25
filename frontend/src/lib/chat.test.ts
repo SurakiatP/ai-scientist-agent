@@ -236,4 +236,35 @@ describe("newSession blank reuse", () => {
     expect(store.getState().newSession()).toBe(a);
     expect(store.getState().sessions).toHaveLength(1);
   });
+
+  it("session memory lives only in the session: deleting the session or clearing everything leaves no copy", async () => {
+    const SECRET = "memory-marker-9f3a";
+    const mem = (id: string) => ({ ...turn(id), answer: { content: SECRET, references: [] } });
+    const s = await load();
+    const a = s.getState().newSession(), b = s.getState().newSession(); // a is reused if blank, so fill it first
+    s.getState().addTurn(a, mem("t1") as never);
+    const c = s.getState().newSession();
+    s.getState().addTurn(c, mem("t2") as never);
+    const dump = () => Object.keys(localStorage).map((k) => localStorage.getItem(k) ?? "").join("\n");
+    expect(dump()).toContain(SECRET);
+    s.getState().deleteSession(a);
+    expect(s.getState().sessions.some((x) => x.id === a)).toBe(false);
+    s.getState().deleteSession(c);
+    s.getState().deleteSession(b);
+    expect(dump()).not.toContain(SECRET); // persisted copy gone too
+    expect(JSON.stringify(s.getState())).not.toContain(SECRET);
+    const d = s.getState().newSession();
+    s.getState().addTurn(d, mem("t3") as never);
+    s.getState().clearAll();
+    expect(dump()).not.toContain(SECRET);
+    expect(s.getState().sessions).toEqual([]);
+  });
+  it("deleting a project keeps its chats (moved to Personal), so their memory stays with them", async () => {
+    const s = await load();
+    const p = s.getState().addProject("Lab");
+    const id = s.getState().newSession(p);
+    s.getState().addTurn(id, { ...turn("t"), answer: { content: "kept", references: [] } } as never);
+    s.getState().deleteProject(p);
+    expect(s.getState().sessions.find((x) => x.id === id)?.turns[0].answer?.content).toBe("kept");
+  });
 });

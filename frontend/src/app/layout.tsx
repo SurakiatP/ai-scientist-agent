@@ -14,6 +14,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  viewportFit: "cover", // lets env(safe-area-inset-*) work on notched phones
   themeColor: [{ media: "(prefers-color-scheme: light)", color: BG.light }, { media: "(prefers-color-scheme: dark)", color: BG.dark }],
 };
 

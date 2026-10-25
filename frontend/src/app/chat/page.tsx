@@ -40,7 +40,7 @@ export default function ChatPage() {
       {hydrated && active && (active.turns.length === 0 ? <EmptyChat sessionId={active.id} /> : (
         <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
           <Thread key={active.id} sessionId={active.id} />
-          <Box sx={{ maxWidth: UI.content, width: "100%", mx: "auto", px: { xs: 2, sm: 3 }, pb: 1.5 }}><Composer sessionId={active.id} /></Box>
+          <Box sx={{ maxWidth: UI.content, width: "100%", mx: "auto", px: { xs: 2, sm: 3 }, pb: "max(12px, env(safe-area-inset-bottom))" }}><Composer sessionId={active.id} /></Box>
         </Box>
       ))}
     </AppShell>

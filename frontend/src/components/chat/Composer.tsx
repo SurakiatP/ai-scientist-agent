@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } fro
 import { Box, Button, CircularProgress, IconButton, InputBase, Menu, MenuItem, Typography } from "@mui/material";
 import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
 import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
@@ -38,7 +39,11 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const text = useDraft((s) => s.drafts[sessionId] ?? ""), set = useDraft((s) => s.set);
   const setText = (v: string) => set(sessionId, v);
   const [err, setErr] = useState("");
-  const mode = useMode((s) => s.mode), setMode = useMode((s) => s.set);
+  const picked = useMode((s) => s.mode), setMode = useMode((s) => s.set);
+  // "Answer research" needs this session's own finished answers; without them the pill shows (and sends) deep
+  const hasMemory = useChatStore((s) => !!s.sessions.find((x) => x.id === sessionId)?.turns.some((x) => x.status === "done" && !!x.answer?.content.trim()));
+  const mode: AskMode = picked === "chat" && !hasMemory ? "deep" : picked;
+  const modeName = (m: AskMode) => m === "deep" ? t.modeDeep : m === "chat" ? t.modeChat : t.modeQuick;
   const [attachOff, setAttachOff] = useState(false); // backend says uploads/analysis cannot work: say so instead of failing after the upload
   useEffect(() => {
     const ac = new AbortController();
@@ -163,23 +168,32 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
             <Box sx={{ flex: { xs: 1, sm: "none" } }} />
             {/* deep research = solid fill (the user must see at a glance it is the heavier mode); general search stays outlined */}
             <Button color="inherit" variant={mode === "deep" ? "contained" : "outlined"} disabled={!!file} aria-haspopup="menu" aria-expanded={!!modeAnchor}
-              aria-label={`${t.modeLabel}: ${mode === "deep" ? t.modeDeep : t.modeQuick}`} onClick={(e) => setModeAnchor(e.currentTarget)}
-              startIcon={<LayersOutlinedIcon sx={{ color: mode === "deep" ? "inherit" : "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
+              aria-label={`${t.modeLabel}: ${modeName(mode)}`} onClick={(e) => setModeAnchor(e.currentTarget)}
+              startIcon={mode === "chat" ? <ChatBubbleOutlineRoundedIcon sx={{ color: "primary.main" }} /> : <LayersOutlinedIcon sx={{ color: mode === "deep" ? "inherit" : "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
               sx={{
                 borderRadius: 99, fontSize: "0.875rem", px: 1.5, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap",
                 ...(mode === "deep"
                   ? { bgcolor: "primary.main", color: "primary.contrastText", fontWeight: 600, boxShadow: "none", border: 1, borderColor: "primary.main",
                       "&:hover": { bgcolor: "primary.dark", boxShadow: "none" },
                       "&.Mui-disabled": { bgcolor: "action.disabledBackground", color: "text.disabled", borderColor: "transparent" } }
-                  : { borderColor: "divider", fontWeight: 400 }),
+                  : mode === "chat"
+                    ? { borderColor: "primary.main", bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)", color: "text.primary", fontWeight: 600,
+                        "&:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 22%, transparent)", borderColor: "primary.main" } }
+                    : { borderColor: "divider", fontWeight: 400 }),
               }}>
-              {mode === "deep" ? t.modeDeep : t.modeQuick}
+              {modeName(mode)}
             </Button>
             <Menu anchorEl={modeAnchor} open={!!modeAnchor} onClose={() => setModeAnchor(null)} slotProps={{ list: { "aria-label": t.chooseMode } }}>
-              {(["deep", "quick"] as const).map((m) => (
-                <MenuItem key={m} selected={m === mode} role="menuitemradio" aria-checked={m === mode} sx={{ minHeight: 44 }}
-                  onClick={() => { setMode(m); setModeAnchor(null); }}>{m === "deep" ? t.modeDeep : t.modeQuick}</MenuItem>
-              ))}
+              {(["deep", "quick", "chat"] as const).map((m) => {
+                const off = m === "chat" && !hasMemory;
+                return (
+                  <MenuItem key={m} selected={m === mode} disabled={off} role="menuitemradio" aria-checked={m === mode} aria-disabled={off} sx={{ minHeight: 44, display: "block", whiteSpace: "normal", "&.Mui-disabled": { opacity: 1, color: "text.secondary" } }}
+                    onClick={() => { setMode(m); setModeAnchor(null); }}>
+                    {modeName(m)}
+                    {m === "chat" && <Typography component="span" sx={{ display: "block", fontSize: "0.75rem", color: "text.secondary" }}>{off ? t.modeChatDisabled : t.modeChatHint}</Typography>}
+                  </MenuItem>
+                );
+              })}
             </Menu>
             <IconButton aria-label={mine ? t.stop : t.ask} onClick={(e) => { if (!mine) send(); else if (e.detail < 2) stopRun(); }} /* a double-click on Send must not land on Stop */ disabled={!mine && !canSend}
               sx={{ width: 44, height: 44, alignSelf: "center", flexShrink: 0, bgcolor: "primary.main", color: "primary.contrastText", transition: `background-color 160ms ${ease}`, "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 35%, transparent)", color: "primary.contrastText" } }}>

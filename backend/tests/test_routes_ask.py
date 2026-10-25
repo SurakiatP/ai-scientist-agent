@@ -160,3 +160,27 @@ async def test_plan_only_429_when_gate_saturated_and_queue_full(app, fake_comple
     app.state.gate.queue = [object()] * app.state.settings.analyze_max_queue
     r = await post(app, {"question": "What is CRISPR?", "plan_only": True})
     assert r.status_code == 429
+
+
+async def test_chat_mode_streams_answer_without_searching(app, fake_complete):
+    fake_complete["synthesis"] = "From memory [M1]."
+    mem = [{"question": "q", "answer": "A [1]", "references": [{"id": "1", "title": "T", "url": "https://x.org", "status": "verified"}]}]
+    r = await post(app, {"question": "shorter please", "mode": "chat", "memory": mem})
+    ev = events(r.text)
+    assert [e["type"] for e in ev] == ["final_answer", "complete"]
+    assert ev[0]["content"] == "From memory [1]." and ev[0]["references"][0]["status"] == "verified"
+
+
+async def test_chat_mode_without_memory_is_refused(app, fake_complete):
+    assert [e["type"] for e in events((await post(app, {"question": "q", "mode": "chat"})).text)] == ["refused"]
+
+
+async def test_chat_mode_429_when_queue_is_full(app, fake_complete):
+    st = app.state
+    st.settings.analyze_max_queue = 0
+    free, st.gate.free = st.gate.free, 0  # every slot busy, no queue room
+    try:
+        r = await post(app, {"question": "q", "mode": "chat", "memory": [{"question": "q", "answer": "a"}]})
+    finally:
+        st.gate.free = free
+    assert r.status_code == 429

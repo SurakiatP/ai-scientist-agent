@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     guardrail_max_tokens: int = 256
     strategy_max_tokens: int = 1500
     synthesis_max_tokens: int = 4000
+    # "answer research" (chat) mode: the browser sends the session's earlier turns; these cap what reaches the model
+    chat_memory_turns: int = Field(8, ge=1)  # newest turns kept
+    chat_memory_answer_chars: int = Field(6000, ge=1)  # per answer
+    chat_memory_refs: int = Field(40, ge=0)  # references kept across all turns, newest first
     # MinIO file store (self-hosted in the stack); empty endpoint = uploads off. *_file wins over the plain value (Docker secrets)
     minio_endpoint: str = ""
     minio_access_key: str = ""

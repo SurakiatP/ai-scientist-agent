@@ -48,11 +48,12 @@ export function InlineRename({ value, label, onSave, onCancel }: { value: string
   );
 }
 
-export function InlineConfirm({ text, onConfirm, onCancel }: { text: string; onConfirm: () => void; onCancel: () => void }) {
+export function InlineConfirm({ text, note, onConfirm, onCancel }: { text: string; note?: string; onConfirm: () => void; onCancel: () => void }) {
   const t = useT();
   return (
     <Stack role="group" aria-label={text} spacing={0.5} sx={{ p: 0.5 }} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onCancel(); } }}>
       <Typography sx={{ fontSize: "0.8125rem" }}>{text}</Typography>
+      {note && <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{note}</Typography>}
       <Stack direction="row" spacing={0.5}>
         <Button size="small" color="error" variant="contained" autoFocus onClick={onConfirm} sx={{ minHeight: 44 }}>{t.confirm}</Button>
         <Button size="small" color="inherit" onClick={onCancel} sx={{ minHeight: 44 }}>{t.cancel}</Button>
