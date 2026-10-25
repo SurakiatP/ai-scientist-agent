@@ -32,7 +32,7 @@ export default function ChatPage() {
   useEffect(() => { useInspector.setState({ ref: null }); useReportPanel.setState({ ref: null }); }, [active?.id]); // a source or report from another chat never lingers
   // right panel: the source being inspected, else the running (or last) turn's real progress
   const turn = active?.turns.find((x) => x.status === "running") ?? active?.turns.at(-1);
-  const progress = turn && turn.status !== "awaiting_plan" && (turn.status === "running" || turn.progress.searches.length > 0 || !!turn.answer) ? <ProgressPanel turn={turn} sessionId={active?.id} /> : null;
+  const progress = turn && turn.mode !== "chat" && turn.status !== "awaiting_plan" && (turn.status === "running" || turn.progress.searches.length > 0 || !!turn.answer) ? <ProgressPanel turn={turn} sessionId={active?.id} /> : null;
   return (
     <AppShell asideWide={wide && reporting && !inspecting} aside={wide ? (inspecting ? <SourceInspector variant="panel" /> : reporting ? <ReportPanel variant="panel" /> : progress) : null}>
       {!wide && <SourceInspector variant="sheet" />}

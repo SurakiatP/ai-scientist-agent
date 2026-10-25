@@ -486,4 +486,14 @@ describe("answer tabs", () => {
     rerender(<AgentMessage sessionId="s" turn={turn("done", { mode: "chat", answer: { content: "ans", references: [] } })} />);
     expect(screen.getByText(t.chatCaption)).toBeInTheDocument();
   });
+
+  it("chat-mode answer is not a research report: no report card and no report action", () => {
+    render(<AgentMessage sessionId="s" turn={turn("done", { mode: "chat", answer: { content: "ans", references: [] } })} />);
+    expect(screen.queryByRole("button", { name: t.makeReport })).toBeNull();
+    expect(screen.queryByText(t.reportShow)).toBeNull();
+  });
+  it("a deep answer still offers the report action", () => {
+    render(<AgentMessage sessionId="s" turn={turn("done", { mode: "deep", answer: { content: "ans", references: [] } })} />);
+    expect(screen.getByRole("button", { name: t.makeReport })).toBeInTheDocument();
+  });
 });
