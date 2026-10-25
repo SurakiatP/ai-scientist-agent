@@ -131,3 +131,16 @@ async def test_queue_ping_and_disconnect_frees_slot_for_next_run(app, fake_compl
     assert got == ["strategy", "sources", "answer", "final_answer", "complete"]
     await asyncio.wait_for(b.task, 10)
     assert app.state.gate.free == 1 and app.state.gate.queue == []
+
+
+async def test_history_plan_clamped_not_rejected(app, fake_complete):
+    fake_complete["strategy"] = None
+    turns = [{"question": str(i) * 3000, "answer": "a"} for i in range(5)]
+    plan = [{"term": " "}, {"term": "การ"}] + [{"term": f"t{i}"} for i in range(9)]
+    r = await post(app, {"question": "What is CRISPR?", "history": turns, "plan": plan, "plan_only": True})
+    assert r.status_code == 200
+    ev = events(r.text)
+    strat = next(e for e in ev if e["type"] == "strategy")
+    assert len(strat["searches"]) == app.state.settings.max_branches
+    assert ev[-1]["type"] == "complete"
+    assert (await post(app, {"question": "q", "mode": "slow"})).status_code == 422

@@ -3,6 +3,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import suppress
+from typing import Literal
 
 import anyio
 from fastapi import APIRouter, Request
@@ -11,15 +12,29 @@ from pydantic import BaseModel, field_validator
 
 from scientist.config import get_settings
 from scientist.events import Error, Event, to_sse
-from scientist.pipeline import ask
+from scientist.pipeline import THAI, ask
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
+class HistoryTurn(BaseModel):
+    question: str
+    answer: str
+
+
+class PlanSearch(BaseModel):
+    term: str
+    instructions: str = ""
+
+
 class AskRequest(BaseModel):
     question: str
+    mode: Literal["deep", "quick"] = "deep"
+    history: list[HistoryTurn] = []
+    plan: list[PlanSearch] | None = None
+    plan_only: bool = False
 
     @field_validator("question")
     @classmethod
@@ -30,6 +45,20 @@ class AskRequest(BaseModel):
         if len(v) > (limit := get_settings().max_question_chars):
             raise ValueError(f"question is longer than {limit} characters")
         return v
+
+    @field_validator("history")
+    @classmethod
+    def _clamp_history(cls, v: list[HistoryTurn]) -> list[HistoryTurn]:  # clamp, never 422
+        return [HistoryTurn(question=t.question[:2000], answer=t.answer[:2000]) for t in v[-3:]]
+
+    @field_validator("plan")
+    @classmethod
+    def _clean_plan(cls, v: list[PlanSearch] | None) -> list[PlanSearch] | None:
+        if v is None:
+            return None
+        kept = [PlanSearch(term=t, instructions=p.instructions.strip()) for p in v
+                if (t := p.term.strip()) and not THAI.search(t)]
+        return kept[:get_settings().max_branches] or None
 
 
 async def _sse(events: AsyncIterator[Event], ping: float) -> AsyncIterator[str]:
@@ -67,6 +96,7 @@ async def _sse(events: AsyncIterator[Event], ping: float) -> AsyncIterator[str]:
 @router.post("/v1/async/ask")
 async def ask_route(body: AskRequest, request: Request) -> StreamingResponse:
     st = request.app.state
-    events = ask(body.question, st.runner, settings=st.settings, client=st.client, gate=st.gate)
+    events = ask(body.question, st.runner, settings=st.settings, client=st.client, gate=st.gate, mode=body.mode,
+                 history=body.history, plan=body.plan, plan_only=body.plan_only)
     return StreamingResponse(_sse(events, st.settings.sse_ping_seconds), media_type="text/event-stream",
                              headers=HEADERS)

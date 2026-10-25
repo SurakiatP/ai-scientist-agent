@@ -22,11 +22,23 @@ STRATEGY = (PROMPTS / "strategy.md").read_text()
 SYNTHESIS = (PROMPTS / "synthesis.md").read_text()
 THAI = re.compile("[฀-๿]")
 DONE = object()
+PLAN_ERROR = "Could not plan a search for this question. Please rephrase it and try again."
 
 
-async def _strategy(question: str, settings: Settings) -> Strategy | None:
+QUICK_SEARCHES = 2
+
+
+def _history_block(history: list) -> str:
+    """Earlier turns as a <history> JSON block; escaping "<" stops the text from closing the block early."""
+    if not history:
+        return ""
+    turns = [{"question": t.question, "answer": t.answer} for t in history]
+    return "<history>\n" + json.dumps(turns, ensure_ascii=False, indent=1).replace("<", "\\u003c") + "\n</history>\n\n"
+
+
+async def _strategy(question: str, settings: Settings, history: list = ()) -> Strategy | None:
     try:
-        r = await llm.complete(STRATEGY, f"Question:\n{question}", max_tokens=settings.strategy_max_tokens,
+        r = await llm.complete(STRATEGY, f"{_history_block(history)}Question:\n{question}", max_tokens=settings.strategy_max_tokens,
                                json_mode=True, settings=settings)
         data = json.loads(r.text)
         searches = [Search(term=str(s.get("term") or "").strip(), instructions=str(s.get("instructions") or "").strip())
@@ -54,29 +66,50 @@ def _ids(refs: list[Reference], status: str) -> str:
     return "".join(f"[{r.id}]" for r in refs if r.status == status)
 
 
+async def _plan(question: str, settings: Settings, mode: str, history: list, plan: list | None) -> Strategy | None:
+    """The caller's plan as-is (no model call), else the model's; quick mode keeps only the first searches."""
+    if plan:
+        strategy = Strategy(reasoning="", searches=[Search(term=p.term, instructions=p.instructions) for p in plan])
+    elif not (strategy := await _strategy(question, settings, history)):
+        return None
+    if mode == "quick":
+        strategy.searches = strategy.searches[:QUICK_SEARCHES]
+    return strategy
+
+
 async def ask(question: str, runner: BranchRunner, *, settings: Settings, client: httpx.AsyncClient,
-              gate: RunGate) -> AsyncIterator[Event]:
-    """Scope check, then, holding a gate slot: strategy, branches, citation check (via client), synthesis."""
+              gate: RunGate, mode: str = "deep", history: list = (), plan: list | None = None,
+              plan_only: bool = False) -> AsyncIterator[Event]:
+    """Scope check, then, holding a gate slot: strategy, branches, citation check (via client), synthesis.
+    plan_only stops after the strategy, with no gate slot."""
     verdict = await check_scope(question, settings=settings)
     if not verdict.in_scope:
         yield Refused(reason=verdict.reason)  # refusals never queue or take a slot
+        return
+    if plan_only:
+        if strategy := await _plan(question, settings, mode, history, plan):
+            yield strategy
+            yield Complete()
+        else:
+            yield Error(message=PLAN_ERROR)
         return
     async with aclosing(gate.acquire()) as waits:
         async for position in waits:
             yield Waiting(position=position)
     try:
         # aclosing: when our consumer goes away, _run's cleanup (killing the bridges) runs now, not at GC
-        async with aclosing(_run(question, runner, settings, client)) as events:
+        async with aclosing(_run(question, runner, settings, client, mode, history, plan)) as events:
             async for e in events:
                 yield e
     finally:
         gate.release()
 
 
-async def _run(question: str, runner: BranchRunner, settings: Settings, client: httpx.AsyncClient) -> AsyncIterator[Event]:
-    plan = await _strategy(question, settings)
+async def _run(question: str, runner: BranchRunner, settings: Settings, client: httpx.AsyncClient, mode: str,
+               history: list, given: list | None) -> AsyncIterator[Event]:
+    plan = await _plan(question, settings, mode, history, given)
     if plan is None:
-        yield Error(message="Could not plan a search for this question. Please rephrase it and try again.")
+        yield Error(message=PLAN_ERROR)
         return
     yield plan
 
@@ -161,7 +194,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
                                   + note, references=refs)
         yield Complete()
         return
-    user = (_data_block(refs, answers)
+    user = (_history_block(history) + _data_block(refs, answers)
             + "".join(f'\nThe search for "{t}" failed and returned no findings.' for t in failed)
             + f"\n\nQuestion:\n{question}")
     try:
