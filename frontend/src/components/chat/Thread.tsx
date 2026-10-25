@@ -25,7 +25,7 @@ export function Thread({ sessionId }: { sessionId: string }) {
       <Stack spacing={3.5} sx={{ maxWidth: UI.content, mx: "auto", px: { xs: 2, sm: 3 }, py: 3 }}>
         {turns?.map((x) => (
           <Stack key={x.id} component="article" spacing={2} sx={seen.has(x.id) ? undefined : enterRise}>
-            <UserMessage question={x.question} createdAt={x.createdAt} />
+            <UserMessage sessionId={sessionId} turn={x} />
             <AgentMessage sessionId={sessionId} turn={x} />
           </Stack>
         ))}

@@ -44,6 +44,19 @@ describe("chat store", () => {
     for (let i = 0; i < 55; i++) s.getState().addTurn(id, turn(String(i)) as never);
     expect(s.getState().sessions[0].turns).toHaveLength(50);
   });
+  it("truncateFrom drops that turn and later ones, survives reload, ignores unknown ids", async () => {
+    const s = await load();
+    const id = s.getState().newSession();
+    ["a", "b", "c"].forEach((x) => s.getState().addTurn(id, turn(x) as never));
+    s.getState().truncateFrom(id, "zzz");
+    expect(s.getState().sessions[0].turns).toHaveLength(3);
+    s.getState().truncateFrom(id, "b");
+    expect(s.getState().sessions[0].turns.map((t) => t.id)).toEqual(["a"]);
+    vi.resetModules();
+    expect((await load()).getState().sessions[0].turns.map((t) => t.id)).toEqual(["a"]);
+    s.getState().truncateFrom(id, "a");
+    expect(s.getState().sessions[0].turns).toEqual([]);
+  });
   it("rehydrates running turns as interrupted", async () => {
     localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [turn("t", "running")])], activeId: "s" } }));
     const s = await load();

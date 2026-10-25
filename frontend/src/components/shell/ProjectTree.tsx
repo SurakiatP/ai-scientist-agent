@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Box, Button, IconButton, List, ListItemButton, Stack, TextField, Typography } from "@mui/material";
+import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
@@ -11,10 +12,10 @@ import { UI } from "@/lib/config";
 import { PERSONAL, useChatStore } from "@/lib/chat";
 import { useHydrated } from "@/lib/history";
 import { canAnimate, ease } from "@/lib/motion";
-import { useT } from "@/lib/prefs";
+import { usePrefs, useT } from "@/lib/prefs";
 import { useGoChat } from "@/lib/nav";
 import { stopRun, useRunState } from "@/lib/run";
-import { focusKebab, InlineConfirm, InlineRename, KebabMenu, SessionMenu } from "./SessionMenu";
+import { ago, focusKebab, InlineConfirm, InlineRename, KebabMenu, SessionMenu } from "./SessionMenu";
 import { projectName, selectProject } from "./ProjectSwitcher";
 
 // Which project groups are open. Session-scoped (sessionStorage), never synced; SessionList reads it so a
@@ -22,10 +23,11 @@ import { projectName, selectProject } from "./ProjectSwitcher";
 const KEY = "scientist-tree-open";
 const read = (): string[] => { try { const v = JSON.parse(sessionStorage.getItem(KEY) ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string") : []; } catch { return []; } };
 const write = (ids: string[]) => { try { sessionStorage.setItem(KEY, JSON.stringify(ids)); } catch { /* storage blocked: state stays in memory */ } };
-export const useTreeOpen = create<{ open: string[]; toggle: (id: string) => void; add: (id: string) => void; load: () => void }>()((set, get) => ({
+export const useTreeOpen = create<{ open: string[]; toggle: (id: string) => void; add: (id: string) => void; setOnly: (id: string) => void; load: () => void }>()((set, get) => ({
   open: [],
   toggle: (id) => { const open = get().open.includes(id) ? get().open.filter((x) => x !== id) : [...get().open, id]; write(open); set({ open }); },
   add: (id) => { if (!get().open.includes(id)) { const open = [...get().open, id]; write(open); set({ open }); } },
+  setOnly: (id) => { write([id]); set({ open: [id] }); },
   load: () => set({ open: read() }),
 }));
 
@@ -57,6 +59,7 @@ const reveal = {
   "@media (hover: hover)": {
     "& .kebab": { position: "absolute", right: 0, opacity: 0 },
     "&:hover .kebab, &:focus-within .kebab, & .kebab:has([aria-expanded=true])": { opacity: 1 },
+    "&:hover .when, &:focus-within .when": { visibility: "hidden" },
   },
 };
 const activeBg = "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)";
@@ -65,7 +68,8 @@ export function ProjectTree({ query, onPick }: { query: string; onPick?: () => v
   const t = useT();
   const hydrated = useHydrated();
   const goChat = useGoChat();
-  const { open, toggle, add, load } = useTreeOpen();
+  const { open, toggle, add, load, setOnly } = useTreeOpen();
+  const lang = usePrefs((s) => s.lang), [listOpen, setListOpen] = useState(true);
   const storeProjects = useChatStore((s) => s.projects), storeActive = useChatStore((s) => s.activeProjectId), storeSessions = useChatStore((s) => s.sessions);
   const activeId = useChatStore((s) => s.activeId), setActive = useChatStore((s) => s.setActive), newSession = useChatStore((s) => s.newSession), addProject = useChatStore((s) => s.addProject);
   const store = useChatStore.getState();
@@ -80,7 +84,13 @@ export function ProjectTree({ query, onPick }: { query: string; onPick?: () => v
 
   useEffect(() => { if (hydrated) load(); }, [hydrated, load]);
   // the project new chats go to (and the one of the open chat) is always expanded when it becomes active
-  useEffect(() => { if (hydrated) add(activeProjectId); }, [hydrated, activeProjectId, add]);
+  // later switches collapse the other groups (the user can still open several by hand)
+  const seen = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hydrated) return;
+    if (seen.current !== null && seen.current !== activeProjectId) setOnly(activeProjectId); else add(activeProjectId);
+    seen.current = activeProjectId;
+  }, [hydrated, activeProjectId, add, setOnly]);
 
   const closeForm = () => { setAdding(false); setName(""); setFull(false); };
   const submit = () => {
@@ -102,12 +112,15 @@ export function ProjectTree({ query, onPick }: { query: string; onPick?: () => v
   return (
     <Box component="section" aria-label={t.projects}>
       <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", pl: 1.25, pt: 0.5 }}>
-        <Typography component="h2" sx={{ fontSize: "0.6875rem", fontWeight: 500, color: "text.secondary" }}>{t.projects}</Typography>
+        <Button color="inherit" aria-expanded={listOpen} aria-label={`${t.toggleProject} ${t.projects}`} onClick={() => setListOpen((v) => !v)} endIcon={<ExpandMoreRoundedIcon sx={{ transform: listOpen ? "none" : "rotate(-90deg)" }} />}
+          sx={{ ...coarse(32), px: 0.75, ml: -0.75, fontSize: "0.6875rem", fontWeight: 500, color: "text.secondary", "& .MuiButton-endIcon": { ml: 0.25, "& svg": { fontSize: 16 } } }}>
+          <Box component="span">{t.projects}</Box>
+        </Button>
         <IconButton size="small" aria-label={t.newProject} aria-expanded={adding} onClick={() => (adding ? closeForm() : setAdding(true))} sx={{ color: "text.primary" }}>
           <Box sx={{ display: "grid", placeItems: "center", width: 22, height: 22, border: 1, borderColor: "divider", borderRadius: "50%" }}><AddRoundedIcon sx={{ fontSize: 16 }} /></Box>
         </IconButton>
       </Stack>
-      {adding && (
+      {adding && listOpen && (
         <Stack direction="row" spacing={0.5} sx={{ mt: 1, mb: 1.5, px: 0.5, alignItems: "flex-start" }}>
           <TextField size="small" fullWidth autoFocus placeholder={t.newProject} value={name} onChange={(e) => { setName(e.target.value); setFull(false); }} error={full}
             helperText={full ? t.projectLimit : undefined}
@@ -121,12 +134,13 @@ export function ProjectTree({ query, onPick }: { query: string; onPick?: () => v
           <IconButton aria-label={t.cancel} onClick={closeForm} sx={{ ...coarse(40), width: { xs: 44, "@media (pointer: fine)": 40 }, color: "text.secondary" }}><CloseRoundedIcon fontSize="small" /></IconButton>
         </Stack>
       )}
-      <Box sx={{ mt: adding ? 0 : 0.5 }}>
+      <Collapse open={listOpen}><Box sx={{ pt: adding ? 0 : 0.5 }}>
         {projects.map((p) => {
           const pname = projectName(p, t);
-          const expanded = hydrated && open.includes(p.id);
+          
           const current = p.id === activeProjectId;
           const rows = sessions.filter((s) => s.projectId === p.id && (!q || (s.title || t.untitled).toLowerCase().includes(q))).sort((a, b) => b.updatedAt - a.updatedAt);
+          const expanded = hydrated && (open.includes(p.id) || (!!q && rows.length > 0));
           if (pedit?.id === p.id) return (
             <Box key={p.id} sx={{ px: 0.5, mb: 0.5 }}>
               {pedit.mode === "rename"
@@ -168,6 +182,7 @@ export function ProjectTree({ query, onPick }: { query: string; onPick?: () => v
                         sx={{ ...coarse(36), borderRadius: 1.2, gap: 1, minWidth: 0, px: 1 }}>
                         <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: "0.8125rem" }}>{s.title || t.untitled}</Typography>
                         {s.id === runningId && <Box role="img" aria-label={t.running} sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "primary.main", flexShrink: 0 }} />}
+                        <Typography className="when" component="span" sx={{ fontSize: "0.75rem", color: "text.secondary", flexShrink: 0, minWidth: 28, textAlign: "right" }}>{ago(s.updatedAt, lang)}</Typography>
                       </ListItemButton>
                       <Box className="kebab" sx={{ display: "flex" }}>
                         <SessionMenu kid={"t-" + s.id} session={s} onRename={() => setSedit({ id: s.id, mode: "rename" })} onDelete={() => setSedit({ id: s.id, mode: "delete" })} />
@@ -186,7 +201,7 @@ export function ProjectTree({ query, onPick }: { query: string; onPick?: () => v
             </Box>
           );
         })}
-      </Box>
+      </Box></Collapse>
     </Box>
   );
 }

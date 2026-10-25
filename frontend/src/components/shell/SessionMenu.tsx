@@ -79,3 +79,12 @@ export function SessionMenu({ session, onRename, onDelete, kid }: { session: Ses
   ];
   return <KebabMenu id={kid ?? session.id} label={`${t.moreActions}: ${session.title || t.untitled}`} actions={actions} />;
 }
+
+// Short relative time ("2 ชม.", "2h"); under a minute reads as "now".
+export function ago(ts: number, lang: string) {
+  const m = Math.max(0, Math.round((Date.now() - ts) / 60_000));
+  const [n, unit] = m < 60 ? [m, "minute"] : m < 1440 ? [Math.round(m / 60), "hour"] : [Math.round(m / 1440), "day"];
+  if (!n) return new Intl.RelativeTimeFormat(lang, { numeric: "auto" }).format(0, "second");
+  return new Intl.NumberFormat(lang, { style: "unit", unit, unitDisplay: "narrow" }).format(n);
+}
+

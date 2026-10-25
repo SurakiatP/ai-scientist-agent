@@ -201,6 +201,7 @@ type State = {
   deleteProject: (id: string) => void;
   patchTurn: (sessionId: string, turnId: string, patch: Partial<Turn>) => void;
   addTurn: (sessionId: string, turn: Turn) => void;
+  truncateFrom: (sessionId: string, turnId: string) => void; // removes that turn and every later one
   importLegacyHistory: () => void;
   clearAll: () => void;
 };
@@ -253,6 +254,11 @@ export const useChatStore = create<State>()(
           ...x, title: x.title || title(turn.question), updatedAt: Date.now(),
           turns: [...x.turns, { ...turn, ...clampPatch(turn) }].slice(-MAX_TURNS), // oldest turn dropped past the cap
         }))),
+      truncateFrom: (sessionId, turnId) =>
+        set((s) => mapSession(s, sessionId, (x) => {
+          const i = x.turns.findIndex((t) => t.id === turnId);
+          return i < 0 ? x : { ...x, updatedAt: Date.now(), turns: x.turns.slice(0, i) };
+        })),
       patchTurn: (sessionId, turnId, patch) =>
         set((s) => mapSession(s, sessionId, (x) => ({ ...x, updatedAt: Date.now(), turns: x.turns.map((t) => (t.id === turnId ? { ...t, ...clampPatch(patch) } : t)) }))),
       importLegacyHistory: () => {

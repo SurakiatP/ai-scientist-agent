@@ -9,15 +9,7 @@ import { usePrefs, useT } from "@/lib/prefs";
 import { stopRun, useRunState } from "@/lib/run";
 import { useTreeOpen } from "./ProjectTree";
 import { projectName } from "./ProjectSwitcher";
-import { focusKebab, InlineConfirm, InlineRename, SessionMenu } from "./SessionMenu";
-
-// Short relative time ("2 ชม.", "2h"); under a minute reads as "now".
-function ago(ts: number, lang: string) {
-  const m = Math.max(0, Math.round((Date.now() - ts) / 60_000));
-  const [n, unit] = m < 60 ? [m, "minute"] : m < 1440 ? [Math.round(m / 60), "hour"] : [Math.round(m / 1440), "day"];
-  if (!n) return new Intl.RelativeTimeFormat(lang, { numeric: "auto" }).format(0, "second");
-  return new Intl.NumberFormat(lang, { style: "unit", unit, unitDisplay: "narrow" }).format(n);
-}
+import { ago, focusKebab, InlineConfirm, InlineRename, SessionMenu } from "./SessionMenu";
 
 export function SessionList({ query, onPick }: { query: string; onPick?: () => void }) {
   const t = useT();
