@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Button, IconButton, Menu, MenuItem, Stack, TextField, Typography } from "@mui/material";
-import MoreVertRoundedIcon from "@mui/icons-material/MoreVertRounded";
+import MoreHorizRoundedIcon from "@mui/icons-material/MoreHorizRounded";
 import { useChatStore, type Session } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
 import { projectName } from "./ProjectSwitcher";
@@ -17,7 +17,7 @@ export function KebabMenu({ id, label, actions }: { id: string; label: string; a
   return (
     <>
       <IconButton id={`kebab-${id}`} aria-label={label} aria-haspopup="menu" aria-expanded={!!anchor} onClick={(e) => setAnchor(e.currentTarget)} sx={{ width: 44, height: 44, flexShrink: 0 }}>
-        <MoreVertRoundedIcon fontSize="small" />
+        <MoreHorizRoundedIcon fontSize="small" sx={{ color: "text.secondary" }} />
       </IconButton>
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
         {actions.map((a) => a.header
@@ -48,11 +48,12 @@ export function InlineRename({ value, label, onSave, onCancel }: { value: string
   );
 }
 
-export function InlineConfirm({ text, onConfirm, onCancel }: { text: string; onConfirm: () => void; onCancel: () => void }) {
+export function InlineConfirm({ text, note, onConfirm, onCancel }: { text: string; note?: string; onConfirm: () => void; onCancel: () => void }) {
   const t = useT();
   return (
     <Stack role="group" aria-label={text} spacing={0.5} sx={{ p: 0.5 }} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onCancel(); } }}>
       <Typography sx={{ fontSize: "0.8125rem" }}>{text}</Typography>
+      {note && <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{note}</Typography>}
       <Stack direction="row" spacing={0.5}>
         <Button size="small" color="error" variant="contained" autoFocus onClick={onConfirm} sx={{ minHeight: 44 }}>{t.confirm}</Button>
         <Button size="small" color="inherit" onClick={onCancel} sx={{ minHeight: 44 }}>{t.cancel}</Button>
@@ -61,7 +62,8 @@ export function InlineConfirm({ text, onConfirm, onCancel }: { text: string; onC
   );
 }
 
-export function SessionMenu({ session, onRename, onDelete }: { session: Session; onRename: () => void; onDelete: () => void }) {
+// kid: DOM id key for the kebab, so the same session shown in two lists keeps unique ids.
+export function SessionMenu({ session, onRename, onDelete, kid }: { session: Session; onRename: () => void; onDelete: () => void; kid?: string }) {
   const t = useT();
   const projects = useChatStore((s) => s.projects), moveSession = useChatStore((s) => s.moveSession), setActive = useChatStore((s) => s.setActive), activeId = useChatStore((s) => s.activeId);
   const others = projects.filter((p) => p.id !== session.projectId);
@@ -75,5 +77,14 @@ export function SessionMenu({ session, onRename, onDelete }: { session: Session;
     })),
     { label: t.deleteItem, onClick: onDelete },
   ];
-  return <KebabMenu id={session.id} label={`${t.moreActions}: ${session.title || t.untitled}`} actions={actions} />;
+  return <KebabMenu id={kid ?? session.id} label={`${t.moreActions}: ${session.title || t.untitled}`} actions={actions} />;
 }
+
+// Short relative time ("2 ชม.", "2h"); under a minute reads as "now".
+export function ago(ts: number, lang: string) {
+  const m = Math.max(0, Math.round((Date.now() - ts) / 60_000));
+  const [n, unit] = m < 60 ? [m, "minute"] : m < 1440 ? [Math.round(m / 60), "hour"] : [Math.round(m / 1440), "day"];
+  if (!n) return new Intl.RelativeTimeFormat(lang, { numeric: "auto" }).format(0, "second");
+  return new Intl.NumberFormat(lang, { style: "unit", unit, unitDisplay: "narrow" }).format(n);
+}
+

@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+**/.env
+**/.env.*
+!**/.env.example
+.superpowers
+.impeccable
+.claude
+.opencode
+**/node_modules
+**/.next
+**/__pycache__
+**/*.tsbuildinfo
+docs
+infra/deploy

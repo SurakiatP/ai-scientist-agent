@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     max_question_chars: int = 2000
     hermes_source_path: Path
     hermes_revision: str
+    # writable dir rebuilt at startup (compose: tmpfs); the pinned cache stays read-only
+    hermes_runtime_dir: Path = Path.home() / ".cache/scientist/hermes-home"
     enabled_skills: list[str] = []
     cors_origins: list[str] = ["http://localhost:3000"]
     sse_ping_seconds: float = 15  # comment line while a run waits, so proxies keep the stream open
@@ -26,6 +28,62 @@ class Settings(BaseSettings):
     guardrail_max_tokens: int = 256
     strategy_max_tokens: int = 1500
     synthesis_max_tokens: int = 4000
+    # "answer research" (chat) mode: the browser sends the session's earlier turns; these cap what reaches the model
+    chat_memory_turns: int = Field(8, ge=1)  # newest turns kept
+    chat_memory_answer_chars: int = Field(6000, ge=1)  # per answer
+    chat_memory_refs: int = Field(40, ge=0)  # references kept across all turns, newest first
+    # MinIO file store (self-hosted in the stack); empty endpoint = uploads off. *_file wins over the plain value (Docker secrets)
+    minio_endpoint: str = ""
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
+    minio_access_key_file: str = ""
+    minio_secret_key_file: str = ""
+    minio_bucket: str = "scientist-uploads"
+    # PostgreSQL (optional): empty database_url = no database, app behaves as before. Password may live in a Docker secret file (wins over any password in the URL).
+    database_url: str = ""
+    database_password_file: str = ""
+    # Shared data store (/v1/store). No login: caps below are the only guard on what one caller can do.
+    trash_days: int = Field(7, ge=1)
+    store_max_sessions: int = Field(200, ge=1)
+    store_write_rate_per_min: int = Field(600, ge=0)  # per client IP; 0 = unlimited
+    store_max_body_bytes: int = 1_000_000  # every store route except import
+    import_max_bytes: int = 10_000_000
+    max_turns_per_session: int = Field(50, ge=1)  # newest turns per session in a snapshot; the rest load on demand
+    store_max_turns: int = Field(500, ge=1)  # turns one session may hold
+    store_max_turn_json_bytes: int = Field(200_000, ge=1)  # progress / plan / analysis / answer, each, serialized
+    allowed_origins: list[str] = []  # non-empty: a store write carrying an Origin header must match one of these
+    usage_retention_days: int = Field(180, ge=1)
+    db_pool_size: int = Field(5, ge=1)
+    db_max_overflow: int = Field(5, ge=0)
+    db_connect_timeout_s: int = Field(3, ge=1)
+    db_statement_timeout_ms: int = Field(15000, ge=1)
+    # Presigned previews: the browser talks to MinIO directly. Public endpoint = URL the BROWSER reaches (empty = minio_endpoint).
+    minio_public_endpoint: str = ""
+    presign_enabled: bool = True
+    presign_ttl_seconds: int = Field(300, ge=1, le=3600)
+    upload_max_bytes_csv: int = 100_000_000
+    upload_max_bytes_parquet: int = 100_000_000
+    upload_max_bytes_xlsx: int = 25_000_000
+    upload_max_bytes_json: int = 50_000_000
+    upload_max_bytes_pdf: int = 30_000_000
+    upload_max_bytes_docx: int = 30_000_000
+    upload_max_files: int = 10  # file parts accepted per request
+    upload_max_total_bytes: int = 200_000_000  # request body cap
+    # data-analysis sandbox (docker run limits; see sandbox/ and scientist/sandbox.py)
+    sandbox_enabled: bool = True  # false where no Docker-capable runner exists (Compose deployment): analyze answers 503
+    analyze_max_queue: int = 20  # analyses allowed to wait for a sandbox slot; more get 429
+    sandbox_image: str = "scientist-sandbox:latest"
+    sandbox_mem: str = "2g"  # also --memory-swap, so swap is off
+    sandbox_cpus: float = 1.0
+    sandbox_timeout_s: int = 60
+    sandbox_pids: int = 128
+    sandbox_max_rows: int = 2_000_000
+    sandbox_max_concurrent: int = 3
+    sandbox_output_max_bytes: int = 10_000_000
+    analyze_max_tokens: int = 3000
+    preview_max_concurrent: int = 2  # document previews rendering at once; up to 10 more may wait, the rest get 429
+    preview_ttl_seconds: int = 600
+    preview_max_entries: int = 20
     contact_email: str = ""  # sent as mailto in the citation-check User-Agent (Crossref/NCBI polite pool)
 
 

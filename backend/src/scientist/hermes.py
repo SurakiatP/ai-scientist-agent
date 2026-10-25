@@ -55,7 +55,7 @@ class BranchRunner(Protocol):
 
 
 def _git(path: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(path), *args], capture_output=True, text=True, check=True,
+    return subprocess.run(["git", "-c", "safe.directory=*", "-C", str(path), *args], capture_output=True, text=True, check=True,
                           timeout=30).stdout.strip()
 
 
@@ -89,7 +89,7 @@ class HermesRuntime(BranchRunner):
         source = self.settings.hermes_source_path.expanduser()
         _check_pinned(source, self.settings.hermes_revision)
         _check_pinned(SKILLS_SOURCE, SKILLS_REVISION)
-        home = CACHE / "hermes-home"  # rebuilt per runtime: one HermesRuntime per machine (single backend process)
+        home = self.settings.hermes_runtime_dir  # rebuilt per runtime: one HermesRuntime per machine (single backend process)
         shutil.rmtree(home, ignore_errors=True)
         (home / "skills").mkdir(parents=True)
         (home / "process-home").mkdir()

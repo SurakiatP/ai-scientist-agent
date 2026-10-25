@@ -1,22 +1,30 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { UploadError } from "@/lib/sse";
 import { useChatStore, type Turn } from "@/lib/chat";
+import { useAttach, useFilesStore } from "@/lib/files";
 import { usePrefs } from "@/lib/prefs";
 import { emptyProgress } from "@/lib/progress";
 import { MAX_QUESTION, sampleQuestions, strings } from "@/lib/strings";
+import { useReportPanel } from "@/lib/exportReport";
 import { AgentMessage } from "./AgentMessage";
-import { Composer, useDraft } from "./Composer";
+import { Composer, useDraft, useMode } from "./Composer";
 import { EmptyChat } from "./EmptyChat";
 import { Thread } from "./Thread";
 
-const run = vi.hoisted(() => ({ sessionId: null as string | null, turnId: null as string | null, startRun: vi.fn(async () => {}), stopRun: vi.fn() }));
+const run = vi.hoisted(() => ({ sessionId: null as string | null, turnId: null as string | null, startRun: vi.fn(async () => {}), startAnalysis: vi.fn(async () => {}), approvePlan: vi.fn(async () => {}), cancelPlan: vi.fn(), stopRun: vi.fn() }));
 vi.mock("@/lib/run", () => ({
   useRunState: () => ({ sessionId: run.sessionId, turnId: run.turnId }),
   startRun: run.startRun,
+  startAnalysis: run.startAnalysis,
+  approvePlan: run.approvePlan,
+  cancelPlan: run.cancelPlan,
   stopRun: run.stopRun,
   canStart: () => (run.turnId ? { ok: false, reason: "busy" } : { ok: true }),
 }));
+const upload = vi.hoisted(() => ({ fn: vi.fn() }));
+vi.mock("@/lib/sse", async (orig) => ({ ...(await orig<typeof import("@/lib/sse")>()), uploadFile: upload.fn }));
 
 const t = strings.th;
 const turn = (status: Turn["status"], p: Partial<Turn> = {}): Turn => ({ id: `t${Math.random()}`, question: "Q1", createdAt: Date.now(), status, progress: emptyProgress, ...p });
@@ -34,8 +42,11 @@ beforeEach(() => {
   useChatStore.getState().clearAll();
   usePrefs.setState({ lang: "th" });
   run.sessionId = run.turnId = null;
-  run.startRun.mockReset(); run.startRun.mockImplementation(async () => {}); run.stopRun.mockClear();
+  run.startRun.mockReset(); run.startRun.mockImplementation(async () => {}); run.startAnalysis.mockReset(); run.startAnalysis.mockImplementation(async () => {});
+  run.approvePlan.mockReset(); run.approvePlan.mockImplementation(async () => {}); run.cancelPlan.mockClear(); run.stopRun.mockClear();
+  upload.fn.mockReset();
   useDraft.setState({ drafts: {} });
+  useMode.setState({ mode: "deep" });
 });
 afterEach(cleanup);
 
@@ -47,7 +58,7 @@ describe("Composer", () => {
     fireEvent.keyDown(box(), { key: "Enter", shiftKey: true });
     expect(run.startRun).not.toHaveBeenCalled();
     fireEvent.keyDown(box(), { key: "Enter" });
-    expect(run.startRun).toHaveBeenCalledWith(id, "hello");
+    expect(run.startRun).toHaveBeenCalledWith(id, "hello", { mode: "deep" });
     expect(box().value).toBe("");
   });
 
@@ -70,9 +81,76 @@ describe("Composer", () => {
     expect(run.startRun).not.toHaveBeenCalled();
   });
 
-  it("disabled attach exposes its reason", () => {
+  it("attach accepts the analysis formats", () => {
     render(<Composer sessionId={mk()} />);
-    expect(screen.getByRole("button", { name: new RegExp(t.attachReason) })).toBeDisabled();
+    expect(screen.getByRole("button", { name: t.attach })).toBeEnabled();
+    expect(document.querySelector('input[type="file"]')).toHaveAttribute("accept", ".csv,.xlsx,.parquet,.json");
+  });
+
+  it("uploads one file, shows its name and size, then sends an analysis", async () => {
+    upload.fn.mockResolvedValue({ id: "f1", name: "data.csv", size: 2048, kind: "csv" });
+    const id = mk();
+    render(<Composer sessionId={id} />);
+    fireEvent.click(screen.getByRole("button", { name: t.attach }));
+    fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [new File(["a,b"], "data.csv", { type: "text/csv" })] } });
+    expect(await screen.findByText("data.csv")).toBeInTheDocument();
+    expect(screen.getByText("2.0 KB")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeDeep}` })).toBeDisabled();
+    type("what changed?");
+    expect(sendBtn()).toBeEnabled();
+    fireEvent.click(sendBtn());
+    expect(run.startAnalysis).toHaveBeenCalledWith(id, "what changed?", "f1", "data.csv");
+    expect(run.startRun).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByText("data.csv")).toBeNull());
+  });
+
+  it("a successful upload is added to My files and removing the chip keeps it", async () => {
+    upload.fn.mockResolvedValue({ id: "f1", name: "data.csv", size: 2048, kind: "csv" });
+    useFilesStore.setState({ files: [] });
+    render(<Composer sessionId={mk()} />);
+    fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [new File(["a,b"], "data.csv", { type: "text/csv" })] } });
+    await screen.findByText("data.csv");
+    expect(useFilesStore.getState().files).toMatchObject([{ id: "f1", name: "data.csv", size: 2048, kind: "csv", projectId: "personal" }]);
+    fireEvent.click(screen.getByRole("button", { name: `${t.removeFile}: data.csv` }));
+    expect(useFilesStore.getState().files).toHaveLength(1);
+  });
+
+  it("Analyze from My files attaches the library file without uploading", async () => {
+    render(<Composer sessionId={mk()} />);
+    act(() => useAttach.setState({ file: { id: "f9", name: "lib.csv", size: 10 } }));
+    expect(await screen.findByText("lib.csv")).toBeInTheDocument();
+    expect(upload.fn).not.toHaveBeenCalled();
+    expect(useAttach.getState().file).toBeNull();
+    type("go");
+    fireEvent.click(sendBtn());
+    expect(run.startAnalysis).toHaveBeenCalledWith(expect.any(String), "go", "f9", "lib.csv");
+  });
+
+  it("upload failure keeps an error chip and blocks Send until removed", async () => {
+    upload.fn.mockRejectedValueOnce(new UploadError("http", "too large"));
+    render(<Composer sessionId={mk()} />);
+    fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [new File(["x"], "big.csv")] } });
+    expect(await screen.findByText(t.uploadFailed)).toBeInTheDocument();
+    expect(screen.getByText("too large")).toBeInTheDocument();
+    type("q");
+    expect(sendBtn()).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: `${t.removeFile}: big.csv` }));
+    expect(screen.queryByText("big.csv")).toBeNull();
+    expect(sendBtn()).toBeEnabled();
+  });
+
+  it("removing an upload aborts it and disables Send while it is in flight", () => {
+    let signal: AbortSignal | undefined;
+    upload.fn.mockImplementation((_file: File, s: AbortSignal) => { signal = s; return new Promise(() => {}); });
+    render(<Composer sessionId={mk()} />);
+    type("q");
+    fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [new File(["x"], "slow.csv")] } });
+    expect(screen.getByText(t.uploadingFile)).toBeInTheDocument();
+    expect(sendBtn()).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: `${t.removeFile}: slow.csv` }));
+    expect(signal!.aborted).toBe(true);
+    expect(screen.queryByText(t.uploadingFile)).toBeNull();
+    expect(sendBtn()).toBeEnabled();
   });
 
   it("busy elsewhere disables send with a reason; busy here shows Stop", () => {
@@ -110,7 +188,9 @@ describe("Composer", () => {
   });
 
   it("draft is per session", () => {
-    const a = mk(), b = mk();
+    const a = mk();
+    useChatStore.getState().renameSession(a, "A"); // a named chat is not blank, so the next newSession is a distinct one
+    const b = mk();
     const { unmount } = render(<Composer sessionId={a} />);
     type("only in a");
     unmount();
@@ -120,12 +200,17 @@ describe("Composer", () => {
     expect(run.startRun).not.toHaveBeenCalled();
   });
 
-  it("follow-up note only once the session has turns", () => {
-    const { unmount } = render(<Composer sessionId={mk()} />);
-    expect(screen.queryByText(t.followUpNote)).toBeNull();
-    unmount();
-    render(<Composer sessionId={mk([turn("done")])} />);
-    expect(screen.getByText(t.followUpNote)).toBeInTheDocument();
+  it("mode selector defaults to deep, toggles, and sends the selected mode", () => {
+    const id = mk();
+    render(<Composer sessionId={id} />);
+    const trigger = () => screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeDeep}` });
+    expect(trigger()).toBeInTheDocument();
+    fireEvent.click(trigger());
+    fireEvent.click(screen.getByRole("menuitemradio", { name: t.modeQuick }));
+    expect(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeQuick}` })).toBeInTheDocument();
+    type("q");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(run.startRun).toHaveBeenCalledWith(id, "q", { mode: "quick" });
   });
 });
 
@@ -136,7 +221,7 @@ describe("EmptyChat", () => {
     expect(screen.queryByText(/OTHER-/)).toBeNull();
     expect(screen.getByRole("heading", { name: t.emptyHeading })).toBeInTheDocument();
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
-    expect(screen.getAllByRole("button").filter((b) => sampleQuestions.includes(b.textContent as never))).toHaveLength(3);
+    expect(screen.getAllByRole("button").filter((b) => sampleQuestions.includes(b.getAttribute("aria-label") as never))).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: sampleQuestions[1] }));
     expect(box().value).toBe(sampleQuestions[1]);
     expect(run.startRun).not.toHaveBeenCalled();
@@ -162,7 +247,7 @@ describe("Thread", () => {
   it("copy failure shows feedback", async () => {
     Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("no")) }, configurable: true });
     render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "x", references: [] } })} />);
-    fireEvent.click(screen.getByRole("button", { name: t.copyAnswer }));
+    fireEvent.click(await screen.findByRole("button", { name: t.copyAnswer }));
     expect(await screen.findByText(t.copyFailed)).toBeInTheDocument();
   });
 
@@ -171,10 +256,27 @@ describe("Thread", () => {
     expect(container.querySelectorAll("article")).toHaveLength(0);
   });
 
-  it("refused reason is plain text without role=alert", () => {
-    render(<Thread sessionId={mk([turn("refused", { refused: "นอกขอบเขต" })])} />);
-    expect(screen.getByText("นอกขอบเขต")).toBeInTheDocument();
+  it("refused turn is plain text without role=alert; Thai shows the localized message, English the backend reason", () => {
+    render(<Thread sessionId={mk([turn("refused", { refused: "Not a scientific research question." })])} />);
+    expect(screen.getByText(strings.th.refused)).toBeInTheDocument();
+    expect(screen.queryByText("Not a scientific research question.")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
+    cleanup();
+    usePrefs.setState({ lang: "en" });
+    render(<Thread sessionId={mk([turn("refused", { refused: "Not a scientific research question." })])} />);
+    expect(screen.getByText("Not a scientific research question.")).toBeInTheDocument();
+  });
+
+  it("coded refusal shows the localized text and a switch-to-deep button for needs_search", () => {
+    useMode.setState({ mode: "chat" });
+    render(<Thread sessionId={mk([turn("refused", { refused: "English reason", refusedCode: "needs_search" })])} />);
+    expect(screen.getByText(strings.th.refusedNeedsSearch)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: `${strings.th.switchTo} ${strings.th.modeDeep}` }));
+    expect(useMode.getState().mode).toBe("deep");
+    cleanup();
+    render(<Thread sessionId={mk([turn("refused", { refused: "x", refusedCode: "injection" })])} />);
+    expect(screen.getByText(strings.th.refusedInjection)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: new RegExp(strings.th.switchTo) })).toBeNull();
   });
 
   it("error turn Retry calls startRun with the same question", () => {
@@ -182,7 +284,39 @@ describe("Thread", () => {
     render(<Thread sessionId={id} />);
     expect(screen.getByText("boom")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: t.retry }));
-    expect(run.startRun).toHaveBeenCalledWith(id, "why?");
+    expect(run.startRun).toHaveBeenCalledWith(id, "why?", { mode: undefined });
+  });
+
+  it("Retry keeps the turn's mode (a Quick turn does not become Deep)", () => {
+    const id = mk([turn("error", { question: "why?", error: "boom", mode: "quick" })]);
+    render(<Thread sessionId={id} />);
+    fireEvent.click(screen.getByRole("button", { name: t.retry }));
+    expect(run.startRun).toHaveBeenCalledWith(id, "why?", { mode: "quick" });
+  });
+
+  it("the chosen mode is shared: a second composer starts in Quick", () => {
+    const { unmount } = render(<Composer sessionId={mk()} />);
+    fireEvent.click(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeDeep}` }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: t.modeQuick }));
+    unmount();
+    const id = mk();
+    render(<Composer sessionId={id} />);
+    type("q");
+    fireEvent.click(sendBtn());
+    expect(run.startRun).toHaveBeenCalledWith(id, "q", { mode: "quick" });
+  });
+
+  it("attach is disabled with a reason when the backend reports analysis disabled; fails open when unreachable", async () => {
+    const f = vi.spyOn(globalThis, "fetch").mockResolvedValue({ json: async () => ({ status: "ok", analysis: "disabled" }) } as Response);
+    render(<Composer sessionId={mk()} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: t.attach })).toBeDisabled());
+    expect(screen.getByRole("button", { name: t.attach })).toHaveAttribute("title", t.attachUnavailable);
+    cleanup();
+    f.mockRejectedValue(new Error("down"));
+    render(<Composer sessionId={mk()} />);
+    await Promise.resolve();
+    expect(screen.getByRole("button", { name: t.attach })).toBeEnabled();
+    f.mockRestore();
   });
 
   it("running turn has a polite live status; done turn renders markdown safely", () => {
@@ -194,6 +328,95 @@ describe("Thread", () => {
   });
 });
 
+describe("Plan review", () => {
+  const planTurn = (p: Partial<Turn> = {}): Turn => ({
+    id: "turn-1", question: "Q1", createdAt: Date.now(), status: "awaiting_plan",
+    progress: emptyProgress, plan: [{ term: "first term", instructions: "" }, { term: "second term", instructions: "go" }],
+    ...p,
+  });
+  const begin = () => {
+    render(<AgentMessage sessionId="s" turn={planTurn()} />);
+    fireEvent.click(screen.getByRole("button", { name: t.editPlan }));
+  };
+
+  it("an awaiting turn shows the editable plan card instead of the progress strip", () => {
+    render(<AgentMessage sessionId="s" turn={planTurn()} />);
+    expect(screen.getByText(t.planEditableTitle)).toBeInTheDocument();
+    expect(screen.getByText(t.awaitPlanNote)).toBeInTheDocument();
+    expect(screen.queryByText(t.searching)).toBeNull(); // the progress strip stands down: nothing has run yet
+  });
+
+  it("wires the plan card's start to approvePlan with the edited rows", () => {
+    begin();
+    fireEvent.change(screen.getAllByLabelText(new RegExp(`^${t.planTerm}`))[0], { target: { value: "edited term" } });
+    fireEvent.click(screen.getByRole("button", { name: t.planStart }));
+    expect(run.approvePlan).toHaveBeenCalledWith("s", "turn-1", [
+      { term: "edited term", instructions: "" }, { term: "second term", instructions: "go" },
+    ]);
+    expect(run.cancelPlan).not.toHaveBeenCalled();
+  });
+
+  it("wires the plan card's cancel to cancelPlan", () => {
+    begin();
+    fireEvent.click(screen.getByRole("button", { name: t.cancel }));
+    expect(run.cancelPlan).toHaveBeenCalledWith("s", "turn-1");
+    expect(run.approvePlan).not.toHaveBeenCalled();
+  });
+
+  it("a failed approval is said out loud, not swallowed", async () => {
+    run.approvePlan.mockRejectedValueOnce(new Error("busy"));
+    begin();
+    fireEvent.click(screen.getByRole("button", { name: t.planStart }));
+    expect(await screen.findByText(t.startFailed)).toBeInTheDocument();
+  });
+
+  it("a running turn shows the approved plan read-only as the plan used", () => {
+    render(<AgentMessage sessionId="s" turn={planTurn({ status: "running", progress: { ...emptyProgress, phase: "searching" } })} />);
+    expect(screen.getByText(t.planUsedTitle)).toBeInTheDocument();
+    expect(screen.getByText("first term")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t.editPlan })).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull(); // the review window is closed
+    expect(screen.queryByText(t.researchPlan)).toBeNull(); // no duplicate proposed-plan listing
+  });
+
+  it("a running turn without a reviewed plan keeps the plain proposed listing", () => {
+    render(<AgentMessage sessionId="s" turn={turn("running", { progress: { ...emptyProgress, searches: [{ term: "x", instructions: "" }], phase: "searching" } })} />);
+    expect(screen.getByText(t.researchPlan)).toBeInTheDocument();
+    expect(screen.queryByText(t.planUsedTitle)).toBeNull();
+  });
+});
+
+describe("Analysis messages", () => {
+  const analysis: NonNullable<Turn["analysis"]> = {
+    fileId: "f".repeat(32), fileName: "data.csv", steps: ["profiling", "running"], script: "print(1)",
+    quality: { rows: 4, columns: 1, truncated: false, columns_info: [{ name: "a", dtype: "int", null_pct: 0 }] },
+    tables: [{ name: "result", columns: ["a"], rows: [[1]], truncated: false }],
+    findings: ["a finding"], timings: { total_s: 2 }, artifacts: [{ id: "a1", name: "chart.png", kind: "figure", url: "/v1/artifacts/a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1" }],
+  };
+
+  it("renders the analysis artifact instead of the research progress card", () => {
+    render(<AgentMessage sessionId="s" turn={turn("running", { kind: "analysis", analysis })} />);
+    expect(screen.getByText("data.csv")).toBeInTheDocument();
+    expect(screen.getByText(t.analysisRunning)).toBeInTheDocument();
+    expect(screen.getByText(t.analysisStepProfiling)).toBeInTheDocument();
+    expect(screen.queryByText(t.elapsed)).toBeNull();
+  });
+
+  it("analysis Retry resumes the same file instead of a research run", () => {
+    render(<AgentMessage sessionId="s" turn={turn("error", { question: "why?", error: "boom", kind: "analysis", analysis })} />);
+    fireEvent.click(screen.getByRole("button", { name: t.retry }));
+    expect(run.startAnalysis).toHaveBeenCalledWith("s", "why?", "f".repeat(32), "data.csv");
+    expect(run.startRun).not.toHaveBeenCalled();
+  });
+
+  it("a finished analysis has no research follow-up or report actions", () => {
+    render(<AgentMessage sessionId="s" turn={turn("done", { kind: "analysis", analysis })} />);
+    expect(screen.getByText("data.csv")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: t.askFollowUp })).toBeNull();
+    expect(screen.queryByText(t.references)).toBeNull();
+  });
+});
+
 describe("English starters", () => {
   it("use the English set when lang=en", async () => {
     const { sampleQuestionsEn } = await import("@/lib/strings");
@@ -201,5 +424,88 @@ describe("English starters", () => {
     render(<EmptyChat sessionId={mk()} />);
     expect(screen.getByRole("button", { name: sampleQuestionsEn[0] })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: sampleQuestions[0] })).toBeNull();
+  });
+});
+
+describe("report card", () => {
+  it("is one compact card; Create report draft opens the report panel store, no inline export buttons", () => {
+    useReportPanel.setState({ ref: null });
+    render(<AgentMessage sessionId="s" turn={turn("done", { id: "t9", answer: { content: "# Title A\n\nbody", references: [] } })} />);
+    expect(screen.getAllByRole("heading", { name: "Title A" })).not.toHaveLength(0);
+    expect(screen.queryByRole("button", { name: t.downloadMd })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: t.makeReport }));
+    expect(useReportPanel.getState().ref).toEqual({ sessionId: "s", turnId: "t9" });
+  });
+
+  it("a running turn shows the aria-hidden skeleton with one status line", () => {
+    const tn = turn("running"); tn.progress = { ...tn.progress, phase: "writing" };
+    render(<AgentMessage sessionId="s" turn={tn} />);
+    const sk = screen.getByTestId("answer-skeleton");
+    expect(sk.querySelector('[aria-hidden="true"]')).not.toBeNull();
+    expect(screen.getByText(t.skelWriting)).toBeInTheDocument();
+  });
+});
+
+describe("answer tabs", () => {
+  const refs = [{ id: "1", status: "verified" as const, paper: { title: "Paper A", authors: ["A"], year: 2023, doi: null, pmid: null, url: "https://example.org/p" } }];
+  it("shows Finished and an Answer | Sources (n) tab strip that switches panels", () => {
+    render(<AgentMessage sessionId="s" turn={turn("done", { id: "tt", answer: { content: "Body text [1]", references: refs } })} />);
+    expect(screen.getByText(t.finished)).toBeInTheDocument();
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((x) => x.textContent)).toEqual([t.tabAnswer, t.tabSources.replace("{n}", "1")]);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel", { name: t.tabAnswer })).toBeVisible();
+    fireEvent.click(tabs[1]);
+    expect(tabs[1]).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel", { name: t.tabSources.replace("{n}", "1") })).toHaveTextContent("Paper A");
+    expect(screen.queryByRole("tabpanel", { name: t.tabAnswer })).toBeNull(); // hidden panels leave the a11y tree
+  });
+  it("no tab strip when there are no references", () => {
+    render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "x", references: [] } })} />);
+    expect(screen.queryByRole("tab")).toBeNull();
+  });
+
+  it("Answer research is disabled with a reason in a session with no finished answer", () => {
+    const id = mk();
+    render(<Composer sessionId={id} />);
+    fireEvent.click(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeDeep}` }));
+    const item = screen.getByRole("menuitemradio", { name: new RegExp(t.modeChat) });
+    expect(item).toHaveAttribute("aria-disabled", "true");
+    expect(item).toHaveTextContent(t.modeChatDisabled);
+  });
+
+  it("Answer research is selectable once the session has a finished answer and sends mode chat", () => {
+    const id = mk([{ id: "t1", question: "q", createdAt: 1, status: "done", progress: emptyProgress, answer: { content: "a", references: [] } } as Turn]);
+    render(<Composer sessionId={id} />);
+    fireEvent.click(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeDeep}` }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: new RegExp(t.modeChat) }));
+    expect(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeChat}` })).toBeInTheDocument();
+    type("shorter");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(run.startRun).toHaveBeenCalledWith(id, "shorter", { mode: "chat" });
+  });
+
+  it("a stored chat selection falls back to deep in a session without memory", () => {
+    useMode.setState({ mode: "chat" });
+    const id = mk();
+    render(<Composer sessionId={id} />);
+    expect(screen.getByRole("button", { name: `${t.modeLabel}: ${t.modeDeep}` })).toBeInTheDocument();
+  });
+
+  it("chat-mode turn: skeleton while running, caption and no stage strip once done", () => {
+    const { rerender } = render(<AgentMessage sessionId="s" turn={turn("running", { mode: "chat" })} />);
+    expect(screen.getByTestId("answer-skeleton")).toBeInTheDocument();
+    rerender(<AgentMessage sessionId="s" turn={turn("done", { mode: "chat", answer: { content: "ans", references: [] } })} />);
+    expect(screen.getByText(t.chatCaption)).toBeInTheDocument();
+  });
+
+  it("chat-mode answer is not a research report: no report card and no report action", () => {
+    render(<AgentMessage sessionId="s" turn={turn("done", { mode: "chat", answer: { content: "ans", references: [] } })} />);
+    expect(screen.queryByRole("button", { name: t.makeReport })).toBeNull();
+    expect(screen.queryByText(t.reportShow)).toBeNull();
+  });
+  it("a deep answer still offers the report action", () => {
+    render(<AgentMessage sessionId="s" turn={turn("done", { mode: "deep", answer: { content: "ans", references: [] } })} />);
+    expect(screen.getByRole("button", { name: t.makeReport })).toBeInTheDocument();
   });
 });

@@ -2,10 +2,29 @@
 name = "scientist"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["fastapi", "uvicorn", "pydantic-settings", "httpx"]
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic-settings",
+    "httpx",
+    "boto3>=1.43.118",
+    "python-multipart>=0.0.32",
+    "fpdf2>=2.8.9",
+    "python-docx>=1.2.0",
+    "uharfbuzz>=0.57.0",
+    "pythainlp>=5.4.0",
+    "sqlalchemy[asyncio]>=2.1",
+    "psycopg[binary]>=3.3",
+    "alembic>=1.20.1",
+]
 
 [dependency-groups]
-dev = ["pytest", "pytest-asyncio", "httpx"]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+    "pypdf>=6.21.2",
+]
 
 [build-system]
 requires = ["hatchling"]

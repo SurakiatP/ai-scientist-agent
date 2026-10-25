@@ -3,23 +3,59 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import suppress
+from typing import Literal
 
 import anyio
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, field_validator
+from fastapi import HTTPException
+from pydantic import BaseModel, Field, field_validator
 
 from scientist.config import get_settings
 from scientist.events import Error, Event, to_sse
-from scientist.pipeline import ask
+from scientist.pipeline import THAI, ask
+from scientist.usage import track
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
+class HistoryTurn(BaseModel):
+    question: str
+    answer: str
+
+
+class MemoryRef(BaseModel):
+    id: str = Field(max_length=40)
+    title: str = Field(default="", max_length=500)
+    authors: list[str] = Field(default=[], max_length=50)
+    year: int | None = None
+    doi: str | None = Field(default=None, max_length=200)
+    pmid: str | None = Field(default=None, max_length=20)
+    url: str = Field(default="", max_length=2000)
+    status: Literal["verified", "unverified", "unknown"] = "unknown"
+
+
+class MemoryTurn(BaseModel):
+    """A finished turn of the same session: what "chat" mode may answer from."""
+    question: str
+    answer: str
+    references: list[MemoryRef] = []
+
+
+class PlanSearch(BaseModel):
+    term: str = Field(max_length=200)
+    instructions: str = Field(default="", max_length=500)
+
+
 class AskRequest(BaseModel):
     question: str
+    mode: Literal["deep", "quick", "chat"] = "deep"
+    memory: list[MemoryTurn] = []
+    history: list[HistoryTurn] = Field(default=[], max_length=20)
+    plan: list[PlanSearch] | None = Field(default=None, max_length=20)
+    plan_only: bool = False
 
     @field_validator("question")
     @classmethod
@@ -30,6 +66,29 @@ class AskRequest(BaseModel):
         if len(v) > (limit := get_settings().max_question_chars):
             raise ValueError(f"question is longer than {limit} characters")
         return v
+
+    @field_validator("history")
+    @classmethod
+    def _clamp_history(cls, v: list[HistoryTurn]) -> list[HistoryTurn]:  # clamp, never 422
+        return [HistoryTurn(question=t.question[:2000], answer=t.answer[:2000]) for t in v[-3:]]
+
+    @field_validator("memory")
+    @classmethod
+    def _clamp_memory(cls, v: list[MemoryTurn]) -> list[MemoryTurn]:  # clamp, never 422: newest turns, capped text and refs
+        s, budget, out = get_settings(), get_settings().chat_memory_refs, []
+        for t in reversed([t for t in v if t.answer.strip()][-s.chat_memory_turns:]):
+            refs, budget = t.references[:budget], max(0, budget - len(t.references))
+            out.append(MemoryTurn(question=t.question[:2000], answer=t.answer[:s.chat_memory_answer_chars], references=refs))
+        return out[::-1]
+
+    @field_validator("plan")
+    @classmethod
+    def _clean_plan(cls, v: list[PlanSearch] | None) -> list[PlanSearch] | None:
+        if v is None:
+            return None
+        kept = [PlanSearch(term=t, instructions=p.instructions.strip()) for p in v
+                if (t := p.term.strip()) and not THAI.search(t)]
+        return kept[:get_settings().max_branches] or None
 
 
 async def _sse(events: AsyncIterator[Event], ping: float) -> AsyncIterator[str]:
@@ -67,6 +126,11 @@ async def _sse(events: AsyncIterator[Event], ping: float) -> AsyncIterator[str]:
 @router.post("/v1/async/ask")
 async def ask_route(body: AskRequest, request: Request) -> StreamingResponse:
     st = request.app.state
-    events = ask(body.question, st.runner, settings=st.settings, client=st.client, gate=st.gate)
+    if (body.plan_only or body.mode == "chat") and st.gate.free == 0 and len(st.gate.queue) >= st.settings.analyze_max_queue:  # same cap as analyze
+        raise HTTPException(429, "too many requests queued; try again shortly")
+    events = ask(body.question, st.runner, settings=st.settings, client=st.client, gate=st.gate, mode=body.mode,
+                 history=body.history, plan=body.plan, plan_only=body.plan_only, memory=body.memory)
+    if st.db is not None:
+        events = track(events, mode="plan" if body.plan_only else body.mode, db=st.db)
     return StreamingResponse(_sse(events, st.settings.sse_ping_seconds), media_type="text/event-stream",
                              headers=HEADERS)

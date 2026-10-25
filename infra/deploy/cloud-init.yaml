@@ -1,0 +1,26 @@
+#cloud-config
+# Ubuntu 24.04 VM. Edit REPO_URL / RELEASE_TAG, paste your SSH key, then boot.
+package_update: true
+packages: [ca-certificates, curl, git, ufw, openssl, python3]
+users:
+  - name: deploy
+    groups: [docker]
+    shell: /bin/bash
+    sudo: ["ALL=(root) NOPASSWD: /usr/local/bin/ai-scientist-deploy"]
+    ssh_authorized_keys:
+      - ssh-ed25519 CHANGE_ME
+write_files:
+  - path: /etc/ssh/sshd_config.d/99-hardening.conf
+    content: |
+      PasswordAuthentication no
+      PermitRootLogin no
+runcmd:
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update && apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  - usermod -aG docker deploy
+  - ufw default deny incoming && ufw allow 22/tcp && ufw allow 80/tcp && ufw allow 443/tcp && ufw allow 443/udp && ufw --force enable
+  - mkdir -p /opt/ai-scientist/releases && chown deploy:deploy /opt/ai-scientist/releases
+  - su deploy -c 'git clone --depth 1 --branch "${RELEASE_TAG:-v0.1.0}" "${REPO_URL:-https://github.com/SurakiatP/ai-scientist-agent.git}" /opt/ai-scientist/releases/bootstrap'
+  - /opt/ai-scientist/releases/bootstrap/infra/deploy/bootstrap.sh

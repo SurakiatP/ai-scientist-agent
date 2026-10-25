@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   devIndicators: false,
+  output: "standalone", // the production image runs .next/standalone/server.js
 };
 
 export default nextConfig;

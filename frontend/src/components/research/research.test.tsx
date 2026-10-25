@@ -11,7 +11,6 @@ import type { Reference } from "@/lib/sse";
 import { strings } from "@/lib/strings";
 import { ProgressCard } from "./ProgressCard";
 import { ProgressPanel } from "./ProgressPanel";
-import { ReportActions } from "./ReportActions";
 import { SourceInspector } from "./SourceInspector";
 
 const t = strings.en;
@@ -42,6 +41,13 @@ describe("ProgressCard", () => {
     expect(screen.getAllByText(t.branchDone)).toHaveLength(1);
     expect(container.querySelectorAll("[aria-live]")).toHaveLength(1);
   });
+  it("an unanswered search shows Not summarised once writing starts, never Searching", () => {
+    const writing = prog({ ...busy, phase: "writing", answered: ["alpha"], writing: true });
+    const { container } = render(<ProgressCard turn={turn(writing, { plan: writing.searches })} />);
+    expect(container.querySelector('[data-state="skipped"]')).not.toBeNull();
+    expect(screen.queryByText(t.rowSearching)).toBeNull();
+    expect(screen.getByText(t.rowSkipped)).toBeInTheDocument();
+  });
   it("shows the queue position while waiting", () => {
     render(<ProgressCard turn={turn({ phase: "waiting", waiting: 3 })} />);
     expect(screen.getAllByText(`${t.waiting} 3`).length).toBeGreaterThan(0);
@@ -49,15 +55,33 @@ describe("ProgressCard", () => {
 });
 
 describe("ProgressPanel", () => {
-  it("compact counts equal the progress data", () => {
+  const states = (c: HTMLElement) => [...c.querySelectorAll("[data-step]")].map((x) => x.getAttribute("data-state"));
+  it("shows only counts the backend provides", () => {
     render(<ProgressPanel turn={turn(busy)} />);
-    expect(screen.getByText(t.stagesDone).nextSibling).toHaveTextContent("1/4");
-    expect(screen.getByText(t.sourcesFound).nextSibling).toHaveTextContent("7");
-    expect(screen.getByText(t.branchesDone).nextSibling).toHaveTextContent("1/2");
+    expect(screen.getByText(t.papersFound).nextSibling).toHaveTextContent("7");
+    expect(screen.getByText(t.searchesPlanned).nextSibling).toHaveTextContent("2");
+    expect(screen.getByText(t.searchesSummarised).nextSibling).toHaveTextContent("1");
+    expect(screen.getByText("1 / 4")).toBeInTheDocument();
+    expect(screen.getByText(t.idCheckNote)).toBeInTheDocument();
   });
-  it("marks all four stages done when finished", () => {
+  it("shows zeros, not invented numbers, for an empty run", () => {
+    render(<ProgressPanel turn={turn({})} />);
+    for (const k of [t.papersFound, t.searchesPlanned, t.searchesSummarised]) expect(screen.getByText(k).nextSibling).toHaveTextContent("0");
+  });
+  it("maps each phase to step states", () => {
+    const run = (ph: Progress["phase"], extra: Partial<Progress> = {}) => { const r = render(<ProgressPanel turn={turn({ phase: ph, ...extra })} />); const s = states(r.container); r.unmount(); return s; };
+    expect(run("planning")).toEqual(["active", "pending", "pending", "pending"]);
+    expect(run("searching")).toEqual(["done", "active", "pending", "pending"]);
+    expect(run("writing")).toEqual(["done", "done", "active", "pending"]);
+    expect(run("done")).toEqual(["done", "done", "done", "done"]);
+    expect(run("waiting", { waiting: 3 })).toEqual(["pending", "pending", "pending", "pending"]);
+  });
+  it("shows queue position while waiting and 4 / 4 when done", () => {
+    const r = render(<ProgressPanel turn={turn({ phase: "waiting", waiting: 3 })} />);
+    expect(screen.getByText(`${t.waiting} 3`)).toBeInTheDocument();
+    r.unmount();
     render(<ProgressPanel turn={turn({ ...busy, phase: "done" }, { status: "done" })} />);
-    expect(screen.getByText(t.stagesDone).nextSibling).toHaveTextContent("4/4");
+    expect(screen.getByText("4 / 4")).toBeInTheDocument();
   });
 });
 
@@ -85,7 +109,7 @@ describe("citations and inspector", () => {
   it("clicking a citation pill opens the inspector for that reference", () => {
     const { sid, tn } = setup();
     render(<><AnswerView content={tn.answer!.content} references={refs} scope={{ sessionId: sid, turnId: tn.id }} /><SourceInspector variant="sheet" /></>);
-    fireEvent.click(screen.getByRole("link", { name: "[1]" }));
+    fireEvent.click(screen.getByRole("link", { name: "Reference 1: Paper 1" }));
     expect(useInspector.getState().ref).toEqual({ sessionId: sid, turnId: tn.id, refId: "1" });
     const dlg = screen.getByRole("dialog");
     expect(within(dlg).getByText("Paper 1")).toBeInTheDocument();
@@ -142,7 +166,7 @@ describe("inspector guards", () => {
   beforeEach(() => { localStorage.clear(); useChatStore.getState().clearAll(); });
   it("pill for an unknown ref id does not open the inspector", () => {
     render(<AnswerView content="x [1]" references={[{ id: "1" }]} scope={{ sessionId: "s", turnId: "A" }} />);
-    const a = screen.getByRole("link", { name: "[1]" });
+    const a = screen.getByRole("link", { name: "Reference 1" });
     a.setAttribute("href", "#ref-OTHER-1");
     fireEvent.click(a);
     expect(useInspector.getState().ref).toBeNull();
@@ -170,20 +194,5 @@ describe("inspector guards", () => {
     render(<ReferenceList t={t} references={[ref("1", { doi: "10.1/x" }, "unverified"), ref("2", {}, "unverified")]} />);
     expect(screen.getByText(t.chkNotFound)).toBeInTheDocument();
     expect(screen.getByText(t.chkNoId)).toBeInTheDocument();
-  });
-});
-
-describe("ReportActions", () => {
-  it("PDF and DOCX are disabled with a reason; copy and download are real", () => {
-    localStorage.clear(); useChatStore.getState().clearAll();
-    const sid = useChatStore.getState().newSession();
-    const tn = turn({ phase: "done" }, { status: "done", answer: { content: "A", references: [] } });
-    useChatStore.getState().addTurn(sid, tn);
-    render(<ReportActions sessionId={sid} turn={tn} />);
-    expect(screen.getByRole("button", { name: t.exportPdf })).toBeDisabled();
-    expect(screen.getByRole("button", { name: t.exportDocx })).toBeDisabled();
-    expect(screen.getAllByText(new RegExp(t.exportUnsupported)).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: t.copyAnswer })).toBeEnabled();
-    expect(screen.getByRole("button", { name: t.downloadMd })).toBeEnabled();
   });
 });

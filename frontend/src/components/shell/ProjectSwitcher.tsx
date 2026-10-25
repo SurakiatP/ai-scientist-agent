@@ -1,7 +1,9 @@
 "use client";
 import { useState } from "react";
 import { Button, Menu, MenuItem, TextField } from "@mui/material";
+import FolderOpenOutlinedIcon from "@mui/icons-material/FolderOpenOutlined";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
+import { UI } from "@/lib/config";
 import { useHydrated } from "@/lib/history";
 import { PERSONAL, useChatStore, type Project } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
@@ -26,8 +28,8 @@ export function ProjectSwitcher() {
   const close = () => { setAnchor(null); setName(""); setFull(false); };
   return (
     <>
-      <Button color="inherit" aria-label={`${t.switchProject}: ${projectName(cur, t)}`} aria-haspopup="menu" onClick={(e) => setAnchor(e.currentTarget)}
-        endIcon={<ExpandMoreRoundedIcon />} sx={{ maxWidth: { xs: 160, sm: 280 }, "& span": { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }}>
+      <Button color="inherit" variant="outlined" startIcon={<FolderOpenOutlinedIcon />} aria-label={`${t.switchProject}: ${projectName(cur, t)}`} aria-haspopup="menu" onClick={(e) => setAnchor(e.currentTarget)}
+        endIcon={<ExpandMoreRoundedIcon />} sx={{ maxWidth: { xs: 200, sm: 240 }, ...UI.row, justifyContent: "space-between", gap: 0.5, px: 1.25, borderRadius: 1.5, borderColor: "transparent", bgcolor: "transparent", "&:hover": { bgcolor: "action.hover", borderColor: "divider" }, fontWeight: 500, fontSize: "0.875rem", "& .MuiButton-startIcon": { mr: 0.5 }, "& .MuiButton-endIcon": { ml: "auto" }, "& span:not(.MuiButton-startIcon):not(.MuiButton-endIcon)": { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }}>
         <span>{projectName(cur, t)}</span>
       </Button>
       <Menu anchorEl={anchor} open={!!anchor} onClose={close}>

@@ -3,6 +3,7 @@ import logging
 import httpx
 from pydantic import BaseModel
 
+from scientist import usage
 from scientist.config import Settings, get_settings
 
 URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -19,6 +20,7 @@ class LlmResult(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     cached_tokens: int
+    cost_usd: float | None = None  # OpenRouter reports it in usage.cost; absent otherwise
 
 
 async def _call(client: httpx.AsyncClient, key: str, body: dict) -> LlmResult:
@@ -37,7 +39,9 @@ async def _call(client: httpx.AsyncClient, key: str, body: dict) -> LlmResult:
         prompt_tokens=u.get("prompt_tokens") or 0,
         completion_tokens=u.get("completion_tokens") or 0,
         cached_tokens=(u.get("prompt_tokens_details") or {}).get("cached_tokens") or 0,
+        cost_usd=cost if isinstance(cost := u.get("cost"), (int, float)) and not isinstance(cost, bool) else None,
     )
+    usage.note(result.prompt_tokens, result.completion_tokens, result.cost_usd)
     # usage only (never the key or prompt text): shows on a live run whether prompt caching works
     log.info("llm call model=%s prompt_tokens=%d completion_tokens=%d cached_tokens=%d", body["model"],
              result.prompt_tokens, result.completion_tokens, result.cached_tokens)

@@ -10,7 +10,7 @@ import { emptyProgress } from "@/lib/progress";
 import { strings } from "@/lib/strings";
 
 const run = vi.hoisted(() => ({ sessionId: null as string | null, stopRun: vi.fn() }));
-vi.mock("@/lib/run", () => ({ useRunState: () => ({ sessionId: run.sessionId, turnId: run.sessionId && "t" }), stopRun: run.stopRun, startRun: vi.fn(), canStart: () => ({ ok: true }) }));
+vi.mock("@/lib/run", () => ({ useRunState: () => ({ sessionId: run.sessionId, turnId: run.sessionId && "t" }), stopRun: run.stopRun, startRun: vi.fn(), approvePlan: vi.fn(), cancelPlan: vi.fn(), canStart: () => ({ ok: true }) }));
 const cs = vi.hoisted(() => ({ mode: "system" as string, setMode: vi.fn() }));
 vi.mock("@mui/material", async (orig) => ({ ...(await orig<typeof import("@mui/material")>()), useColorScheme: () => cs }));
 
@@ -68,6 +68,17 @@ describe("SettingsDialog", () => {
     expect(useChatStore.getState().projects).toHaveLength(1);
     expect(run.stopRun).toHaveBeenCalled();
     expect(wc).not.toHaveBeenCalled();
+  });
+
+  it("review plan switch toggles the preference both ways and persists it", async () => {
+    const dlg = await openSettings();
+    const sw = within(dlg).getByRole("switch", { name: t.reviewPlan });
+    expect(sw).toBeChecked(); // on by default: Deep Research pauses for review
+    fireEvent.click(sw);
+    expect(usePrefs.getState().reviewPlan).toBe(false);
+    expect(JSON.parse(localStorage.getItem("scientist-prefs-v1")!).state.reviewPlan).toBe(false);
+    fireEvent.click(sw);
+    expect(usePrefs.getState().reviewPlan).toBe(true);
   });
 
   it("backend reachable and unreachable; failure does not throw", async () => {

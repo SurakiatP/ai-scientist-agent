@@ -1,0 +1,149 @@
+# Single-VM stack. Run: docker compose -f infra/compose.yaml --env-file /etc/ai-scientist/private/app.env up -d
+# Local build instead of pulling: add `--build`.
+name: ai-scientist
+
+x-hardening: &hardening
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+services:
+  backend:
+    <<: *hardening
+    image: ghcr.io/surakiatp/ai-scientist-agent/backend:${IMAGE_TAG:-develop}
+    build: { context: .., dockerfile: backend/Dockerfile }
+    # OPENROUTER_API_KEY, MODEL, ... come from an env file kept outside the repo; never baked into the image.
+    env_file: ${APP_ENV_FILE:-/etc/ai-scientist/private/app.env}
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY_FILE: /run/secrets/minio_access_key
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_secret_key
+      DATABASE_URL: postgresql://app@postgres:5432/app  # password comes from the secret file, never from the URL
+      DATABASE_PASSWORD_FILE: /run/secrets/postgres_app_password
+      CORS_ORIGINS: '["https://${DOMAIN:-localhost}"]'
+      ALLOWED_ORIGINS: '["https://${DOMAIN:-localhost}"]' # store writes carrying another Origin get 403
+      FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1} # uvicorn reads this itself; set to Caddy's address/CIDR so the rate limit is per real client
+      HERMES_SOURCE_PATH: /home/app/.cache/scientist/upstream/hermes
+      HERMES_RUNTIME_DIR: /home/app/hermes-home # writable; the pinned cache below stays read-only
+    secrets: [minio_access_key, minio_secret_key, postgres_app_password]
+    networks: [default, db]
+    volumes:
+      # Pinned Hermes + skills checkout built by bootstrap.sh (outside the repo).
+      - ${SCIENTIST_CACHE_DIR:-/var/lib/ai-scientist/cache}:/home/app/.cache/scientist:ro
+    read_only: true
+    # /tmp holds Starlette's multipart spool: must exceed the largest upload cap (100 MB csv/parquet). RAM-backed.
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+      - /home/app/hermes-home:rw,noexec,nosuid,size=64m,uid=10001,gid=10001
+    expose: ["8000"]
+    depends_on:
+      minio: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    # No host Docker socket here on purpose. Branch sandboxes (hermes.py SANDBOX_IMAGE) need a separate,
+    # isolated runner, e.g. a rootless-docker/sysbox `analysis-sandbox` service. Not implemented yet:
+    # analysis-sandbox:
+    #   image: <TBD>
+
+  frontend:
+    <<: *hardening
+    image: ghcr.io/surakiatp/ai-scientist-agent/frontend:${IMAGE_TAG:-develop}
+    build: { context: .., dockerfile: frontend/Dockerfile, args: { NEXT_PUBLIC_API_BASE: "" } }
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+    expose: ["3000"]
+
+  minio:
+    <<: *hardening
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: ["server", "/data", "--address", ":9000"]
+    environment:
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_access_key
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_secret_key
+      MINIO_API_CORS_ALLOW_ORIGIN: https://${DOMAIN:-localhost} # presigned previews are fetched cross-origin from files.${DOMAIN}
+    secrets: [minio_access_key, minio_secret_key]
+    ports: ["127.0.0.1:${MINIO_PORT:-59000}:9000"] # loopback only; no console port
+    volumes: [minio_data:/data]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    user: "10001:10001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # One-shot: applies Alembic migrations with the backend image before the backend starts. Migrations are forward-only:
+  # to go back, restore the pg_dump taken by deploy.sh (docs/deploy.md), never `alembic downgrade` in production.
+  migrate:
+    <<: *hardening
+    image: ghcr.io/surakiatp/ai-scientist-agent/backend:${IMAGE_TAG:-develop}
+    restart: "no"
+    command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
+    env_file: ${APP_ENV_FILE:-/etc/ai-scientist/private/app.env}
+    environment:
+      DATABASE_URL: postgresql://app@postgres:5432/app
+      DATABASE_PASSWORD_FILE: /run/secrets/postgres_app_password
+    secrets: [postgres_app_password]
+    networks: [db]
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    depends_on: { postgres: { condition: service_healthy } }
+
+  # PostgreSQL: NOT published and on an internal-only network (no login in the app: never expose it publicly).
+  # Pinned by the multi-arch index digest of postgres:17-alpine (17.11) resolved with `docker buildx imagetools inspect`.
+  postgres:
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]  # only what the entrypoint needs to chown PGDATA and drop to uid 70
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    image: postgres:17-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
+    # Wrapper (root, before the image entrypoint) exports the app-role password for postgres-init.sh from its secret file.
+    entrypoint: ["sh", "-c", "APP_PW=$$(cat /run/secrets/postgres_app_password) && export APP_PW && exec docker-entrypoint.sh \"$$@\"", "--"]
+    command: ["postgres", "-c", "idle_in_transaction_session_timeout=60000", "-c", "idle_session_timeout=600000", "-c", "log_connections=on"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --auth-local=scram-sha-256 --auth-host=scram-sha-256  # no trust auth, not even on the local socket
+    secrets: [postgres_password, postgres_app_password]
+    networks: [db]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/postgres-init.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m", "/run/postgresql:rw,noexec,nosuid,size=1m,uid=70,gid=70"]
+    shm_size: 128m
+    mem_limit: 1g
+    pids_limit: 200
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "app", "-d", "app"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  caddy:
+    <<: *hardening
+    image: caddy:2.10.0-alpine
+    cap_add: [NET_BIND_SERVICE]
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      CADDY_TLS: ${CADDY_TLS:-}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [backend, frontend, minio]
+
+secrets:
+  minio_access_key: { file: "${PRIVATE_DIR:-/etc/ai-scientist/private}/minio-access-key" }
+  minio_secret_key: { file: "${PRIVATE_DIR:-/etc/ai-scientist/private}/minio-secret-key" }
+  postgres_password: { file: "${PRIVATE_DIR:-/etc/ai-scientist/private}/postgres-password" }          # superuser, postgres container only
+  postgres_app_password: { file: "${PRIVATE_DIR:-/etc/ai-scientist/private}/postgres-app-password" }  # role `app`, also read by backend + migrate
+
+networks:
+  db: { internal: true }  # postgres, migrate and backend only; no route to the internet or the host
+
+volumes:
+  postgres_data:
+  minio_data:
+  caddy_data:
+  caddy_config:

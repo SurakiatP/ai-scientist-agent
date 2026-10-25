@@ -131,3 +131,56 @@ async def test_queue_ping_and_disconnect_frees_slot_for_next_run(app, fake_compl
     assert got == ["strategy", "sources", "answer", "final_answer", "complete"]
     await asyncio.wait_for(b.task, 10)
     assert app.state.gate.free == 1 and app.state.gate.queue == []
+
+
+async def test_history_plan_clamped_not_rejected(app, fake_complete):
+    fake_complete["strategy"] = None
+    turns = [{"question": str(i) * 3000, "answer": "a"} for i in range(5)]
+    plan = [{"term": " "}, {"term": "การ"}] + [{"term": f"t{i}"} for i in range(9)]
+    r = await post(app, {"question": "What is CRISPR?", "history": turns, "plan": plan, "plan_only": True})
+    assert r.status_code == 200
+    ev = events(r.text)
+    strat = next(e for e in ev if e["type"] == "strategy")
+    assert len(strat["searches"]) == app.state.settings.max_branches
+    assert ev[-1]["type"] == "complete"
+    assert (await post(app, {"question": "q", "mode": "slow"})).status_code == 422
+
+
+async def test_oversize_plan_fields_and_lists_422(app):
+    q = "What is CRISPR?"
+    assert (await post(app, {"question": q, "plan": [{"term": "t" * 201}]})).status_code == 422
+    assert (await post(app, {"question": q, "plan": [{"term": "t", "instructions": "i" * 501}]})).status_code == 422
+    assert (await post(app, {"question": q, "plan": [{"term": "t"}] * 21})).status_code == 422
+    turn = {"question": "q", "answer": "a"}
+    assert (await post(app, {"question": q, "history": [turn] * 21})).status_code == 422
+
+
+async def test_plan_only_429_when_gate_saturated_and_queue_full(app, fake_complete):
+    app.state.gate.free = 0
+    app.state.gate.queue = [object()] * app.state.settings.analyze_max_queue
+    r = await post(app, {"question": "What is CRISPR?", "plan_only": True})
+    assert r.status_code == 429
+
+
+async def test_chat_mode_streams_answer_without_searching(app, fake_complete):
+    fake_complete["synthesis"] = "From memory [M1]."
+    mem = [{"question": "q", "answer": "A [1]", "references": [{"id": "1", "title": "T", "url": "https://x.org", "status": "verified"}]}]
+    r = await post(app, {"question": "shorter please", "mode": "chat", "memory": mem})
+    ev = events(r.text)
+    assert [e["type"] for e in ev] == ["final_answer", "complete"]
+    assert ev[0]["content"] == "From memory [1]." and ev[0]["references"][0]["status"] == "verified"
+
+
+async def test_chat_mode_without_memory_is_refused(app, fake_complete):
+    assert [e["type"] for e in events((await post(app, {"question": "q", "mode": "chat"})).text)] == ["refused"]
+
+
+async def test_chat_mode_429_when_queue_is_full(app, fake_complete):
+    st = app.state
+    st.settings.analyze_max_queue = 0
+    free, st.gate.free = st.gate.free, 0  # every slot busy, no queue room
+    try:
+        r = await post(app, {"question": "q", "mode": "chat", "memory": [{"question": "q", "answer": "a"}]})
+    finally:
+        st.gate.free = free
+    assert r.status_code == 429

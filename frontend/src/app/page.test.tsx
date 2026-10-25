@@ -15,12 +15,11 @@ beforeEach(() => {
 });
 
 describe("landing page", () => {
-  it("has exactly one h1, in Thai by default, with its English twin", () => {
+  it("has exactly one h1, in Thai by default", () => {
     render(<Home />);
     const h1 = screen.getAllByRole("heading", { level: 1 });
     expect(h1).toHaveLength(1);
     expect(h1[0]).toHaveTextContent(landing.th.titleA);
-    expect(screen.getByText(`${landing.en.titleA} ${landing.en.titleB.replace("|", " ")}`)).toBeInTheDocument();
   });
 
   it("renders English when the language is en", () => {
@@ -59,26 +58,25 @@ describe("landing page", () => {
 
   it("language toggle switches prefs and the page", () => {
     render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: landing.th.langSwitch }));
+    fireEvent.click(screen.getByRole("button", { name: landing.th.langLabel }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "English" }));
     expect(usePrefs.getState().lang).toBe("en");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(landing.en.titleA);
   });
 
-  it("theme control cycles system -> light -> dark -> system via setMode", () => {
-    const { rerender } = render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: new RegExp(landing.th.themeLabel) }));
-    expect(cs.setMode).toHaveBeenLastCalledWith("light");
-    cs.mode = "light"; rerender(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: new RegExp(landing.th.themeLabel) }));
-    expect(cs.setMode).toHaveBeenLastCalledWith("dark");
-    cs.mode = "dark"; rerender(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: new RegExp(landing.th.themeLabel) }));
-    expect(cs.setMode).toHaveBeenLastCalledWith("system");
+  it("theme menu sets light, dark or system via setMode", () => {
+    render(<Home />);
+    for (const [label, v] of [[landing.th.themeLight, "light"], [landing.th.themeDark, "dark"], [landing.th.themeSystem, "system"]]) {
+      fireEvent.click(screen.getByRole("button", { name: new RegExp(landing.th.themeLabel) }));
+      fireEvent.click(screen.getByRole("menuitemradio", { name: label }));
+      expect(cs.setMode).toHaveBeenLastCalledWith(v);
+    }
   });
 
-  it("section headings are real h2s; the example label is not a heading", () => {
-    render(<Home />);
-    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([landing.th.howTitle, landing.th.checkTitle]);
+  it("steps and section titles are h2s; the example label is not a heading; nav anchors exist", () => {
+    const { container } = render(<Home />);
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([...landing.th.steps.map((x) => x.t), landing.th.whyTitle, landing.th.faqTitle]);
+    for (const id of ["why", "how", "faq"]) expect(container.querySelector(`#${id}`)).not.toBeNull();
   });
 
   it("copy states instruction, not guarantee", () => {

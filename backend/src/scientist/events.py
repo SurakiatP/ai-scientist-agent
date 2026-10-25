@@ -103,6 +103,7 @@ class Search(BaseModel):
 class Refused(BaseModel):
     type: Literal["refused"] = "refused"
     reason: str
+    code: str | None = None
 
 
 class Waiting(BaseModel):
@@ -144,7 +145,34 @@ class Error(BaseModel):
     message: str
 
 
-Event = Annotated[Refused | Waiting | Strategy | Sources | BranchAnswer | FinalAnswer | Complete | Error,
+class AnalysisStep(BaseModel):
+    type: Literal["analysis_step"] = "analysis_step"
+    step: Literal["profiling", "writing_script", "running", "repairing", "storing"]
+
+
+class AnalysisScript(BaseModel):
+    type: Literal["analysis_script"] = "analysis_script"
+    code: str
+
+
+class Artifact(BaseModel):
+    id: str
+    name: str
+    kind: Literal["figure", "csv"]
+    url: str
+
+
+class AnalysisResult(BaseModel):
+    type: Literal["analysis_result"] = "analysis_result"
+    quality: dict
+    tables: list[dict]
+    findings: list[str]
+    timings: dict
+    artifacts: list[Artifact]
+
+
+Event = Annotated[Refused | Waiting | Strategy | Sources | BranchAnswer | FinalAnswer | Complete | Error
+                  | AnalysisStep | AnalysisScript | AnalysisResult,
                   Field(discriminator="type")]
 
 

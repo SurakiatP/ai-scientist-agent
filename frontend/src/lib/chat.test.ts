@@ -44,6 +44,19 @@ describe("chat store", () => {
     for (let i = 0; i < 55; i++) s.getState().addTurn(id, turn(String(i)) as never);
     expect(s.getState().sessions[0].turns).toHaveLength(50);
   });
+  it("truncateFrom drops that turn and later ones, survives reload, ignores unknown ids", async () => {
+    const s = await load();
+    const id = s.getState().newSession();
+    ["a", "b", "c"].forEach((x) => s.getState().addTurn(id, turn(x) as never));
+    s.getState().truncateFrom(id, "zzz");
+    expect(s.getState().sessions[0].turns).toHaveLength(3);
+    s.getState().truncateFrom(id, "b");
+    expect(s.getState().sessions[0].turns.map((t) => t.id)).toEqual(["a"]);
+    vi.resetModules();
+    expect((await load()).getState().sessions[0].turns.map((t) => t.id)).toEqual(["a"]);
+    s.getState().truncateFrom(id, "a");
+    expect(s.getState().sessions[0].turns).toEqual([]);
+  });
   it("rehydrates running turns as interrupted", async () => {
     localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [turn("t", "running")])], activeId: "s" } }));
     const s = await load();
@@ -102,5 +115,169 @@ describe("chat store", () => {
     for (let i = 0; i < 29; i++) expect(s.getState().addProject("p" + i)).not.toBe("");
     expect(s.getState().addProject("over")).toBe("");
     expect(s.getState().projects).toHaveLength(30);
+  });
+});
+
+describe("analysis turns", () => {
+  const analysis = (over: Record<string, unknown> = {}) => ({
+    fileId: "f".repeat(32), fileName: "data.csv", steps: ["profiling", "writing_script"],
+    script: "finding('x')", quality: { rows: 2, columns: 1, columns_info: [{ name: "a", dtype: "int64", null_pct: 0 }] },
+    tables: [{ name: "t", columns: ["a"], rows: [[1], [2]] }], findings: ["f"], timings: { total_s: 0.1 },
+    artifacts: [{ id: "a1", name: "fig-1.png", kind: "figure", url: "/v1/artifacts/a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1" }],
+    ...over,
+  });
+
+  it("round-trips a valid analysis turn and keeps kind", async () => {
+    const s = await load();
+    const id = s.getState().newSession();
+    s.getState().addTurn(id, { ...turn("a"), kind: "analysis", analysis: analysis() } as never);
+    vi.resetModules();
+    const s2 = await load();
+    expect(s2.getState().sessions[0].turns[0]).toMatchObject({ kind: "analysis", analysis: { fileId: "f".repeat(32), steps: ["profiling", "writing_script"] } });
+  });
+
+  it("clamps script, rows, findings, artifacts and steps on write", async () => {
+    const s = await load();
+    const id = s.getState().newSession();
+    s.getState().addTurn(id, { ...turn("a"), kind: "analysis", analysis: analysis({
+      steps: ["profiling", "profiling", ...Array.from({ length: 30 }, () => "running")],
+      script: "x".repeat(25_000),
+      tables: [{ name: "t", columns: ["a"], rows: Array.from({ length: 300 }, (_, i) => [i]), truncated: true }],
+      findings: Array.from({ length: 60 }, () => "f"),
+      artifacts: Array.from({ length: 25 }, (_, i) => ({ id: `a${i}`, name: "x", kind: "figure", url: "/v1/artifacts/e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0" })),
+      timings: Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`t${i}`, 0.1])),
+    }) } as never);
+    vi.resetModules();
+    const t = (await load()).getState().sessions[0].turns[0];
+    expect(t.analysis!.steps).toHaveLength(2);
+    expect(t.analysis!.script).toHaveLength(20_000);
+    expect(t.analysis!.tables![0].rows).toHaveLength(200);
+    expect(t.analysis!.findings).toHaveLength(50);
+    expect(t.analysis!.artifacts).toHaveLength(20);
+    expect(Object.keys(t.analysis!.timings!)).toHaveLength(50);
+  });
+
+  it("drops a turn whose persisted analysis is malformed, keeps its siblings", async () => {
+    const sid = "s";
+    const bad = [
+      { ...turn("a"), kind: "analysis", analysis: analysis({ steps: ["nope"] }) },
+      { ...turn("b"), kind: "analysis", analysis: analysis({ tables: [{ name: "t", columns: ["a"], rows: "no" }] }) },
+      { ...turn("c"), kind: "nope", analysis: analysis() },
+      { ...turn("d"), kind: "analysis", analysis: analysis({ timings: { x: "slow" } }) },
+      { ...turn("e"), kind: "analysis", analysis: analysis({ fileId: "" }) },
+    ];
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess(sid, [...bad, { ...turn("good"), kind: "analysis", analysis: analysis() }])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns.map((t) => t.id)).toEqual(["good"]);
+  });
+
+  it("rehydrates a running analysis as interrupted with its data", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [{ ...turn("t", "running"), kind: "analysis", analysis: analysis({ steps: ["running"] }) }])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns[0]).toMatchObject({ status: "interrupted", analysis: { steps: ["running"] } });
+  });
+});
+
+describe("plan turns", () => {
+  const plan = [{ term: "t1", instructions: "i1" }, { term: "t2", instructions: "" }];
+  const awaiting = (over: Record<string, unknown> = {}, id = "p1") => ({ ...turn(id, "awaiting_plan"), plan, ...over });
+
+  it("an awaiting_plan turn survives a reload with its plan", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [awaiting()])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns[0]).toMatchObject({ status: "awaiting_plan", plan });
+  });
+
+  it("a finished turn keeps its approved plan as the plan used", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [awaiting({ status: "done" }, "p2")])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns[0]).toMatchObject({ status: "done", plan });
+  });
+
+  it("drops turns whose stored plan is malformed, or an awaiting one without a plan", async () => {
+    const bad = [
+      awaiting({ plan: [] }, "a"),
+      awaiting({ plan: [{ term: "", instructions: "" }] }, "b"),
+      awaiting({ plan: [{ term: 1, instructions: "" }] }, "c"),
+      awaiting({ plan: [{ term: "t", instructions: 9 }] }, "d"),
+      awaiting({ plan: [...plan, plan[0], plan[0], plan[0], plan[0]] }, "e"), // six rows: one past the cap
+      awaiting({ plan: undefined }, "f"),
+      awaiting({ plan: "nope" }, "g"),
+    ];
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [...bad, awaiting({}, "good")])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns.map((t) => t.id)).toEqual(["good"]);
+  });
+
+  it("a whole-session term over the limit still fails the turn (write clamps keep this unreachable)", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [awaiting({ plan: [{ term: "x".repeat(201), instructions: "" }] }, "big")])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns).toEqual([]);
+  });
+
+  it("clamps oversized plan writes so they reload", async () => {
+    const s = await load();
+    const id = s.getState().newSession();
+    const big = { term: "x".repeat(200), instructions: "y".repeat(500) };
+    s.getState().addTurn(id, { ...turn("a", "awaiting_plan"), plan: Array.from({ length: 8 }, () => ({ ...big })) } as never);
+    vi.resetModules();
+    const t = (await load()).getState().sessions[0].turns[0];
+    expect(t.status).toBe("awaiting_plan");
+    expect(t.plan).toHaveLength(5);
+    expect(t.plan!.every((row) => row.term.length === 200)).toBe(true); // rows are capped, text is never silently cut
+  });
+  it("an over-long stored plan is dropped on reload, not shown altered", async () => {
+    const s = await load();
+    const id = s.getState().newSession();
+    s.getState().addTurn(id, { ...turn("a", "awaiting_plan"), plan: [{ term: "x".repeat(300), instructions: "" }] } as never);
+    vi.resetModules();
+    expect((await load()).getState().sessions[0].turns).toEqual([]);
+  });
+
+  it("rehydrates a running plan turn as interrupted, the waiting one stays waiting", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [turn("r", "running"), awaiting()])] } }));
+    const s = await load();
+    expect(s.getState().sessions[0].turns.map((t) => t.status)).toEqual(["interrupted", "awaiting_plan"]);
+  });
+});
+
+describe("newSession blank reuse", () => {
+  it("returns the existing blank chat of the project instead of piling up", async () => {
+    const store = await load();
+    store.getState().clearAll();
+    const a = store.getState().newSession();
+    expect(store.getState().newSession()).toBe(a);
+    expect(store.getState().sessions).toHaveLength(1);
+  });
+
+  it("session memory lives only in the session: deleting the session or clearing everything leaves no copy", async () => {
+    const SECRET = "memory-marker-9f3a";
+    const mem = (id: string) => ({ ...turn(id), answer: { content: SECRET, references: [] } });
+    const s = await load();
+    const a = s.getState().newSession(), b = s.getState().newSession(); // a is reused if blank, so fill it first
+    s.getState().addTurn(a, mem("t1") as never);
+    const c = s.getState().newSession();
+    s.getState().addTurn(c, mem("t2") as never);
+    const dump = () => Object.keys(localStorage).map((k) => localStorage.getItem(k) ?? "").join("\n");
+    expect(dump()).toContain(SECRET);
+    s.getState().deleteSession(a);
+    expect(s.getState().sessions.some((x) => x.id === a)).toBe(false);
+    s.getState().deleteSession(c);
+    s.getState().deleteSession(b);
+    expect(dump()).not.toContain(SECRET); // persisted copy gone too
+    expect(JSON.stringify(s.getState())).not.toContain(SECRET);
+    const d = s.getState().newSession();
+    s.getState().addTurn(d, mem("t3") as never);
+    s.getState().clearAll();
+    expect(dump()).not.toContain(SECRET);
+    expect(s.getState().sessions).toEqual([]);
+  });
+  it("deleting a project keeps its chats (moved to Personal), so their memory stays with them", async () => {
+    const s = await load();
+    const p = s.getState().addProject("Lab");
+    const id = s.getState().newSession(p);
+    s.getState().addTurn(id, { ...turn("t"), answer: { content: "kept", references: [] } } as never);
+    s.getState().deleteProject(p);
+    expect(s.getState().sessions.find((x) => x.id === id)?.turns[0].answer?.content).toBe("kept");
   });
 });
