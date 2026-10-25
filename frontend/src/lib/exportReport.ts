@@ -1,3 +1,6 @@
+import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 import { create } from "zustand";
 import type { Turn } from "./chat";
 import { API_BASE } from "./config";
@@ -5,11 +8,99 @@ import { doiOf, httpUrl, paperLink } from "./refs";
 import type { Lang, Strings } from "./strings";
 
 // Limits of POST /v1/reports/export (backend contract).
-export const LIM = { title: 200, subtitle: 300, heading: 200, para: 5000, sections: 30, paras: 60, refs: 100 } as const;
+export const LIM = { title: 200, subtitle: 300, heading: 200, para: 5000, sections: 30, paras: 60, refs: 100, runs: 200, cols: 12, rows: 100, cell: 500, items: 100 } as const;
 export type Format = "pdf" | "docx";
 export type ReportStyle = "standard" | "official";
 export type Draft = { style: ReportStyle; title: string; subtitle: string; refs: boolean; lang: Lang; sections: { heading: string; text: string }[] };
-type Payload = { format: Format; style: ReportStyle; language: Lang; title: string; subtitle: string | null; sections: { heading: string; paragraphs: string[] }[]; references: unknown[] };
+type Payload = { format: Format; style: ReportStyle; language: Lang; title: string; subtitle: string | null; sections: { heading: string; paragraphs: string[]; blocks: Block[] }[]; references: unknown[] };
+
+export type Run = { text: string; bold?: boolean; italic?: boolean; code?: boolean };
+export type Block = { type: "paragraph"; runs: Run[] } | { type: "bullets" | "numbered"; items: Run[][] } | { type: "table"; header: string[]; rows: string[][] };
+type N = { type: string; value?: string; url?: string; alt?: string; ordered?: boolean; children?: N[] };
+
+const plain = (n: N): string => n.value ?? n.alt ?? (n.children ?? []).map(plain).join("");
+
+// Inline mdast -> runs (adjacent runs with the same format merge). Text is never rewritten; a link whose text is not its URL keeps the URL in parentheses.
+function inline(nodes: N[], f: Omit<Run, "text"> = {}, out: Run[] = []): Run[] {
+  const push = (text: string, g: Omit<Run, "text">) => {
+    if (!text) return;
+    const l = out.at(-1);
+    if (l && !!l.bold === !!g.bold && !!l.italic === !!g.italic && !!l.code === !!g.code) l.text += text;
+    else out.push({ text, ...g });
+  };
+  for (const n of nodes) {
+    if (n.type === "text") push(n.value ?? "", f);
+    else if (n.type === "inlineCode") push(n.value ?? "", { ...f, code: true });
+    else if (n.type === "break") push("\n", f);
+    else if (n.type === "image") push(n.alt ?? "", f);
+    else if (n.type === "strong") inline(n.children ?? [], { ...f, bold: true }, out);
+    else if (n.type === "emphasis") inline(n.children ?? [], { ...f, italic: true }, out);
+    else if (n.children) {
+      inline(n.children, f, out);
+      if (n.type === "link" && n.url && plain(n) !== n.url) push(` (${n.url})`, f);
+    } else push(n.value ?? "", f);
+  }
+  return out;
+}
+
+// Split runs into paragraph blocks that respect the per-run and runs-per-block limits.
+function pack(runs: Run[]): Block[] {
+  const flat: Run[] = [];
+  for (const r of runs) {
+    let t = r.text;
+    while (t.length > LIM.para) {
+      let cut = t.lastIndexOf(" ", LIM.para);
+      if (cut < LIM.para / 2) cut = LIM.para;
+      flat.push({ ...r, text: t.slice(0, cut) });
+      t = t.slice(cut);
+    }
+    if (t) flat.push({ ...r, text: t });
+  }
+  const out: Block[] = [];
+  for (let i = 0; i < flat.length; i += LIM.runs) out.push({ type: "paragraph", runs: flat.slice(i, i + LIM.runs) });
+  return out;
+}
+
+function listItems(list: N, out: Run[][]) {
+  for (const li of list.children ?? []) {
+    const runs: Run[] = [];
+    const nested: N[] = [];
+    for (const c of li.children ?? []) {
+      if (c.type === "list") { nested.push(c); continue; }
+      if (runs.length) runs.push({ text: " " });
+      inline(c.type === "paragraph" ? (c.children ?? []) : [c], {}, runs);
+    }
+    out.push(runs);
+    nested.forEach((n) => listItems(n, out)); // nested lists are flattened into the parent list
+  }
+}
+
+function walk(nodes: N[], out: Block[]) {
+  for (const n of nodes) {
+    if (n.type === "paragraph") out.push(...pack(inline(n.children ?? [])));
+    else if (n.type === "heading") out.push(...pack(inline(n.children ?? [], { bold: true })));
+    else if (n.type === "code" || n.type === "html") out.push(...pack([n.type === "code" ? { text: n.value ?? "", code: true } : { text: n.value ?? "" }]));
+    else if (n.type === "blockquote") walk(n.children ?? [], out);
+    else if (n.type === "list") {
+      const items: Run[][] = [];
+      listItems(n, items);
+      for (let i = 0; i < items.length; i += LIM.items) out.push({ type: n.ordered ? "numbered" : "bullets", items: items.slice(i, i + LIM.items) });
+    } else if (n.type === "table") {
+      const [head, ...body] = (n.children ?? []).map((r) => (r.children ?? []).map(plain));
+      for (let i = 0; i === 0 || i < body.length; i += LIM.rows) out.push({ type: "table", header: head ?? [], rows: body.slice(i, i + LIM.rows) });
+    }
+  }
+}
+
+// Markdown text -> typed blocks (paragraph, bullets, numbered, table). Parsed to a syntax tree, never rendered as HTML.
+export function blocksOf(text: string): Block[] {
+  const out: Block[] = [];
+  walk((unified().use(remarkParse).use(remarkGfm).parse(text) as N).children ?? [], out);
+  return out;
+}
+
+// A table the server would refuse: too many columns or a cell over the limit (cannot be split without changing it).
+export const tableIssue = (bs: Block[]) => bs.some((b) => b.type === "table" && (b.header.length > LIM.cols || b.rows.some((r) => r.length > LIM.cols) || [...b.header, ...b.rows.flat()].some((c) => c.length > LIM.cell)));
 
 // Paragraph = blank-line separated block; a block over the limit is split at whitespace so no text is lost.
 export function paragraphsOf(text: string): string[] {
@@ -46,16 +137,19 @@ export function initialDraft(turn: Turn, lang: Lang, t: Strings): Draft {
   return { style: "standard", title: docTitle(turn), subtitle: turn.answer ? turn.question.slice(0, LIM.subtitle) : "", refs: true, lang, sections: draftSections(turn.answer?.content ?? "", t.reportAnswerSection) };
 }
 
-export const draftIssue = (d: Draft): "title" | "limits" | null =>
-  !d.title.trim() ? "title"
-    : d.sections.length > LIM.sections || d.sections.some((s) => paragraphsOf(s.text).length > LIM.paras || s.heading.length > LIM.heading) ? "limits" : null;
+export function draftIssue(d: Draft): "title" | "limits" | "table" | null {
+  if (!d.title.trim()) return "title";
+  if (d.sections.length > LIM.sections || d.sections.some((s) => s.heading.length > LIM.heading)) return "limits";
+  const bs = d.sections.map((s) => blocksOf(s.text));
+  return bs.some((b) => b.length > LIM.paras) ? "limits" : bs.some(tableIssue) ? "table" : null;
+}
 
 export function toPayload(d: Draft, format: Format, turn: Turn): Payload {
   const refs = d.refs ? (turn.answer?.references ?? []).slice(0, LIM.refs).map((r) => ({
     id: r.id, title: r.paper.title, authors: r.paper.authors, year: r.paper.year ?? null,
     doi: doiOf(r.paper) || null, url: httpUrl(paperLink(r.paper) ?? r.paper.url) ?? null, status: r.status,
   })) : [];
-  return { format, style: d.style, language: d.lang, title: d.title.trim().slice(0, LIM.title), subtitle: d.subtitle.trim().slice(0, LIM.subtitle) || null, sections: d.sections.map((s) => ({ heading: s.heading.trim() || " ", paragraphs: paragraphsOf(s.text) })), references: refs };
+  return { format, style: d.style, language: d.lang, title: d.title.trim().slice(0, LIM.title), subtitle: d.subtitle.trim().slice(0, LIM.subtitle) || null, sections: d.sections.map((s) => ({ heading: s.heading.trim() || " ", paragraphs: [], blocks: blocksOf(s.text) })), references: refs };
 }
 
 export type ExportError = "413" | "422" | "503" | "net" | "other";

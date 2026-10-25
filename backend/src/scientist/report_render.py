@@ -1,4 +1,4 @@
-"""Render a report draft to PDF (fpdf2 + HarfBuzz shaping) or DOCX (python-docx). Pure functions, plain text only."""
+"""Render a report draft to PDF (fpdf2 + HarfBuzz shaping) or DOCX (python-docx). Pure functions; Markdown arrives as typed blocks, never parsed or interpreted here."""
 import io
 import re
 from dataclasses import dataclass
@@ -63,6 +63,14 @@ def segment(s: str) -> str:
     return "".join(out)
 
 
+def blocks_of(sec: dict) -> list[dict]:
+    """Typed blocks if the client sent them, else the plain paragraphs as one-run blocks."""
+    if sec.get("blocks"):
+        return sec["blocks"]
+    return [{"type": "paragraph", "runs": [{"text": t, "bold": False, "italic": False, "code": False}]}
+            for t in sec["paragraphs"]]
+
+
 def ref_line(r: dict, lang: str, *, seg=lambda s: s) -> str:
     bits = [f"[{clean(r['id'])}]"]
     if r["authors"]:
@@ -93,6 +101,8 @@ def render_pdf(d: dict) -> bytes:
     pdf.page_word = LABELS[lang]["page"]
     pdf.add_font("Sarabun", "", str(FONTS / "Sarabun-Regular.ttf"))
     pdf.add_font("Sarabun", "B", str(FONTS / "Sarabun-Bold.ttf"))
+    pdf.add_font("Sarabun", "I", str(FONTS / "Sarabun-Italic.ttf"))
+    pdf.add_font("Sarabun", "BI", str(FONTS / "Sarabun-BoldItalic.ttf"))
     pdf.set_text_shaping(True)
     left, top, right, bottom = st.margins
     pdf.set_margins(left * 10, top * 10, right * 10)
@@ -105,13 +115,52 @@ def render_pdf(d: dict) -> bytes:
         pdf.multi_cell(0, size * 0.5, segment(clean(text)), new_x="LMARGIN", new_y="NEXT")  # left-aligned, not justified
         pdf.ln(gap)
 
+    def runs(rs, size):
+        for r in rs:
+            t, b = clean(r["text"]), "B" if r["bold"] else ""
+            if r["code"] and t.isascii():
+                pdf.set_font("Courier", b + ("I" if r["italic"] else ""), size - 1)
+            else:  # Thai in a code run stays in Sarabun: the core Courier font has no Thai glyphs
+                pdf.set_font("Sarabun", b + ("I" if r["italic"] else ""), size)
+            pdf.write(size * 0.5, segment(t))
+
+    def block(b):
+        size = st.body
+        if b["type"] == "paragraph":
+            runs(b["runs"], size)
+            pdf.ln(size * 0.5 + 2)
+        elif b["type"] == "table":
+            n = max([len(b["header"])] + [len(r) for r in b["rows"]])
+            pad = lambda row: [clean(c) for c in row] + [""] * (n - len(row))
+            pdf.set_font("Sarabun", "", size - 1)
+            with pdf.table(first_row_as_headings=bool(b["header"]), text_align="LEFT") as tb:
+                for row in ([b["header"]] if b["header"] else []) + b["rows"]:
+                    r = tb.row()
+                    for c in pad(row):
+                        r.cell(segment(c))
+            pdf.ln(2)
+        else:
+            base = pdf.l_margin
+            for k, item in enumerate(b["items"], 1):
+                pdf.set_font("Sarabun", "", size)
+                pdf.set_x(base + 1)
+                pdf.write(size * 0.5, "\u2022" if b["type"] == "bullets" else f"{k}.")
+                pdf.l_margin = base + 7
+                pdf.set_x(base + 7)
+                runs(item, size)
+                pdf.l_margin = base
+                pdf.ln(size * 0.5 + 1)
+            pdf.ln(1)
+
     para(d["title"], st.title, True)
     if d["subtitle"]:
         para(d["subtitle"], st.body)
     for i, s in enumerate(d["sections"], 1):
+        if pdf.get_y() > pdf.h - pdf.b_margin - 40:  # keep the heading with the text that follows
+            pdf.add_page()
         para((f"{i}. " if st.numbered else "") + s["heading"], st.heading, True)
-        for p in s["paragraphs"]:
-            para(p, st.body)
+        for b in blocks_of(s):
+            block(b)
     if d["references"]:
         para(LABELS[lang]["refs"], st.heading, True)
         for r in d["references"]:
@@ -120,14 +169,15 @@ def render_pdf(d: dict) -> bytes:
     return bytes(pdf.output())
 
 
-def _run(p, text, font, size, bold=False):
+def _run(p, text, font, size, bold=False, italic=False, code=False):
     r = p.add_run(text)
-    r.font.size, r.font.bold, r.font.name = Pt(size), bold, font
+    r.font.size, r.font.bold, r.font.italic, r.font.name = Pt(size), bold, italic, font
     rpr = r._r.get_or_add_rPr()
     f = rpr.find(qn("w:rFonts"))
-    for a in ("w:ascii", "w:hAnsi", "w:cs"):
-        f.set(qn(a), font)
-    for tag, val in (("w:szCs", str(size * 2)),) + ((("w:bCs", None),) if bold else ()):
+    for a in ("w:ascii", "w:hAnsi"):
+        f.set(qn(a), "Courier New" if code else font)
+    f.set(qn("w:cs"), font)  # Thai (complex script) always in the document font
+    for tag, val in (("w:szCs", str(size * 2)),) + ((("w:bCs", None),) if bold else ()) + ((("w:iCs", None),) if italic else ()):
         e = OxmlElement(tag)
         if val:
             e.set(qn("w:val"), val)
@@ -147,19 +197,57 @@ def render_docx(d: dict) -> bytes:
     doc.core_properties.title = clean(d["title"])
     f = st.docx_font
 
-    def para(text, size, bold=False):
+    def para(text, size, bold=False, keep=False):
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
         p.paragraph_format.space_after = Pt(6)
+        p.paragraph_format.keep_with_next = keep
         _run(p, clean(text), f, size, bold)
+
+    def runs(p, rs, size, bold=False):
+        for r in rs:
+            _run(p, clean(r["text"]), f, size, bold or r["bold"], r["italic"], r["code"])
+
+    def block(b):
+        size = st.body
+        if b["type"] == "paragraph":
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p.paragraph_format.space_after = Pt(6)
+            runs(p, b["runs"], size)
+        elif b["type"] == "table":
+            n = max([len(b["header"])] + [len(r) for r in b["rows"]])
+            rows = ([b["header"]] if b["header"] else []) + b["rows"]
+            tb = doc.add_table(rows=len(rows), cols=n)
+            tb.style = "Table Grid"
+            for ri, row in enumerate(rows):
+                for ci, c in enumerate(row + [""] * (n - len(row))):
+                    runs(tb.cell(ri, ci).paragraphs[0], [{"text": c, "bold": False, "italic": False, "code": False}],
+                         size - 1, bold=bool(b["header"]) and ri == 0)
+            if b["header"]:
+                tb.rows[0]._tr.get_or_add_trPr().append(OxmlElement("w:tblHeader"))
+            doc.add_paragraph().paragraph_format.space_after = Pt(2)
+        else:
+            numbered = b["type"] == "numbered"
+            if numbered:  # own w:num per list so each numbered list restarts at 1
+                nums = doc.part.numbering_part.numbering_definitions._numbering
+                base = doc.styles["List Number"].element.pPr.numPr.numId.val
+                num = nums.add_num(nums.num_having_numId(base).abstractNumId.val)
+                num.add_lvlOverride(ilvl=0).add_startOverride(1)
+            for item in b["items"]:
+                p = doc.add_paragraph(style="List Number" if numbered else "List Bullet")
+                p.paragraph_format.space_after = Pt(3)
+                if numbered:
+                    p._p.get_or_add_pPr().get_or_add_numPr().get_or_add_numId().val = num.numId
+                runs(p, item, size)
 
     para(d["title"], st.title, True)
     if d["subtitle"]:
         para(d["subtitle"], st.body)
     for i, s in enumerate(d["sections"], 1):
-        para((f"{i}. " if st.numbered else "") + s["heading"], st.heading, True)
-        for p in s["paragraphs"]:
-            para(p, st.body)
+        para((f"{i}. " if st.numbered else "") + s["heading"], st.heading, True, keep=True)
+        for b in blocks_of(s):
+            block(b)
     if d["references"]:
         para(LABELS[lang]["refs"], st.heading, True)
         for r in d["references"]:

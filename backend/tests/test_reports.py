@@ -85,3 +85,67 @@ async def test_english_and_filename(monkeypatch):
 ])
 async def test_limits(patch, monkeypatch):
     assert (await post(body(**patch), monkeypatch)).status_code == 422
+
+
+def R(t, **kw):
+    return {"text": t, "bold": False, "italic": False, "code": False} | kw
+
+
+MD = [
+    {"type": "paragraph", "runs": [R("Intro "), R("bold", bold=True), R(" "), R("it", italic=True), R(" "), R("a|b", code=True), R(" [1] ไทย")]},
+    {"type": "bullets", "items": [[R("one")], [R("สอง", bold=True)]]},
+    {"type": "numbered", "items": [[R("first")], [R("second")]]},
+    {"type": "numbered", "items": [[R("again")]]},
+    {"type": "table", "header": ["ชื่อ", "ค่า", ""], "rows": [["a", "1"], ["", "", "x", ], ["น้ำ", "ปั๊ม", "ok"]]},
+    {"type": "table", "header": [], "rows": [["h", "i"]]},
+]
+
+
+@pytest.mark.parametrize("style", ["standard", "official"])
+async def test_blocks_pdf(style, monkeypatch):
+    b = body(style=style, sections=[{"heading": "H", "blocks": MD}])
+    r = await post(b, monkeypatch)
+    assert r.status_code == 200
+    t = pdf_text(r)
+    assert "**" not in t and "|---" not in t
+    for s in ("Intro", "bold", "a|b", "[1]", "first", "again", "ชื่อ", "x", "น้ำ"):
+        assert s in t.replace(" ", ""), s
+
+
+@pytest.mark.parametrize("style", ["standard", "official"])
+async def test_blocks_docx(style, monkeypatch):
+    r = await post(body(format="docx", style=style, sections=[{"heading": "H", "blocks": MD}]), monkeypatch)
+    assert r.status_code == 200
+    z = zipfile.ZipFile(io.BytesIO(r.content))
+    xml = z.read("word/document.xml").decode()
+    assert "<w:tbl>" in xml and xml.count("<w:tbl>") == 2 and "<w:tblHeader" in xml
+    assert "<w:i/>" in xml and "<w:iCs" in xml and 'w:ascii="Courier New"' in xml and "<w:bCs" in xml
+    assert 'w:cs="%s"' % ("Sarabun" if style == "standard" else "TH Sarabun New") in xml
+    assert 'w:pStyle w:val="ListBullet"' in xml and 'w:pStyle w:val="ListNumber"' in xml and xml.count("<w:numId") >= 2
+    assert "<w:startOverride" in z.read("word/numbering.xml").decode()
+    assert "**" not in xml
+
+
+async def test_paragraphs_still_work_and_blocks_win(monkeypatch):
+    b = body(sections=[{"heading": "H", "paragraphs": ["plainold"], "blocks": [{"type": "paragraph", "runs": [R("newer")]}]}])
+    t = pdf_text(await post(b, monkeypatch))
+    assert "newer" in t and "plainold" not in t
+
+
+@pytest.mark.parametrize("blk", [
+    {"type": "table", "header": list("abcdefghijklm"), "rows": []},
+    {"type": "table", "header": ["a"], "rows": [list("abcdefghijklm")]},
+    {"type": "table", "header": ["a"], "rows": [["x"]] * 101},
+    {"type": "table", "header": ["a"], "rows": [["x" * 501]]},
+    {"type": "paragraph", "runs": [R("x")] * 201},
+    {"type": "paragraph", "runs": [R("x" * 5001)]},
+    {"type": "bullets", "items": [[R("x")]] * 101},
+    {"type": "html", "runs": []},
+])
+async def test_block_limits(blk, monkeypatch):
+    assert (await post(body(sections=[{"heading": "h", "blocks": [blk]}]), monkeypatch)).status_code == 422
+
+
+async def test_too_many_blocks(monkeypatch):
+    blk = {"type": "paragraph", "runs": [R("x")]}
+    assert (await post(body(sections=[{"heading": "h", "blocks": [blk] * 61}]), monkeypatch)).status_code == 422

@@ -8,7 +8,7 @@ import ArrowUpwardRoundedIcon from "@mui/icons-material/ArrowUpwardRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import type { Turn } from "@/lib/chat";
-import { draftIssue, errorText, initialDraft, LIM, paragraphsOf, useExport, type Draft, type Format } from "@/lib/exportReport";
+import { draftIssue, errorText, initialDraft, LIM, blocksOf, useExport, type Draft, type Format } from "@/lib/exportReport";
 import { skeletonBar } from "@/lib/motion";
 import { usePrefs, useT } from "@/lib/prefs";
 import type { Lang } from "@/lib/strings";
@@ -54,7 +54,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
             </Stack>
             <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>{fill(t.fLimits, { s: LIM.sections, p: LIM.paras, c: LIM.para })}</Typography>
             {d.sections.map((s, i) => {
-              const n = paragraphsOf(s.text).length;
+              const n = blocksOf(s.text).length;
               return (
                 <Box key={i} component="section" aria-label={`${t.fHeading} ${i + 1}`} sx={{ border: 1, borderColor: "divider", borderRadius: 2, p: 1.5, display: "grid", gap: 1.5 }}>
                   <Stack direction="row" sx={{ gap: 0.5, alignItems: "flex-start" }}>
@@ -78,7 +78,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
             <Box component="ol" sx={{ m: 0, mt: 1.5, pl: 2.5, display: "grid", gap: 0.75 }}>
               {d.sections.map((s, i) => (
                 <li key={i}><Typography component="span" sx={{ fontSize: "0.875rem", overflowWrap: "anywhere" }}>{s.heading || "—"}</Typography>{" "}
-                  <Typography component="span" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>({t.reportParagraphs.replace("{n}", String(paragraphsOf(s.text).length))})</Typography></li>
+                  <Typography component="span" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>({t.reportParagraphs.replace("{n}", String(blocksOf(s.text).length))})</Typography></li>
               ))}
             </Box>
             {d.refs && refCount > 0 && <Typography sx={{ mt: 1.5, fontSize: "0.8125rem", color: "text.secondary" }}>{fill(t.fRefsN, { n: refCount })}</Typography>}
@@ -87,7 +87,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
         </Box>
       </DialogContent>
       <DialogActions sx={{ display: "block", p: 2 }}>
-        {issue === "limits" && <Alert severity="warning" sx={{ mb: 1.5 }}>{t.fTooMany}</Alert>}
+        {(issue === "limits" || issue === "table") && <Alert severity="warning" sx={{ mb: 1.5 }}>{issue === "table" ? t.fTableWide : t.fTooMany}</Alert>}
         {error && <Alert severity="error" sx={{ mb: 1.5 }}>{errorText(error, t)}</Alert>}
         <Box role="status" sx={busy || done ? (busy ? hidden : { fontSize: "0.875rem", color: "text.secondary", mb: 1 }) : hidden}>{busy ? t.fBusy : done ? t.fDone : ""}</Box>
         <Stack direction="row" useFlexGap sx={{ gap: 1.5, flexWrap: "wrap" }}>

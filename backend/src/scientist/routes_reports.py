@@ -1,7 +1,7 @@
 """POST /v1/reports/export: a report draft in, a PDF or DOCX file out. No network, no server paths, plain text only."""
 import asyncio
 import re
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException
@@ -16,15 +16,63 @@ TYPES = {"pdf": "application/pdf",
          "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
 
 
+class Run(BaseModel):
+    text: str = Field(max_length=5000)
+    bold: bool = False
+    italic: bool = False
+    code: bool = False
+
+
+Runs = Annotated[list[Run], Field(max_length=200)]
+Cell = Annotated[str, Field(max_length=500)]
+
+
+class ParagraphBlock(BaseModel):
+    type: Literal["paragraph"]
+    runs: Runs
+
+
+class ListBlock(BaseModel):
+    type: Literal["bullets", "numbered"]
+    items: list[Runs] = Field(max_length=100)
+
+
+class TableBlock(BaseModel):
+    type: Literal["table"]
+    header: list[Cell] = Field(default=[], max_length=12)
+    rows: list[list[Cell]] = Field(max_length=100)
+
+    @model_validator(mode="after")
+    def _cols(self):
+        if max([len(self.header)] + [len(r) for r in self.rows]) > 12:
+            raise ValueError("a table can have at most 12 columns")
+        return self
+
+
+Block = Annotated[ParagraphBlock | ListBlock | TableBlock, Field(discriminator="type")]
+
+
 class Section(BaseModel):
     heading: str = Field(max_length=200)
-    paragraphs: list[str] = Field(max_length=60)
+    paragraphs: list[str] = Field(default=[], max_length=60)
+    blocks: list[Block] = Field(default=[], max_length=60)  # if present, used instead of paragraphs
 
     @model_validator(mode="after")
     def _len(self):
         if any(len(p) > 5000 for p in self.paragraphs):
             raise ValueError("paragraph longer than 5000 characters")
         return self
+
+    def chars(self) -> int:
+        n = len(self.heading) + sum(map(len, self.paragraphs))
+        for b in self.blocks:
+            if isinstance(b, ParagraphBlock):
+                n += sum(len(r.text) for r in b.runs)
+            elif isinstance(b, ListBlock):
+                n += sum(len(r.text) for i in b.items for r in i)
+            else:
+                n += sum(map(len, b.header)) + sum(len(c) for r in b.rows for c in r)
+        return n
 
 
 class Reference(BaseModel):
@@ -49,7 +97,7 @@ class ExportRequest(BaseModel):
 
     @model_validator(mode="after")
     def _total(self):
-        n = len(self.title) + sum(len(s.heading) + sum(map(len, s.paragraphs)) for s in self.sections)
+        n = len(self.title) + sum(s.chars() for s in self.sections)
         if n > MAX_CHARS:
             raise ValueError(f"document is longer than {MAX_CHARS} characters")
         return self
