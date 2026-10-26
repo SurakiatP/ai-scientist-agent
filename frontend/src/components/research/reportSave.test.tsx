@@ -152,3 +152,29 @@ describe("ReportForm font", () => {
     await waitFor(() => expect(exportBody()).toMatchObject({ style: "official", font: "th-sarabun-new" }));
   });
 });
+
+describe("ReportForm sheet extras", () => {
+  const withRefs = { ...turn, answer: { content: "# A\n\nB", references: [{ id: "1", status: "verified", paper: { title: "Paper A", authors: ["Kim"], year: 2020, doi: "10.1/x", url: "https://doi.org/10.1/x" } }] } } as unknown as Turn;
+  it("shows the generated references block only while the switch is on and refs exist", () => {
+    render(<ReportForm turn={withRefs} onClose={() => {}} />);
+    const r = screen.getByRole("region", { name: t.fRefsAria });
+    expect(r).toHaveTextContent("References");
+    expect(r).toHaveTextContent("[1] Kim (2020). Paper A. DOI: 10.1/x https://doi.org/10.1/x (identifier exists)");
+    expect(r).toHaveTextContent("Note: the reference check only confirms");
+    fireEvent.click(screen.getByRole("button", { name: t.fSettings }));
+    fireEvent.click(screen.getByRole("switch", { name: t.fRefs }));
+    expect(screen.queryByRole("region", { name: t.fRefsAria })).toBeNull();
+  });
+  it("shows nothing without references", () => {
+    render(<ReportForm turn={turn} onClose={() => {}} />);
+    expect(screen.queryByRole("region", { name: t.fRefsAria })).toBeNull();
+  });
+  it("numbers headings only in official style", () => {
+    render(<ReportForm turn={turn} onClose={() => {}} />);
+    expect(document.querySelector("article")).not.toHaveAttribute("data-numbered");
+    fireEvent.click(screen.getByRole("button", { name: t.fSettings }));
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: t.fStyle }));
+    fireEvent.click(screen.getByRole("option", { name: t.fStyleOfficial }));
+    expect(document.querySelector("article")).toHaveAttribute("data-numbered", "true");
+  });
+});

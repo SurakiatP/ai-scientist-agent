@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Turn } from "./chat";
-import { blocksOf, docFromSections, draftIssue, draftSections, errorText, fileNameOf, initialDraft, requestExport, sectionsOf, toPayload, FONTS, defaultFont, LIM } from "./exportReport";
+import { blocksOf, docFromSections, draftIssue, draftSections, errorText, fileNameOf, initialDraft, requestExport, sectionsOf, toPayload, refLines, FONTS, defaultFont, LIM } from "./exportReport";
 import { strings } from "./strings";
 
 const turn = { id: "t", question: "Q?", createdAt: 0, status: "done", progress: {} as never, answer: { content: "intro\n\n## A\n\np1\n\np2\n\n```\n# not heading\n```\n\n### B\n\nx", references: [{ id: "1", status: "verified", paper: { title: "T", authors: ["a"], year: 2020, doi: "doi:10.1000/x", pmid: null, url: "javascript:1" } }] } } as Turn;
@@ -136,5 +136,15 @@ describe("editor schema and limits", () => {
     expect(JSON.stringify(ss[0].blocks)).toContain("SECRET");
     expect(ss[1].heading).toBe("A B");
     expect(draftIssue({ ...d0(), doc: docFromSections([{ heading: "x".repeat(201), text: "" }]) })).toBe("heading");
+  });
+});
+
+describe("refLines", () => {
+  const R = { id: "1", title: "T", authors: [] as string[], year: null as number | null, doi: null as string | null, url: null as string | null, status: "unknown" as const };
+  it("follows ref_line() in the backend", () => {
+    expect(refLines([R], "en")).toEqual(["[1] T. (could not be checked)"]);
+    expect(refLines([{ ...R, year: 2020 }], "en")).toEqual(["[1] (2020). T. (could not be checked)"]);
+    expect(refLines([{ ...R, authors: ["A", "B"], year: 2020, doi: "10/x", url: "https://u", status: "verified" }], "th")).toEqual(["[1] A, B (2020). T. DOI: 10/x https://u (พบตัวระบุอ้างอิง)"]);
+    expect(refLines([{ ...R, authors: ["A"], url: "javascript:x", status: "unverified" }], "th")).toEqual(["[1] A. T. (ยังไม่ยืนยัน)"]);
   });
 });

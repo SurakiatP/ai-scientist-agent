@@ -10,7 +10,7 @@ import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import { useEditor } from "@tiptap/react";
 import type { Turn } from "@/lib/chat";
-import { defaultFont, draftIssue, errorText, FONTS, initialDraft, toPayload, useExport, type Draft, type Format } from "@/lib/exportReport";
+import { defaultFont, draftIssue, errorText, FONTS, initialDraft, refsOf, toPayload, useExport, type Draft, type Format } from "@/lib/exportReport";
 import { reportExtensions } from "@/lib/reportExtensions";
 import { enterFade } from "@/lib/motion";
 import { useGoFiles } from "@/lib/nav";
@@ -44,6 +44,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   const dirty = ver !== clean.ver || base !== clean.base;
   const leave = () => (dirty ? setAsk(true) : onClose());
   const preview = usePreview(useMemo(() => (pv && !issue ? toPayload(d, "pdf", turn) : null), [pv, d, issue, turn]));
+  const sheetRefs = useMemo(() => refsOf(turn), [turn]);
   const set = (p: Partial<Draft>) => setBase((x) => ({ ...x, ...p }));
   const make = async (f: Format) => { if (issue) return; const at = { ver, base }; await save(d, f, turn); if (useExport.getState().saved) setClean(at); };
   const fields = (
@@ -116,7 +117,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
       )}
       <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>
         <Box sx={{ display: sheetOn ? "flex" : "none", flex: 1, minWidth: 0 }}>
-          <ReportSheet editor={editor} wide={wide} style={base.style} font={base.font} title={base.title} subtitle={base.subtitle} onTitle={(title) => set({ title })} onSubtitle={(subtitle) => set({ subtitle })} />
+          <ReportSheet editor={editor} wide={wide} style={base.style} font={base.font} lang={base.lang} refs={base.refs ? sheetRefs : null} title={base.title} subtitle={base.subtitle} onTitle={(title) => set({ title })} onSubtitle={(subtitle) => set({ subtitle })} />
         </Box>
         {pv && (
           <Box sx={{ ...enterFade, flex: { xs: 1, md: "0 0 380px" }, minWidth: 0, overflow: "auto", p: 2, borderLeft: { md: 1 }, borderColor: "divider" }}>

@@ -1,8 +1,10 @@
 "use client";
 import { Box, TextareaAutosize } from "@mui/material";
 import { EditorContent, type Editor } from "@tiptap/react";
-import { FONTS, LIM, type FontId, type ReportStyle } from "@/lib/exportReport";
+import { FONTS, LIM, REF_TEXT, refLines, type FontId, type RefOut, type ReportStyle } from "@/lib/exportReport";
 import { useT } from "@/lib/prefs";
+import type { Lang } from "@/lib/strings";
+import { ease } from "@/lib/motion";
 
 // Mirrors STYLES in backend/src/scientist/report_render.py. 1 cm = 37.8 px, 1 pt = 1.333 px.
 const cm = (n: number) => `${(n * 37.8).toFixed(1)}px`;
@@ -16,7 +18,7 @@ const W = 21 * 37.8; // A4 width in px
 const field = { display: "block", width: "100%", border: 0, outline: 0, bgcolor: "transparent", color: "inherit", font: "inherit", textAlign: "center", resize: "none", p: 0, m: 0, overflow: "hidden", "&::placeholder": { color: "#6b6b6b", opacity: 1 }, "&:focus-visible": { outline: "2px solid #1565c0", outlineOffset: 2, borderRadius: "2px" } } as const;
 
 // The A4 page. Typing happens on it; margins and sizes follow the chosen style like the exported file.
-export function ReportSheet({ editor, wide, style, font, title, subtitle, onTitle, onSubtitle }: { editor: Editor | null; wide: boolean; style: ReportStyle; font: FontId; title: string; subtitle: string; onTitle: (v: string) => void; onSubtitle: (v: string) => void }) {
+export function ReportSheet({ editor, wide, style, font, lang, refs, title, subtitle, onTitle, onSubtitle }: { editor: Editor | null; wide: boolean; style: ReportStyle; font: FontId; lang: Lang; refs: RefOut[] | null; title: string; subtitle: string; onTitle: (v: string) => void; onSubtitle: (v: string) => void }) {
   const t = useT();
   const a4 = SHEET[style];
   // Below md the page reflows at a readable size (16px body, same proportions) instead of shrinking the A4 sheet.
@@ -28,6 +30,7 @@ export function ReportSheet({ editor, wide, style, font, title, subtitle, onTitl
     <Box sx={{ flex: 1, minWidth: 0, overflow: "auto", bgcolor: "action.selected", py: { xs: 0, md: 3 }, px: { xs: 0, md: 2 } }}>
       <Box
         component="article"
+        data-numbered={style === "official" || undefined}
         sx={{
           width: wide ? W : "100%", minHeight: wide ? 297 * 3.78 : "100%", mx: "auto", boxSizing: "border-box", bgcolor: "#fff", color: "#1b1b1b",
           boxShadow: "0 1px 3px rgba(16,24,40,0.14), 0 10px 28px rgba(16,24,40,0.1)",
@@ -38,6 +41,7 @@ export function ReportSheet({ editor, wide, style, font, title, subtitle, onTitl
           "& .ProseMirror": {
             outline: 0, minHeight: 360, overflowWrap: "anywhere",
             "& p": { m: `0 0 ${pt(s.body * 0.6)}` },
+            ...(style === "official" && { counterReset: "sec", "& h2::before": { counterIncrement: "sec", content: 'counter(sec) ". "' } }), // numbers are shown, never stored in the document
             "& h2": { fontSize: pt(s.head), fontWeight: 700, lineHeight: 1.35, m: `${pt(s.head * 0.9)} 0 ${pt(s.head * 0.35)}`, textWrap: "balance" },
             "& ul, & ol": { m: `0 0 ${pt(s.body * 0.6)}`, pl: "1.6em" },
             "& li > p": { m: 0 },
@@ -54,6 +58,19 @@ export function ReportSheet({ editor, wide, style, font, title, subtitle, onTitl
         {!title.trim() && <Box id="rf-need-title" sx={{ textAlign: "center", fontSize: "0.8125rem", color: "#c62828", mb: 1 }}>{t.fNeedTitle}</Box>}
         <Box component={TextareaAutosize} value={subtitle} onChange={(e) => onSubtitle(e.target.value)} onKeyDown={next} maxLength={LIM.subtitle} placeholder={t.fSubtitle} aria-label={t.fSubtitle} sx={{ ...field, color: "#555", mb: 2 }} />
         <EditorContent editor={editor} />
+        {/* Generated list, read-only: grid-rows transition fades it in and out; reduced motion is handled by the theme zeroing durations. */}
+        <Box data-testid="sheet-refs" sx={{ display: "grid", gridTemplateRows: refs?.length ? "1fr" : "0fr", opacity: refs?.length ? 1 : 0, transition: `grid-template-rows 180ms ${ease}, opacity 180ms ${ease}`, "@media (prefers-reduced-motion: reduce)": { transition: "none" } }}>
+          <Box sx={{ overflow: "hidden", minHeight: 0 }}>
+            {!!refs?.length && (
+              <Box component="section" aria-label={t.fRefsAria} sx={{ borderTop: "1px solid #d5d7db", mt: 2, pt: 1, userSelect: "text" }}>
+                <Box sx={{ fontSize: "0.75rem", color: "#6b6b6b" }}>{t.fRefsAuto}</Box>
+                <Box component="h2" sx={{ fontSize: pt(s.head), fontWeight: 700, lineHeight: 1.35, m: `${pt(s.head * 0.5)} 0 ${pt(s.head * 0.35)}` }}>{REF_TEXT[lang].refs}</Box>
+                {refLines(refs, lang).map((l, i) => <Box component="p" key={i} sx={{ m: `0 0 ${pt(s.body * 0.3)}`, fontSize: pt(s.body - 1 * k), overflowWrap: "anywhere" }}>{l}</Box>)}
+                <Box component="p" sx={{ m: `${pt(s.body * 0.4)} 0 0`, fontSize: pt(s.body - 1 * k) }}>{REF_TEXT[lang].note}</Box>
+              </Box>
+            )}
+          </Box>
+        </Box>
       </Box>
     </Box>
   );

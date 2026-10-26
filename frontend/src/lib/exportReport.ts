@@ -29,7 +29,7 @@ export type FontId = (typeof FONTS)[number]["id"];
 export const defaultFont = (style: ReportStyle): FontId => (style === "official" ? "th-sarabun-new" : "sarabun");
 export type Draft = { style: ReportStyle; font: FontId; title: string; subtitle: string; refs: boolean; lang: Lang; doc: JSONContent; lead: string };
 type Section = { heading: string; blocks: Block[] };
-type Payload = { format: Format; style: ReportStyle; font: FontId; language: Lang; title: string; subtitle: string | null; sections: { heading: string; paragraphs: string[]; blocks: Block[] }[]; references: unknown[] };
+type Payload = { format: Format; style: ReportStyle; font: FontId; language: Lang; title: string; subtitle: string | null; sections: { heading: string; paragraphs: string[]; blocks: Block[] }[]; references: RefOut[] };
 
 export type Run = { text: string; bold?: boolean; italic?: boolean; code?: boolean };
 export type Block = { type: "paragraph"; runs: Run[] } | { type: "bullets" | "numbered"; items: Run[][] } | { type: "table"; header: string[]; rows: string[][] };
@@ -233,11 +233,31 @@ export function draftIssue(d: Draft): "title" | "limits" | "heading" | "table" |
   return ss.some((s) => tableIssue(s.blocks)) ? "table" : null;
 }
 
+export type RefOut = { id: string; title: string; authors: string[]; year: number | null; doi: string | null; url: string | null; status: "verified" | "unverified" | "unknown" };
+export const refsOf = (turn: Turn): RefOut[] => (turn.answer?.references ?? []).slice(0, LIM.refs).map((r) => ({
+  id: r.id, title: r.paper.title, authors: r.paper.authors, year: r.paper.year ?? null,
+  doi: doiOf(r.paper) || null, url: httpUrl(paperLink(r.paper) ?? r.paper.url) ?? null, status: r.status,
+}));
+// Same text as ref_line() / LABELS in backend/src/scientist/report_render.py, so the sheet shows what the file will contain.
+export const REF_TEXT = {
+  th: { refs: "เอกสารอ้างอิง", status: { verified: "พบตัวระบุอ้างอิง", unverified: "ยังไม่ยืนยัน", unknown: "ตรวจสอบไม่ได้" }, note: "หมายเหตุ: การตรวจสอบเอกสารอ้างอิงยืนยันเพียงว่าตัวระบุ (DOI/URL) มีอยู่จริง ไม่ได้พิสูจน์ว่างานนั้นสนับสนุนข้อความที่อ้าง" },
+  en: { refs: "References", status: { verified: "identifier exists", unverified: "not confirmed", unknown: "could not be checked" }, note: "Note: the reference check only confirms that the identifier (DOI/URL) exists. It does not prove the paper supports the claim it is cited for." },
+} as const;
+export function refLines(refs: RefOut[], lang: Lang): string[] {
+  return refs.map((r) => {
+    const bits = [`[${r.id}]`];
+    if (r.authors.length) bits.push(r.authors.join(", ") + (r.year ? ` (${r.year}).` : "."));
+    else if (r.year) bits.push(`(${r.year}).`);
+    bits.push(r.title + ".");
+    if (r.doi) bits.push("DOI: " + r.doi);
+    if (r.url && /^https?:\/\//i.test(r.url)) bits.push(r.url);
+    bits.push(`(${REF_TEXT[lang].status[r.status]})`);
+    return bits.join(" ");
+  });
+}
+
 export function toPayload(d: Draft, format: Format, turn: Turn): Payload {
-  const refs = d.refs ? (turn.answer?.references ?? []).slice(0, LIM.refs).map((r) => ({
-    id: r.id, title: r.paper.title, authors: r.paper.authors, year: r.paper.year ?? null,
-    doi: doiOf(r.paper) || null, url: httpUrl(paperLink(r.paper) ?? r.paper.url) ?? null, status: r.status,
-  })) : [];
+  const refs = d.refs ? refsOf(turn) : [];
   return { format, style: d.style, font: d.font, language: d.lang, title: d.title.trim().slice(0, LIM.title), subtitle: d.subtitle.trim().slice(0, LIM.subtitle) || null, sections: sectionsOf(d).map((s) => ({ heading: s.heading.trim() || " ", paragraphs: [], blocks: s.blocks })), references: refs };
 }
 
