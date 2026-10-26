@@ -58,7 +58,7 @@ describe("ReportForm save", () => {
     flow(() => upJson(), () => new Response("x"));
     fetchMock.mockImplementationOnce(() => new Promise(() => {})); // preview or export, whichever comes first stays pending
     render(<ReportForm turn={turn} onClose={() => {}} />);
-    await act(async () => { void useExport.getState().save({ style: "standard", title: "T", subtitle: "", refs: false, lang: "en", lead: "L", doc: docFromSections([{ heading: "h", text: "b" }]) }, "pdf", turn); });
+    await act(async () => { void useExport.getState().save({ style: "standard", font: "sarabun", title: "T", subtitle: "", refs: false, lang: "en", lead: "L", doc: docFromSections([{ heading: "h", text: "b" }]) }, "pdf", turn); });
     expect(screen.getByRole("button", { name: t.fSaveDocx })).toBeDisabled();
   });
   it.each([[422, "fErr422"], [503, "fErr503"]] as const)("export %i leaves the library untouched", async (status, key) => {
@@ -127,5 +127,54 @@ describe("ReportForm save", () => {
   });
   it("has th/en parity for new keys", () => {
     for (const k of ["fSavePdf", "fSaveDocx", "fSaveNote", "fSaved", "fOpenFiles", "fSaveFail", "pvShow", "tbBar", "tbBold", "tbTable", "fBody", "fHeadingLong", "fSettings", "fDiscard"] as const) expect(strings.th[k]).toBeTruthy();
+  });
+});
+
+describe("ReportForm font", () => {
+  const exportBody = () => JSON.parse(String(fetchMock.mock.calls.find((c) => String(c[0]).includes("/reports/export"))![1].body));
+  const open = (name: string) => { if (!screen.queryByRole("combobox", { name })) fireEvent.click(screen.getByRole("button", { name: t.fSettings })); fireEvent.mouseDown(screen.getByRole("combobox", { name })); return screen.getAllByRole("option"); };
+  it("offers 14 fonts in groups, sends the pick, and the style only resets an untouched font", async () => {
+    flow(() => upJson());
+    render(<ReportForm turn={turn} onClose={() => {}} />);
+    expect(open(t.fFont).filter((o) => o.getAttribute("data-value"))).toHaveLength(14);
+    expect(screen.getByText(t.fFontGroup_sipa)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "TH Krub" }));
+    expect(document.querySelector("article")).toHaveStyle({ fontFamily: "th-krub" });
+    open(t.fStyle); fireEvent.click(screen.getByRole("option", { name: t.fStyleOfficial }));
+    fireEvent.click(screen.getByRole("button", { name: t.fSavePdf, hidden: true }));
+    await waitFor(() => expect(exportBody()).toMatchObject({ style: "official", font: "th-krub" }));
+  });
+  it("style change sets the style default font when untouched", async () => {
+    flow(() => upJson());
+    render(<ReportForm turn={turn} onClose={() => {}} />);
+    open(t.fStyle); fireEvent.click(screen.getByRole("option", { name: t.fStyleOfficial }));
+    fireEvent.click(screen.getByRole("button", { name: t.fSavePdf, hidden: true }));
+    await waitFor(() => expect(exportBody()).toMatchObject({ style: "official", font: "th-sarabun-new" }));
+  });
+});
+
+describe("ReportForm sheet extras", () => {
+  const withRefs = { ...turn, answer: { content: "# A\n\nB", references: [{ id: "1", status: "verified", paper: { title: "Paper A", authors: ["Kim"], year: 2020, doi: "10.1/x", url: "https://doi.org/10.1/x" } }] } } as unknown as Turn;
+  it("shows the generated references block only while the switch is on and refs exist", () => {
+    render(<ReportForm turn={withRefs} onClose={() => {}} />);
+    const r = screen.getByRole("region", { name: t.fRefsAria });
+    expect(r).toHaveTextContent("References");
+    expect(r).toHaveTextContent("[1] Kim (2020). Paper A. DOI: 10.1/x https://doi.org/10.1/x (identifier exists)");
+    expect(r).toHaveTextContent("Note: the reference check only confirms");
+    fireEvent.click(screen.getByRole("button", { name: t.fSettings }));
+    fireEvent.click(screen.getByRole("switch", { name: t.fRefs }));
+    expect(screen.queryByRole("region", { name: t.fRefsAria })).toBeNull();
+  });
+  it("shows nothing without references", () => {
+    render(<ReportForm turn={turn} onClose={() => {}} />);
+    expect(screen.queryByRole("region", { name: t.fRefsAria })).toBeNull();
+  });
+  it("numbers headings only in official style", () => {
+    render(<ReportForm turn={turn} onClose={() => {}} />);
+    expect(document.querySelector("article")).not.toHaveAttribute("data-numbered");
+    fireEvent.click(screen.getByRole("button", { name: t.fSettings }));
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: t.fStyle }));
+    fireEvent.click(screen.getByRole("option", { name: t.fStyleOfficial }));
+    expect(document.querySelector("article")).toHaveAttribute("data-numbered", "true");
   });
 });

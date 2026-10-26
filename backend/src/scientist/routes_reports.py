@@ -94,7 +94,8 @@ class ExportRequest(BaseModel):
     sections: list[Section] = Field(max_length=30)
     references: list[Reference] = Field(default=[], max_length=100)
     style: Literal["standard", "official"] = "standard"  # official = Thai government letter layout
-    font: Literal["sarabun"] = "sarabun"  # bundled OFL font; Noto Sans Thai not bundled
+    # None = style default (sarabun; DOCX of official style names "TH Sarabun New"). PDF always embeds a bundled OFL face.
+    font: Literal[tuple(report_render.FONTS_BY_ID)] | None = None
 
     @model_validator(mode="after")
     def _total(self):
