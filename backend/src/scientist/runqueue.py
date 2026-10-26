@@ -26,7 +26,7 @@ class Ticket:
         self.state = "new"  # new (counts against caps, not yet waiting) -> queued -> running -> closed
         self.started_at: float | None = None
         self.on_start = None  # called (sync) the moment a slot is granted
-        self.counts = False  # set by the run service for a run that ended done/error: only those feed the ETA average
+        self.held: float | None = None  # seconds it held a slot; the run service feeds it to the ETA once the outcome is known
 
     @property
     def position(self) -> int:
@@ -143,8 +143,13 @@ class RunQueue:
         self._changed = asyncio.Event()
 
     def _finish(self, t: Ticket) -> None:
-        if t.counts and t.started_at is not None and time.monotonic() - t.started_at >= MIN_COUNTED_SECONDS:
-            self._durations[t.pool].append(time.monotonic() - t.started_at)
+        if t.started_at is not None:
+            t.held = time.monotonic() - t.started_at
+
+    def record(self, t: Ticket) -> None:
+        """A run that ended done/error after holding its slot long enough teaches the ETA (called once, after close)."""
+        if t.held is not None and t.held >= MIN_COUNTED_SECONDS:
+            self._durations[t.pool].append(t.held)
 
     # --- reporting ---------------------------------------------------------------------------------------------------
     def eta(self, pool: str, position: int) -> int:

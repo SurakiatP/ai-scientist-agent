@@ -117,8 +117,8 @@ async def test_eta_uses_default_then_average_of_finished_runs():
     w = Waiter(q, "A")
     await settle()
     w.t.started_at -= 100  # it ran for 100 s
-    w.t.counts = True  # and ended done/error
     w.t.release()
+    q.record(w.t)  # the run service records it once the run ended done/error
     assert q.eta("research", 1) == 100 and q.eta("research", 2) == 100 and q.eta("analysis", 1) == 60  # pools are separate
 
 
@@ -165,6 +165,7 @@ async def test_eta_ignores_short_and_non_done_runs():
         w = Waiter(q, "A")
         await settle()
         w.t.started_at -= secs
-        w.t.counts = counts
         w.t.release()
+        if counts:
+            q.record(w.t)
     assert q.eta("research", 1) == 180

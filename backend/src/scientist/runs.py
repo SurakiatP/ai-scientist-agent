@@ -200,8 +200,9 @@ class RunService:
             status, out = "error", {"status": "error", "error": FAILED, "_err": "failed"}
         finally:
             run.ending = True
-            run.ticket.counts = status in ("done", "error")
-            run.ticket.close()
+            run.ticket.close()  # usually already released by the pipeline's own finally
+            if status in ("done", "error"):
+                self.queue.record(run.ticket)
         # the final write is its own task: a second cancel (user, shutdown) must not abort it
         fin = asyncio.ensure_future(self._finalize(run, status, out))
         while True:

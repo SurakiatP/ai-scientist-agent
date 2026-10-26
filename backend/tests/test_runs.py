@@ -630,3 +630,16 @@ async def test_rate_limited_submit_is_429_with_code(serve, fake_complete):
         sid = await mk_session(c)  # uses the one write
         r = await post(c, chat(sid))
         assert r.status_code == 429 and r.json()["code"] == "rate_limited"
+
+
+async def test_a_real_finished_run_teaches_the_eta(serve, fake_complete, monkeypatch):
+    from scientist import runqueue
+    monkeypatch.setattr(runqueue, "MIN_COUNTED_SECONDS", 0)  # the fake run is quick; the path is what matters
+    fake_complete["strategy"] = strategy("base editing")
+    async with serve() as c:
+        sid = await mk_session(c)
+        r = await post(c, body(sid), cid="3f0c1d52-8a4e-4b1c-9d3a-2f6b7a8c9d01")
+        await until(c, r.json()["run"]["id"], "done")
+        q = c.app.state.queue
+        assert len(q._durations["research"]) == 1 and q.eta("research", 1) < 180
+        await usage.drain()
