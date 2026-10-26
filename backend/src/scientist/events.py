@@ -151,6 +151,14 @@ class Complete(BaseModel):
 class Error(BaseModel):
     type: Literal["error"] = "error"
     message: str
+    code: str | None = None  # set by the run service for its own endings ("stopped", "interrupted")
+
+    @model_serializer(mode="wrap")
+    def _no_null_code(self, handler):
+        d = handler(self)
+        if d.get("code") is None:
+            d.pop("code", None)
+        return d
 
 
 class AnalysisStep(BaseModel):

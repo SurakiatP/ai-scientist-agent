@@ -252,7 +252,7 @@ async def test_disconnecting_a_stream_does_not_cancel_and_reattach_replays_only_
         gen = svc.events(rid, 2, 0.05)
         assert (await asyncio.wait_for(anext(gen), 10))[1] is None  # nothing newer yet: a ping
         cancel = asyncio.create_task(c.post(f"/v1/runs/{rid}/cancel", headers={"x-client-id": cid}))
-        assert [x async for x in gen if x[1]] == []
+        assert [x[1] async for x in gen if x[1]] == [{"type": "error", "message": "stopped", "code": "stopped"}]  # told how it ended
         assert (await cancel).json()["status"] == "stopped"
 
 
@@ -456,3 +456,177 @@ async def test_usage_rows_carry_session_and_turn(serve, fake_complete, newdb):  
         await until(c, (await post(c, b)).json()["run"]["id"], "done")
         await usage.drain()
     assert sql(newdb, "select mode, session_id::text, turn_id::text, ok from usage_events") == [("chat", sid, b["turn_id"], True)]
+
+
+# --- fix round 1 ------------------------------------------------------------------------------------------------------------
+async def test_two_concurrent_cancels_write_stopped_once(serve, fake_complete, newdb):  # noqa: F811
+    fake_complete["strategy"] = strategy("slow")
+    async with serve() as c:
+        sid, cid = await mk_session(c), u()
+        b = body(sid)
+        rid = (await post(c, b, cid)).json()["run"]["id"]
+        await until(c, rid, "running")
+        rs = await asyncio.gather(*(c.post(f"/v1/runs/{rid}/cancel", headers={"x-client-id": cid}) for _ in range(3)))
+        assert [r.json()["status"] for r in rs] == ["stopped"] * 3
+        t = await turn_of(c, sid, b["turn_id"])
+        assert t["status"] == "stopped" and t["progress"]["_err"] == "stopped"
+        assert sql(newdb, "select count(*) from run_events where run_id = %s and event->>'code' = 'stopped'", rid) == [(1,)]
+
+
+async def test_cancel_racing_a_natural_finish_ends_in_one_terminal_state(serve, fake_complete):
+    fake_complete["strategy"] = strategy("base editing")
+    async with serve() as c:
+        sid, cid = await mk_session(c), u()
+        b = chat(sid)
+        rid = (await post(c, b, cid)).json()["run"]["id"]
+        r = await c.post(f"/v1/runs/{rid}/cancel", headers={"x-client-id": cid})
+        t = await turn_of(c, sid, b["turn_id"])
+        run = await until(c, rid, "done", "stopped")
+        assert r.status_code == 200 and run["status"] == t["status"] in ("done", "stopped")
+        assert (await turn_of(c, sid, b["turn_id"]))["status"] == run["status"]
+
+
+async def test_shutdown_after_user_cancel_stays_stopped_and_shutdown_streams_get_interrupted(serve, fake_complete, newdb):  # noqa: F811
+    fake_complete["strategy"] = strategy("slow")
+    async with serve() as c:
+        sid, a, b_ = await mk_session(c), u(), u()
+        t1, t2 = body(sid), body(sid)
+        r1 = (await post(c, t1, a)).json()["run"]["id"]
+        await until(c, r1, "running")
+        r2 = (await post(c, t2, b_)).json()["run"]["id"]
+        await c.post(f"/v1/runs/{r1}/cancel", headers={"x-client-id": a})
+        r2_running = await until(c, r2, "running")
+        gen = c.app.state.runs.events(r2, 0, 0.05)
+        seen = []
+
+        async def watch():
+            async for x in gen:
+                if x[1]:
+                    seen.append(x[1])
+        w = asyncio.create_task(watch())
+        await asyncio.sleep(0.3)
+        await c.app.state.runs.shutdown()
+        await asyncio.wait_for(w, 10)
+        assert seen[-1] == {"type": "error", "message": "interrupted", "code": "interrupted"} and r2_running
+    rows = dict(sql(newdb, "select id::text, status from runs"))
+    assert rows[r1] == "stopped" and rows[r2] == "interrupted"
+    st = dict(sql(newdb, "select id::text, status from turns"))
+    assert st[t1["turn_id"]] == "stopped" and st[t2["turn_id"]] == "interrupted"
+
+
+async def test_turn_removed_mid_run_stops_the_run_and_nothing_is_written_after(serve, fake_complete, newdb):  # noqa: F811
+    fake_complete["strategy"] = strategy("slow")
+    async with serve() as c:
+        sid, cid = await mk_session(c), u()
+        b = body(sid)
+        rid = (await post(c, b, cid)).json()["run"]["id"]
+        await until(c, rid, "running")
+        await asyncio.sleep(0.3)
+        assert (await c.delete(f"/v1/store/sessions/{sid}/turns/from/0")).json() == {"removed": 1}
+        run = await until(c, rid, "stopped")
+        assert run["finished_at"]
+        assert sql(newdb, "select count(*) from turns where id = %s", b["turn_id"]) == [(0,)]  # not resurrected
+        assert c.app.state.queue.status()["research"]["running"] == 0
+
+
+async def test_cancel_a_queued_run_frees_the_ticket_and_stops_the_turn(serve, fake_complete):
+    fake_complete["strategy"] = strategy("slow")
+    async with serve(MAX_CONCURRENT_RUNS=1) as c:
+        sid, a, b_ = await mk_session(c), u(), u()
+        r1 = (await post(c, body(sid), a)).json()["run"]["id"]
+        await until(c, r1, "running")
+        tb = body(sid)
+        r2 = (await post(c, tb, b_)).json()["run"]["id"]
+        for _ in range(100):
+            if c.app.state.queue.status()["research"]["queued"] == 1 and c.app.state.runs.live[r2].ticket.state == "queued":
+                break
+            await asyncio.sleep(0.05)
+        assert (await c.post(f"/v1/runs/{r2}/cancel", headers={"x-client-id": b_})).json()["status"] == "stopped"
+        assert (await turn_of(c, sid, tb["turn_id"]))["status"] == "stopped"
+        assert c.app.state.queue.status()["research"] == {"running": 1, "limit": 1, "queued": 0}
+        await c.post(f"/v1/runs/{r1}/cancel", headers={"x-client-id": a})
+
+
+async def test_shutdown_while_queued_marks_interrupted(serve, fake_complete, newdb):  # noqa: F811
+    fake_complete["strategy"] = strategy("slow")
+    async with serve(MAX_CONCURRENT_RUNS=1) as c:
+        sid = await mk_session(c)
+        r1 = (await post(c, body(sid))).json()["run"]["id"]
+        await until(c, r1, "running")
+        tb = body(sid)
+        r2 = (await post(c, tb)).json()["run"]["id"]
+        await asyncio.sleep(0.3)
+    assert dict(sql(newdb, "select id::text, status from runs"))[r2] == "interrupted"
+    assert sql(newdb, "select status, progress->>'_err' from turns where id = %s", tb["turn_id"]) == [("interrupted", "interrupted")]
+
+
+async def test_replay_live_handoff_delivers_each_event_once(serve, fake_complete):
+    """An event persisted and published between the viewer's subscribe and its replay query comes once."""
+    fake_complete["strategy"] = strategy("slow")
+    async with serve() as c:
+        sid = await mk_session(c)
+        rid = (await post(c, body(sid))).json()["run"]["id"]
+        svc = c.app.state.runs
+        await until(c, rid, "running")
+        while svc.live[rid].seq < 2:
+            await asyncio.sleep(0.02)
+        run = svc.live[rid]
+        gen = svc.events(rid, 0, 0.05)
+        first = await asyncio.wait_for(anext(gen), 10)  # subscribed, replay read
+        # publish a duplicate of an already replayed seq (the race's effect) plus a new event
+        run.seq += 1
+        for q in run.subs:
+            q.put_nowait((1, {"type": "dup"}))
+            q.put_nowait((run.seq, {"type": "answer", "term": "x", "content": ""}))
+        got = [first]
+        while len(got) < 3:
+            x = await asyncio.wait_for(anext(gen), 10)
+            if x[1]:
+                got.append(x)
+        await gen.aclose()
+        assert [g[0] for g in got] == [1, 2, run.seq] and "dup" not in [g[1]["type"] for g in got]
+        await c.post(f"/v1/runs/{rid}/cancel", headers={"x-client-id": run.row["client_id"]})
+
+
+async def test_trailing_progress_is_flushed_by_a_timer(serve, fake_complete, monkeypatch):
+    import scientist.runs as runs
+    monkeypatch.setattr(runs, "WRITE_EVERY", 0.3)
+    fake_complete["strategy"] = strategy("slow")
+    async with serve() as c:
+        sid, cid = await mk_session(c), u()
+        b = body(sid)
+        rid = (await post(c, b, cid)).json()["run"]["id"]
+        for _ in range(100):  # strategy and sources arrive together: the second is throttled, then flushed
+            t = await turn_of(c, sid, b["turn_id"])
+            if t["progress"]["sources"]:
+                break
+            await asyncio.sleep(0.05)
+        assert t["progress"]["sources"] == {"slow": 1}
+        await c.post(f"/v1/runs/{rid}/cancel", headers={"x-client-id": cid})
+
+
+async def test_complete_without_an_answer_is_error_and_analysis_keeps_empty_progress(serve, fake_complete, fakes):  # noqa: F811
+    async with serve() as c:
+        sid, cid, fid = await mk_session(c), u(), "f" * 32
+        c.objs[fid] = (b"a,b\n1,2\n", {"content_type": "text/csv", "name": "d.csv"})
+        b = {"session_id": sid, "turn_id": u(), "kind": "analyze", "question": "Plot column trend in genome data", "file_id": fid}
+        await until(c, (await post(c, b, cid)).json()["run"]["id"], "done")
+        assert (await turn_of(c, sid, b["turn_id"]))["progress"] == {
+            "waiting": None, "reasoning": "", "searches": [], "sources": {}, "answered": [], "writing": False, "phase": "planning"}
+
+
+def test_outcome_complete_without_final_answer_and_cap():
+    from scientist.runs import _cap, _outcome
+    assert _outcome(None, {"type": "complete"}) == {"status": "done"}  # the run loop turns this into error for asks
+    from scientist.store import MAX_JSON_BYTES
+    big = {"progress": {"reasoning": "x" * (4 * MAX_JSON_BYTES[0] + 1), "searches": [1], "sources": {"a": 1}, "answered": ["a"], "phase": "done"}}
+    assert _cap(big)["progress"] == {"reasoning": "", "searches": [], "sources": {}, "answered": [], "phase": "done"}
+    ans = {"progress": {"phase": "done"}, "answer": {"content": "y" * (5 * MAX_JSON_BYTES[0])}}
+    assert len(_cap(ans)["answer"]["content"]) == 5 * MAX_JSON_BYTES[0]  # never the answer
+
+
+async def test_rate_limited_submit_is_429_with_code(serve, fake_complete):
+    async with serve(STORE_WRITE_RATE_PER_MIN=1) as c:
+        sid = await mk_session(c)  # uses the one write
+        r = await post(c, chat(sid))
+        assert r.status_code == 429 and r.json()["code"] == "rate_limited"

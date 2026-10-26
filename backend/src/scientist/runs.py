@@ -7,15 +7,16 @@ import time
 import uuid
 from contextlib import aclosing
 
-import anyio
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from scientist import models as m
+from scientist.events import Error
 from scientist.routes_analyze import _slot, prepare
 from scientist.pipeline import ask
 from scientist.runqueue import RunQueue, Ticket
-from scientist.store import MAX_IDX, Conflict, Gone, Invalid, NotFound, Store, TooMany, _row
+from scientist.store import MAX_IDX, MAX_JSON_BYTES, Conflict, Gone, Invalid, NotFound, Store, TooMany, _row
 from scientist.usage import track
 
 log = logging.getLogger(__name__)
@@ -66,6 +67,17 @@ class Run:
         self.seq = 0
         self.subs: set[asyncio.Queue] = set()
         self.task: asyncio.Task | None = None
+        self.timer: asyncio.Task | None = None  # trailing flush of the throttled turn write
+        self.progress, self.analysis = dict(EMPTY_PROGRESS), None
+        self.out: dict | None = None  # terminal turn fields once an outcome event arrived
+        self.last, self.dirty = 0.0, False
+        self.gone = False  # the turn was removed under the run
+        self.stopped = False  # a user cancel was accepted
+        self.ending = False  # the final write has started: nothing may cancel the task any more
+
+    def cancel_task(self) -> None:
+        if not self.ending and not self.task.cancelling():
+            self.task.cancel()
 
 
 class RunService:
@@ -96,6 +108,7 @@ class RunService:
         run.task = asyncio.create_task(self._run(run))
         self._bg.add(run.task)
         run.task.add_done_callback(self._bg.discard)
+        run.task.add_done_callback(lambda _: ticket.close())  # whatever happened, the slot is given back
         self.data._changed("turn", turn, session_id=str(turn["session_id"]))
         return {"run": self.view(row, client_id), "turn": turn}
 
@@ -152,53 +165,100 @@ class RunService:
     async def _run(self, run: Run) -> None:
         body, analyze = run.body, run.body.kind == "analyze"
         run.ticket.on_start = lambda: self._spawn(self._mark(run))
-        progress = dict(EMPTY_PROGRESS)
-        analysis = ({"fileId": body.file_id, **({"fileName": n} if (n := (body.file_name or run.file_name)[:120]) else {}),
-                     "steps": []} if analyze else None)
-        out: dict | None = None  # terminal turn fields once an outcome event arrived
-        status, last, gone = "", 0.0, False
+        if analyze:
+            run.analysis = {"fileId": body.file_id, **({"fileName": n} if (n := (body.file_name or run.file_name)[:120]) else {}),
+                            "steps": []}
+        status, out = "", {}
         try:
             async with aclosing(self._generator(run)) as events:
                 async for e in events:
                     d = json.loads(e.model_dump_json())
                     await self._emit(run, d)
-                    progress = reduce_progress(progress, d)
-                    if analyze:
-                        analysis = reduce_analysis(analysis, d)
-                    out = _outcome(out, d)
-                    # ponytail: a burst's last events wait for the next event or the end to be written
-                    if out is None and time.monotonic() - last >= WRITE_EVERY:
-                        last = time.monotonic()
-                        if await self.data.write_turn_server(body.turn_id, progress=progress, **_a(analysis)) is None:
-                            gone = True  # edited away or deleted: stop paying for it
-                            break
-            status, out = (out["status"], out) if out else ("error", {"status": "error", "error": CUT_OFF})
+                    if not analyze:  # an analysis turn keeps its empty progress, as in the browser
+                        run.progress = reduce_progress(run.progress, d)
+                    else:
+                        run.analysis = reduce_analysis(run.analysis, d)
+                    run.out = _outcome(run.out, d)
+                    run.dirty = True
+                    if run.out is None:
+                        await self._throttled(run)
+            if run.gone:
+                status, out = "stopped", {"status": "stopped", "_err": "stopped"}
+            elif run.out and not (not analyze and run.out["status"] == "done" and "answer" not in run.out):
+                status, out = run.out["status"], run.out
+            else:  # ended without an outcome (or an ask that completed without an answer)
+                status, out = "error", {"status": "error", "error": CUT_OFF, "_err": "cut_off"}
         except asyncio.CancelledError:
-            status = "interrupted" if self.closing else "stopped"
-            out = {"status": status}
+            if run.out and not run.gone:  # it had finished: the real outcome wins over a late cancel
+                status, out = run.out["status"], run.out
+            elif self.closing and not run.stopped and not run.gone:
+                status, out = "interrupted", {"status": "interrupted", "error": "The run was interrupted.", "_err": "interrupted"}
+            else:
+                status, out = "stopped", {"status": "stopped", "error": "The run was stopped.", "_err": "stopped"}
         except Exception:
             log.exception("run %s failed", run.id)
-            status, out = "error", {"status": "error", "error": FAILED}
+            status, out = "error", {"status": "error", "error": FAILED, "_err": "failed"}
         finally:
+            run.ending = True
+            run.ticket.counts = status in ("done", "error")
             run.ticket.close()
-        if gone:
-            status, out = "stopped", {"status": "stopped"}
-        with anyio.CancelScope(shield=True):  # a cancel must not skip the final write
+        # the final write is its own task: a second cancel (user, shutdown) must not abort it
+        fin = asyncio.ensure_future(self._finalize(run, status, out))
+        while True:
             try:
-                out = dict(out)
-                if "_code" in out:
-                    progress = {**progress, "_code": out.pop("_code")}
-                if not gone:
-                    await self.data.write_turn_server(body.turn_id, progress=progress, **_a(analysis), **out)
-                async with self.data.tx() as s:
-                    await s.execute(sa.update(m.runs).where(m.runs.c.id == run.id).values(
-                        status=status, finished_at=sa.func.now(), error=out.get("error")))
-            except Exception:
-                log.exception("run %s: final write failed", run.id)
-            finally:
-                self.live.pop(run.id, None)
-                for q in run.subs:
-                    q.put_nowait(None)
+                await asyncio.shield(fin)
+                break
+            except asyncio.CancelledError:
+                if fin.done():
+                    break
+
+    async def _throttled(self, run: Run) -> None:
+        """Turn write at most once per second; a skipped one is flushed by a timer, so the last events of a burst
+        are not held back until the next event."""
+        if time.monotonic() - run.last >= WRITE_EVERY:
+            if run.timer:
+                run.timer.cancel()
+            await self._write(run)
+        elif not run.timer or run.timer.done():
+            run.timer = asyncio.create_task(self._flush(run))
+
+    async def _write(self, run: Run) -> None:
+        run.last, run.dirty = time.monotonic(), False
+        fields = _cap({"progress": run.progress, **_a(run.analysis)})
+        if await self.data.write_turn_server(run.body.turn_id, **fields) is None:
+            run.gone = True  # edited away or deleted: stop paying for it
+            run.cancel_task()
+
+    async def _flush(self, run: Run) -> None:
+        await asyncio.sleep(max(0.0, run.last + WRITE_EVERY - time.monotonic()))
+        if run.dirty and not run.ending and run.out is None:
+            await self._write(run)
+
+    async def _finalize(self, run: Run, status: str, out: dict) -> None:
+        body = run.body
+        try:
+            if run.timer:
+                run.timer.cancel()
+                await asyncio.gather(run.timer, return_exceptions=True)
+            if status in ("stopped", "interrupted"):  # attached streams learn how it ended
+                await self._emit(run, json.loads(Error(message=status, code=status).model_dump_json()))
+            out = dict(out)
+            err = out.pop("_err", None)
+            code = out.pop("_code", None)
+            progress = {**run.progress, **({"_code": code} if code else {}), **({"_err": err} if err else {})}
+            if not run.gone:
+                fields = _cap({"progress": progress, **_a(run.analysis), **out})
+                if await self.data.write_turn_server(body.turn_id, **fields) is None:
+                    status = "stopped"  # the turn vanished before the end: nothing to write, record the run as stopped
+            async with self.data.tx() as s:
+                await s.execute(sa.update(m.runs).where(m.runs.c.id == run.id, m.runs.c.status.in_(("queued", "running")))
+                                .values(status=status, finished_at=sa.func.now(), error=out.get("error")))
+        except Exception:
+            log.exception("run %s: final write failed", run.id)
+        finally:
+            self.live.pop(run.id, None)
+            for q in run.subs:
+                q.put_nowait(None)
 
     def _spawn(self, coro) -> None:
         t = asyncio.create_task(coro)
@@ -280,7 +340,8 @@ class RunService:
         if row["client_id"] != client_id:
             raise PermissionError
         if run := self.live.get(rid):
-            run.task.cancel()
+            run.stopped = True
+            run.cancel_task()
             await asyncio.wait({run.task})  # the final write lands before we answer
             row = await self.get(rid)
         return row
@@ -294,7 +355,10 @@ class RunService:
                 .values(status="interrupted", finished_at=sa.func.now()).returning(m.runs.c.turn_id)) if r.turn_id]
             turns = [_row(r) for r in await s.execute(
                 sa.update(m.turns).where(m.turns.c.id.in_(ids), m.turns.c.status == "running")
-                .values(status="interrupted", version=m.turns.c.version + 1, updated_at=sa.func.now())
+                .values(status="interrupted", version=m.turns.c.version + 1, updated_at=sa.func.now(),
+                        error="The run was interrupted.",
+                        progress=sa.func.coalesce(m.turns.c.progress, sa.cast(sa.literal("{}"), pg.JSONB))
+                        .op("||")(sa.cast(sa.literal('{"_err": "interrupted"}'), pg.JSONB)))
                 .returning(m.turns))] if ids else []
         for t in turns:
             self.data._changed("turn", t, session_id=str(t["session_id"]))
@@ -303,8 +367,22 @@ class RunService:
         """Cancel every run (their finally blocks kill bridges); each is recorded as interrupted."""
         self.closing = True
         for r in list(self.live.values()):
-            r.task.cancel()
+            r.cancel_task()
         await asyncio.gather(*self._bg, return_exceptions=True)
+
+
+def _cap(fields: dict) -> dict:
+    """Server writes skip the client-side size caps, but not without limit: 4x the per-field cap. Over it, the
+    progress (never the answer) is slimmed, and an analysis keeps only the first rows of its tables."""
+    ceil = 4 * MAX_JSON_BYTES[0]
+    size = lambda v: len(json.dumps(v, ensure_ascii=False))  # noqa: E731
+    if size(fields["progress"]) > ceil:
+        log.warning("turn progress over %s bytes: slimmed", ceil)
+        fields["progress"] = {**fields["progress"], "reasoning": "", "searches": [], "sources": {}, "answered": []}
+    if (a := fields.get("analysis")) is not None and size(a) > ceil:
+        log.warning("turn analysis over %s bytes: table rows cut", ceil)
+        fields["analysis"] = {**a, "tables": [{**t, "rows": t.get("rows", [])[:20], "truncated": True} for t in a.get("tables", [])]}
+    return fields
 
 
 def _a(analysis: dict | None) -> dict:

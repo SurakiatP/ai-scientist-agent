@@ -43,8 +43,14 @@ async def status(svc: RunService = Depends(service)):
     return svc.queue.status()
 
 
-@router.post("", status_code=202, dependencies=[Depends(service), Depends(write_guard)])
-async def submit(body: RunIn, cid: str = Depends(client_id), svc: RunService = Depends(service)):
+@router.post("", status_code=202, dependencies=[Depends(service)])
+async def submit(body: RunIn, request: Request, cid: str = Depends(client_id), svc: RunService = Depends(service)):
+    try:
+        write_guard(request, svc.data)  # JSON content type, origin, per-IP write rate
+    except HTTPException as e:
+        if e.status_code == 429:
+            return JSONResponse({"detail": e.detail, "code": "rate_limited"}, status_code=429)
+        raise
     if body.plan_only:
         raise HTTPException(422, "plan_only is not a run; use /v1/async/ask")
     try:

@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 
 from scientist.config import Settings
 
+MIN_COUNTED_SECONDS = 5  # shorter runs (refusals, instant errors) would drag the ETA average down
 DEFAULT_SECONDS = {"research": 180, "analysis": 60}  # ETA average before any run has finished in this process
 
 
@@ -25,6 +26,7 @@ class Ticket:
         self.state = "new"  # new (counts against caps, not yet waiting) -> queued -> running -> closed
         self.started_at: float | None = None
         self.on_start = None  # called (sync) the moment a slot is granted
+        self.counts = False  # set by the run service for a run that ended done/error: only those feed the ETA average
 
     @property
     def position(self) -> int:
@@ -78,10 +80,13 @@ class RunQueue:
         self._seq = itertools.count()
         self._changed = asyncio.Event()
         self._durations = {p: deque(maxlen=20) for p in self.limits}  # seconds of the last finished runs, per pool
+        self._served: dict[str, int] = {}  # client -> tick of its latest slot grant (least recently served goes first)
+        self._tick = itertools.count()
 
     # --- admission ---------------------------------------------------------------------------------------------------
     def admit(self, client_id: str) -> None:
-        """Submit-time caps; raises Rejected. Call right before ticket() with no await between."""
+        """Submit-time caps; raises Rejected. A client holds at most MAX_RUNNING running plus MAX_QUEUED waiting tickets
+        (3 by default; with nothing running it is still that total), checked as one count. Call right before ticket() with no await between."""
         mine = [t for t in self._tickets if t.client_id == client_id]
         waiting = lambda ts: sum(t.state in ("new", "queued") for t in ts)  # noqa: E731
         if len(mine) >= self.queued_cap + self.per_client:
@@ -100,14 +105,15 @@ class RunQueue:
                    for t in self._tickets)
 
     def _order(self, pool: str) -> list[Ticket]:
-        """Queued tickets in the order slots will go to them: oldest first, but a client already at its running
-        limit waits for the next round behind other clients (rounds assume the picked runs finish)."""
-        rest = sorted((t for t in self._tickets if t.pool == pool and t.state == "queued"), key=lambda t: t.seq)
+        """Queued tickets in the order slots will go to them: least recently served client first, then oldest
+        enqueue; a client already at its running limit waits for the next round (rounds assume the picked runs finish)."""
+        rest = [t for t in self._tickets if t.pool == pool and t.state == "queued"]
+        key = lambda t: (self._served.get(t.client_id, -1), t.seq)  # noqa: E731
         load = {t.client_id: self._running(client=t.client_id) for t in rest}
         order: list[Ticket] = []
         while rest:
             picked = []
-            for t in rest:
+            for t in sorted(rest, key=key):
                 if load[t.client_id] < self.per_client:
                     load[t.client_id] += 1
                     picked.append(t)
@@ -130,13 +136,14 @@ class RunQueue:
                 if nxt is None:
                     break
                 nxt.state, nxt.started_at = "running", time.monotonic()
+                self._served[nxt.client_id] = next(self._tick)
                 if nxt.on_start:
                     nxt.on_start()
         self._changed.set()
         self._changed = asyncio.Event()
 
     def _finish(self, t: Ticket) -> None:
-        if t.started_at is not None:
+        if t.counts and t.started_at is not None and time.monotonic() - t.started_at >= MIN_COUNTED_SECONDS:
             self._durations[t.pool].append(time.monotonic() - t.started_at)
 
     # --- reporting ---------------------------------------------------------------------------------------------------

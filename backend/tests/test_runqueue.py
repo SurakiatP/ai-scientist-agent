@@ -56,17 +56,34 @@ async def test_per_client_running_limit_is_across_pools():
     assert an.running
 
 
-async def test_next_slot_goes_to_earliest_enqueue_among_clients_with_capacity():
+async def test_limit_one_serves_the_least_recently_served_client_first():
     q = queue(max_concurrent_runs=1)
-    a1, b1, a2, c1 = Waiter(q, "A"), Waiter(q, "B"), Waiter(q, "A"), Waiter(q, "C")
+    a1, a2, a3, b1 = (Waiter(q, "A"), Waiter(q, "A"), Waiter(q, "A"), Waiter(q, "B"))
     await settle()
     assert a1.running
-    a1.t.release()
+    assert (b1.positions[-1], a2.positions[-1], a3.positions[-1]) == (1, 2, 3)  # positions follow the same order
+    c1 = Waiter(q, "C")  # joins later, never served
     await settle()
-    assert b1.running  # b1 is older than a2 and c1
-    b1.t.release()
-    await settle()
-    assert a2.running  # A has nothing running again
+    assert (b1.positions[-1], c1.positions[-1], a2.positions[-1], a3.positions[-1]) == (1, 2, 3, 4)
+    order = []
+    for w, name in ((a1, "a1"), (b1, "b1"), (c1, "c1"), (a2, "a2"), (a3, "a3")):
+        await settle()
+        assert w.running, name
+        order.append(name)
+        w.t.release()
+    assert order == ["a1", "b1", "c1", "a2", "a3"]
+
+
+async def test_limit_one_a_then_b_runs_a1_b1_a2_a3():
+    q = queue(max_concurrent_runs=1)
+    ws = {n: Waiter(q, n[0].upper()) for n in ("a1", "a2", "a3", "b1")}
+    ran = []
+    for _ in range(4):
+        await settle()
+        w = next(n for n, x in ws.items() if x.running)
+        ran.append(w)
+        ws[w].t.release()
+    assert ran == ["a1", "b1", "a2", "a3"]
 
 
 async def test_positions_follow_the_fair_order_and_move_up():
@@ -100,6 +117,7 @@ async def test_eta_uses_default_then_average_of_finished_runs():
     w = Waiter(q, "A")
     await settle()
     w.t.started_at -= 100  # it ran for 100 s
+    w.t.counts = True  # and ended done/error
     w.t.release()
     assert q.eta("research", 1) == 100 and q.eta("research", 2) == 100 and q.eta("analysis", 1) == 60  # pools are separate
 
@@ -139,3 +157,14 @@ async def test_a_ticket_that_never_waits_still_counts_against_the_client():
         q.ticket("x", "A", "research")  # created, not acquiring yet (scope check running)
     with pytest.raises(Rejected):
         q.admit("A")
+
+
+async def test_eta_ignores_short_and_non_done_runs():
+    q = queue(max_concurrent_runs=1)
+    for secs, counts in ((2, True), (100, False)):  # too short; stopped/refused
+        w = Waiter(q, "A")
+        await settle()
+        w.t.started_at -= secs
+        w.t.counts = counts
+        w.t.release()
+    assert q.eta("research", 1) == 180

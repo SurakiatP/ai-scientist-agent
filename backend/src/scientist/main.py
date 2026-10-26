@@ -12,9 +12,6 @@ from scientist.gate import RunGate
 from scientist.runqueue import RunQueue
 from scientist.runs import RunService
 from scientist.routes_runs import router as runs_router
-from scientist.runqueue import RunQueue
-from scientist.runs import RunService
-from scientist.routes_runs import router as runs_router
 from scientist.object_store import ObjectStore, create_store
 from scientist.sandbox import sweep_sandboxes
 from scientist.hermes import BranchRunner, HermesRuntime, sweep_containers
@@ -82,7 +79,6 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                 await app.state.data.purge()
                 await app.state.data.purge_usage()
                 await app.state.data.purge_runs()
-                await app.state.data.purge_runs()
             except Exception:
                 log.exception("trash purge failed")
 
@@ -100,8 +96,6 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     app.state.analyze_gate = RunGate(settings.sandbox_max_concurrent)
     app.state.queue = RunQueue(settings)
     app.state.runs = RunService(app.state, app.state.data, app.state.queue) if app.state.data else None
-    app.state.queue = RunQueue(settings)
-    app.state.runs = RunService(app.state, app.state.data, app.state.queue) if app.state.data else None
     app.state.preview_gate = RunGate(settings.preview_max_concurrent)
     app.state.previews = PreviewStore(settings.preview_max_entries, settings.preview_ttl_seconds)
     app.state.store = store
@@ -113,7 +107,6 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     app.include_router(reports_router)
     app.include_router(preview_router)
     app.include_router(store_router)
-    app.include_router(runs_router)
     app.include_router(runs_router)
 
     @app.get("/v1/health")
