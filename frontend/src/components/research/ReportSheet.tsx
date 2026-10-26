@@ -4,7 +4,7 @@ import { EditorContent, type Editor } from "@tiptap/react";
 import { FONTS, LIM, REF_TEXT, refLines, type FontId, type RefOut, type ReportStyle } from "@/lib/exportReport";
 import { useT } from "@/lib/prefs";
 import type { Lang } from "@/lib/strings";
-import { ease } from "@/lib/motion";
+import { ease, skeletonBar } from "@/lib/motion";
 
 // Mirrors STYLES in backend/src/scientist/report_render.py. 1 cm = 37.8 px, 1 pt = 1.333 px.
 const cm = (n: number) => `${(n * 37.8).toFixed(1)}px`;
@@ -18,7 +18,7 @@ const W = 21 * 37.8; // A4 width in px
 const field = { display: "block", width: "100%", border: 0, outline: 0, bgcolor: "transparent", color: "inherit", font: "inherit", textAlign: "center", resize: "none", p: 0, m: 0, overflow: "hidden", "&::placeholder": { color: "#6b6b6b", opacity: 1 }, "&:focus-visible": { outline: "2px solid #1565c0", outlineOffset: 2, borderRadius: "2px" } } as const;
 
 // The A4 page. Typing happens on it; margins and sizes follow the chosen style like the exported file.
-export function ReportSheet({ editor, wide, style, font, lang, refs, title, subtitle, onTitle, onSubtitle, lead = false }: { lead?: boolean; editor: Editor | null; wide: boolean; style: ReportStyle; font: FontId; lang: Lang; refs: RefOut[] | null; title: string; subtitle: string; onTitle: (v: string) => void; onSubtitle: (v: string) => void }) {
+export function ReportSheet({ editor, wide, style, font, lang, refs, title, subtitle, onTitle, onSubtitle, lead = false, shape = null }: { shape?: { h: boolean; n: number }[] | null; lead?: boolean; editor: Editor | null; wide: boolean; style: ReportStyle; font: FontId; lang: Lang; refs: RefOut[] | null; title: string; subtitle: string; onTitle: (v: string) => void; onSubtitle: (v: string) => void }) {
   const t = useT();
   const a4 = SHEET[style];
   // Below md the page reflows at a readable size (16px body, same proportions) instead of shrinking the A4 sheet.
@@ -26,10 +26,14 @@ export function ReportSheet({ editor, wide, style, font, lang, refs, title, subt
   const s = { body: a4.body * k, head: a4.head * k, title: a4.title * k };
   const [top, right, bottom, left] = a4.pad;
   const next = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); editor?.commands.focus("start"); } };
+  const bars = shape?.slice(0, 60);
+  const bar = (i: number) => ({ ...skeletonBar(i), bgcolor: "rgba(27,27,27,0.1)" }); // the sheet is always white, so not the theme text color
+  const w = (n: number, max: number) => `${Math.round(Math.min(max, 28 + n / 3))}%`;
   return (
     <Box sx={{ flex: 1, minWidth: 0, overflow: "auto", bgcolor: "action.selected", py: { xs: 0, md: 3 }, px: { xs: 0, md: 2 } }}>
       <Box
         component="article"
+        aria-busy={!!bars || undefined}
         data-numbered={style === "official" || undefined}
         sx={{
           width: wide ? W : "100%", minHeight: wide ? 297 * 3.78 : "100%", mx: "auto", boxSizing: "border-box", bgcolor: "#fff", color: "#1b1b1b",
@@ -54,10 +58,21 @@ export function ReportSheet({ editor, wide, style, font, lang, refs, title, subt
           },
         }}
       >
-        <Box component={TextareaAutosize} value={title} onChange={(e) => onTitle(e.target.value)} onKeyDown={next} maxLength={LIM.title} placeholder={t.fDocTitle} aria-label={t.fDocTitle} aria-required aria-invalid={!title.trim()} aria-describedby="rf-need-title" sx={{ ...field, fontSize: pt(s.title), fontWeight: 700, lineHeight: 1.3, mb: 0.5 }} />
-        {!title.trim() && <Box id="rf-need-title" sx={{ textAlign: "center", fontSize: "0.8125rem", color: "#c62828", mb: 1 }}>{t.fNeedTitle}</Box>}
-        <Box component={TextareaAutosize} value={subtitle} onChange={(e) => onSubtitle(e.target.value)} onKeyDown={next} maxLength={LIM.subtitle} placeholder={t.fSubtitle} aria-label={t.fSubtitle} sx={{ ...field, color: "#555", mb: 2 }} />
-        <EditorContent editor={editor} />
+        {bars && (
+          <Box aria-hidden data-testid="sheet-skeleton" sx={{ display: "flex", flexDirection: "column", gap: `${pt(s.body * 0.9)}`, minHeight: 360 }}>
+            <Box sx={{ ...bar(0), height: pt(s.title), width: "62%", alignSelf: "center" }} />
+            <Box sx={{ ...bar(1), width: "38%", alignSelf: "center", mb: 1.5 }} />
+            {bars.map((b, i) => <Box key={i} sx={{ ...bar(i + 2), height: b.h ? pt(s.head) : pt(s.body), width: w(b.n, b.h ? 55 : 100), mt: b.h ? 1.5 : 0 }} />)}
+          </Box>
+        )}
+        {!bars && (
+          <>
+          <Box component={TextareaAutosize} value={title} onChange={(e) => onTitle(e.target.value)} onKeyDown={next} maxLength={LIM.title} placeholder={t.fDocTitle} aria-label={t.fDocTitle} aria-required aria-invalid={!title.trim()} aria-describedby="rf-need-title" sx={{ ...field, fontSize: pt(s.title), fontWeight: 700, lineHeight: 1.3, mb: 0.5 }} />
+          {!title.trim() && <Box id="rf-need-title" sx={{ textAlign: "center", fontSize: "0.8125rem", color: "#c62828", mb: 1 }}>{t.fNeedTitle}</Box>}
+          <Box component={TextareaAutosize} value={subtitle} onChange={(e) => onSubtitle(e.target.value)} onKeyDown={next} maxLength={LIM.subtitle} placeholder={t.fSubtitle} aria-label={t.fSubtitle} sx={{ ...field, color: "#555", mb: 2 }} />
+          </>
+        )}
+        <Box sx={bars ? { display: "none" } : undefined}><EditorContent editor={editor} /></Box>
         {/* Generated list, read-only: grid-rows transition fades it in and out; reduced motion is handled by the theme zeroing durations. */}
         <Box data-testid="sheet-refs" sx={{ display: "grid", gridTemplateRows: refs?.length ? "1fr" : "0fr", opacity: refs?.length ? 1 : 0, transition: `grid-template-rows 180ms ${ease}, opacity 180ms ${ease}`, "@media (prefers-reduced-motion: reduce)": { transition: "none" } }}>
           <Box sx={{ overflow: "hidden", minHeight: 0 }}>

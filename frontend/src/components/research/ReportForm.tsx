@@ -1,7 +1,7 @@
 "use client";
 import { srOnly } from "@/lib/config";
-import { useEffect, useMemo, useState } from "react";
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel, ListSubheader, Popover, IconButton, MenuItem, Stack, Switch, TextField, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel, ListSubheader, Popover, IconButton, MenuItem, Stack, Switch, TextField, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import BookmarkAddOutlinedIcon from "@mui/icons-material/BookmarkAddOutlined";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
@@ -17,6 +17,8 @@ import { useGoFiles } from "@/lib/nav";
 import { usePreview } from "@/lib/preview";
 import { usePrefs, useT } from "@/lib/prefs";
 import type { Lang } from "@/lib/strings";
+import { applySegments, hashOf, segmentsOf, shapeOf, translateSegments, type TrError } from "@/lib/translateReport";
+import type { JSONContent } from "@tiptap/react";
 import { PreviewPane } from "./PreviewPane";
 import { ReportSheet } from "./ReportSheet";
 import { ReportToolbar } from "./ReportToolbar";
@@ -41,18 +43,72 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   const [fontTouched, setFontTouched] = useState(false); // a style change resets the font to the style default until the user picks one
   const [ask, setAsk] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const dirty = ver !== clean.ver || base !== clean.base;
+  const [edited, setEdited] = useState(false); // a translation counts as an edit for the discard prompt
+  const dirty = ver !== clean.ver || base !== clean.base || edited;
   const leave = () => (dirty ? setAsk(true) : onClose());
   const preview = usePreview(useMemo(() => (pv && !issue ? toPayload(d, "pdf", turn) : null), [pv, d, issue, turn]));
   const sheetRefs = useMemo(() => refsOf(turn), [turn]);
+  // Translation. versions[l] = the document as last seen in language l; srcHash = hash of the other-language segments it was made from
+  // (or turned into). Equal hashes on a switch mean nothing changed since, so the stored version is restored without a request.
+  type Ver = { doc: JSONContent; title: string; subtitle: string; srcHash?: string };
+  const versions = useRef<Partial<Record<Lang, Ver>>>({});
+  const abort = useRef<AbortController | null>(null);
+  const [tr, setTr] = useState<Lang | null>(null); // target language while a translation is pending
+  const [trErr, setTrErr] = useState<TrError | null>(null);
+  const [shape, setShape] = useState<ReturnType<typeof shapeOf> | null>(null);
+  useEffect(() => { editor?.setEditable(!tr, false); }, [editor, tr]);
+  useEffect(() => () => abort.current?.abort(), []);
+  const switchLang = async (to: Lang) => {
+    if (!editor || to === base.lang || tr) return;
+    const from = base.lang;
+    setTrErr(null);
+    setAnchor(null);
+    const cur = editor.getJSON();
+    const segs = segmentsOf(cur, base.title, base.subtitle), h = hashOf(segs);
+    const keep = { ...versions.current[from], doc: cur, title: base.title, subtitle: base.subtitle };
+    const show = (v: Ver) => {
+      editor.commands.setContent(v.doc, { emitUpdate: true });
+      setBase((x) => ({ ...x, lang: to, title: v.title, subtitle: v.subtitle }));
+      setEdited(true);
+    };
+    const stored = versions.current[to];
+    if (stored && stored.srcHash === h) { versions.current[from] = keep; show(stored); return; }
+    const ac = new AbortController();
+    abort.current = ac;
+    setTr(to);
+    setShape(shapeOf(cur));
+    try {
+      const out = await translateSegments(to, segs, ac.signal);
+      if (ac.signal.aborted) return;
+      const r = applySegments(cur, out);
+      show({ ...r, srcHash: h });
+      const done = segmentsOf(editor.getJSON(), r.title, r.subtitle);
+      versions.current[to] = { doc: editor.getJSON(), title: r.title, subtitle: r.subtitle, srcHash: h };
+      versions.current[from] = { ...keep, srcHash: hashOf(done) };
+    } catch (e) {
+      if (ac.signal.aborted || (e as Error)?.name === "AbortError") return;
+      setTrErr(typeof e === "string" ? (e as TrError) : "other");
+    } finally {
+      if (abort.current === ac) abort.current = null;
+      setTr(null);
+      setShape(null);
+    }
+  };
   const set = (p: Partial<Draft>) => setBase((x) => ({ ...x, ...p }));
   const make = async (f: Format) => { if (issue) return; const at = { ver, base }; await save(d, f, turn); if (useExport.getState().saved) setClean(at); };
+  const trBar = tr && (
+    <Stack direction="row" sx={{ alignItems: "center", gap: 1 }}>
+      <CircularProgress size={16} aria-hidden />
+      <Button size="small" color="inherit" onClick={() => abort.current?.abort()} sx={{ minHeight: 44 }}>{t.trCancel}</Button>
+    </Stack>
+  );
   const fields = (
     <>
-      <TextField select size="small" label={t.fLang} value={base.lang} onChange={(e) => set({ lang: e.target.value as Lang })} sx={{ minWidth: 140 }}>
+      <TextField select size="small" label={t.fLang} aria-busy={!!tr || undefined} value={tr ?? base.lang} disabled={!!tr} onChange={(e) => void switchLang(e.target.value as Lang)} sx={{ minWidth: 140 }}>
         <MenuItem value="th">ไทย</MenuItem>
         <MenuItem value="en">English</MenuItem>
       </TextField>
+      {wide && trBar}
       <TextField select size="small" label={t.fStyle} value={base.style} onChange={(e) => { const style = e.target.value as Draft["style"]; set(fontTouched ? { style } : { style, font: defaultFont(style) }); }} sx={{ minWidth: 160 }}>
         <MenuItem value="standard">{t.fStyleStd}</MenuItem>
         <MenuItem value="official">{t.fStyleOfficial}</MenuItem>
@@ -73,15 +129,15 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
         <Typography id="rf-title" component="h2" sx={{ flex: "1 1 0", minWidth: 0, fontSize: "1.0625rem", fontWeight: 700 }}>{t.fTitle}</Typography>
         {wide ? (
           <>
-            <Button variant="outlined" disabled={!!busy || !!issue} startIcon={<BookmarkAddOutlinedIcon />} onClick={() => make("docx")} sx={{ minHeight: 44 }}>{t.fSaveDocx}</Button>
-            <Button variant="contained" disabled={!!busy || !!issue} startIcon={<BookmarkAddOutlinedIcon />} onClick={() => make("pdf")} sx={{ minHeight: 44 }}>{t.fSavePdf}</Button>
-            <Button variant={pv ? "contained" : "outlined"} color={pv ? "secondary" : "inherit"} aria-pressed={pv} startIcon={<VisibilityOutlinedIcon />} onClick={() => setPv((v) => !v)} sx={{ minHeight: 44, borderColor: "divider" }}>{t.pvShow}</Button>
+            <Button variant="outlined" disabled={!!busy || !!issue || !!tr} startIcon={<BookmarkAddOutlinedIcon />} onClick={() => make("docx")} sx={{ minHeight: 44 }}>{t.fSaveDocx}</Button>
+            <Button variant="contained" disabled={!!busy || !!issue || !!tr} startIcon={<BookmarkAddOutlinedIcon />} onClick={() => make("pdf")} sx={{ minHeight: 44 }}>{t.fSavePdf}</Button>
+            <Button variant={pv ? "contained" : "outlined"} color={pv ? "secondary" : "inherit"} aria-pressed={pv} disabled={!!tr} startIcon={<VisibilityOutlinedIcon />} onClick={() => setPv((v) => !v)} sx={{ minHeight: 44, borderColor: "divider" }}>{t.pvShow}</Button>
           </>
         ) : (
           <>
-            <Tooltip title={t.fSaveDocx} describeChild><span><IconButton aria-label={t.fSaveDocx} disabled={!!busy || !!issue} onClick={() => make("docx")} sx={{ width: 44, height: 44 }}><DescriptionOutlinedIcon /></IconButton></span></Tooltip>
-            <Tooltip title={t.fSavePdf} describeChild><span><IconButton aria-label={t.fSavePdf} color="primary" disabled={!!busy || !!issue} onClick={() => make("pdf")} sx={{ width: 44, height: 44 }}><PictureAsPdfOutlinedIcon /></IconButton></span></Tooltip>
-            <Tooltip title={t.pvShow} describeChild><IconButton aria-label={t.pvShow} aria-pressed={pv} color={pv ? "primary" : "default"} onClick={() => setPv((v) => !v)} sx={{ width: 44, height: 44 }}><VisibilityOutlinedIcon /></IconButton></Tooltip>
+            <Tooltip title={t.fSaveDocx} describeChild><span><IconButton aria-label={t.fSaveDocx} disabled={!!busy || !!issue || !!tr} onClick={() => make("docx")} sx={{ width: 44, height: 44 }}><DescriptionOutlinedIcon /></IconButton></span></Tooltip>
+            <Tooltip title={t.fSavePdf} describeChild><span><IconButton aria-label={t.fSavePdf} color="primary" disabled={!!busy || !!issue || !!tr} onClick={() => make("pdf")} sx={{ width: 44, height: 44 }}><PictureAsPdfOutlinedIcon /></IconButton></span></Tooltip>
+            <Tooltip title={t.pvShow} describeChild><IconButton aria-label={t.pvShow} aria-pressed={pv} disabled={!!tr} color={pv ? "primary" : "default"} onClick={() => setPv((v) => !v)} sx={{ width: 44, height: 44 }}><VisibilityOutlinedIcon /></IconButton></Tooltip>
           </>
         )}
         <Tooltip title={t.fCancel} describeChild>
@@ -90,6 +146,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
       </Stack>
       <Box sx={{ px: 2, py: wide ? 0.75 : 0, borderBottom: wide ? 1 : 0, borderColor: "divider" }}>
         {(issue === "limits" || issue === "table" || issue === "heading") && <Alert severity="warning" sx={{ mb: 1 }}>{issue === "table" ? t.fTableWide : issue === "heading" ? t.fHeadingLong : t.fTooMany}</Alert>}
+        {trErr && <Alert severity="error" onClose={() => setTrErr(null)} sx={{ mb: 1 }}>{({ "422": t.tr422, "429": t.tr429, "502": t.tr502, "504": t.tr504, net: t.trNet, other: t.tr502 })[trErr]}</Alert>}
         {error && <Alert severity="error" sx={{ mb: 1 }}>{errorText(error, t)}</Alert>}
         {upErr !== null && <Alert severity="error" sx={{ mb: 1 }}>{upErr ? `${t.fSaveFail} (${upErr})` : t.fSaveFail}</Alert>}
         {saved && (
@@ -97,11 +154,14 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
             {t.fSaved}: <Box component="span" sx={{ fontWeight: 600, overflowWrap: "anywhere" }}>{saved}</Box>
           </Alert>
         )}
+        {!wide && trBar}
+        <Box role="status" sx={hidden}>{tr ? (tr === "en" ? t.trToEn : t.trToTh) : ""}</Box>
         <Box role="status" sx={busy ? { fontSize: "0.875rem", color: "text.secondary" } : hidden}>{busy ? t.fBusy : saved ? t.fSaved : ""}</Box>
         <Typography sx={wide ? { fontSize: "0.8125rem", color: "text.secondary" } : hidden}>{t.fSaveNote}</Typography>
       </Box>
       <ReportToolbar
         editor={editor}
+        disabled={!!tr}
         extra={!wide && (
           <Tooltip title={t.fSettings} describeChild>
             <IconButton aria-label={t.fSettings} aria-haspopup="dialog" aria-expanded={!!anchor} onClick={(e) => setAnchor(e.currentTarget)} sx={{ width: 44, height: 44 }}><TuneRoundedIcon /></IconButton>
@@ -117,7 +177,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
       )}
       <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>
         <Box sx={{ display: sheetOn ? "flex" : "none", flex: 1, minWidth: 0 }}>
-          <ReportSheet lead={hasLead(d)} editor={editor} wide={wide} style={base.style} font={base.font} lang={base.lang} refs={base.refs ? sheetRefs : null} title={base.title} subtitle={base.subtitle} onTitle={(title) => set({ title })} onSubtitle={(subtitle) => set({ subtitle })} />
+          <ReportSheet shape={shape} lead={hasLead(d)} editor={editor} wide={wide} style={base.style} font={base.font} lang={base.lang} refs={base.refs ? sheetRefs : null} title={base.title} subtitle={base.subtitle} onTitle={(title) => set({ title })} onSubtitle={(subtitle) => set({ subtitle })} />
         </Box>
         {pv && (
           <Box sx={{ ...enterFade, flex: { xs: 1, md: "0 0 380px" }, minWidth: 0, overflow: "auto", p: 2, borderLeft: { md: 1 }, borderColor: "divider" }}>
