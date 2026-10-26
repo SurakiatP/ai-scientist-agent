@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Turn } from "./chat";
-import { blocksOf, draftIssue, draftSections, errorText, fileNameOf, initialDraft, paragraphsOf, requestExport, toPayload, LIM } from "./exportReport";
+import { blocksOf, docFromSections, draftIssue, draftSections, errorText, fileNameOf, initialDraft, requestExport, sectionsOf, toPayload, LIM } from "./exportReport";
 import { strings } from "./strings";
 
 const turn = { id: "t", question: "Q?", createdAt: 0, status: "done", progress: {} as never, answer: { content: "intro\n\n## A\n\np1\n\np2\n\n```\n# not heading\n```\n\n### B\n\nx", references: [{ id: "1", status: "verified", paper: { title: "T", authors: ["a"], year: 2020, doi: "doi:10.1000/x", pmid: null, url: "javascript:1" } }] } } as Turn;
@@ -11,17 +11,29 @@ describe("export draft", () => {
     const s = draftSections(turn.answer!.content, "Answer");
     expect(s.map((x) => x.heading)).toEqual(["Answer", "A", "B"]);
     expect(s[1].text).toContain("# not heading");
-    expect(paragraphsOf(s[1].text)).toHaveLength(3);
+    expect(blocksOf(s[1].text)).toHaveLength(3);
+  });
+  it("round trip sections -> doc -> sections keeps headings, runs, lists, tables", () => {
+    const text = "Hi **bold** and *it*\n\n- one\n- two\n\n1. a\n2. b\n\n| h1 | h2 |\n|---|---|\n| x | y |";
+    const doc = docFromSections([{ heading: "H", text }]);
+    expect(doc.content![0]).toMatchObject({ type: "heading", attrs: { level: 2 } });
+    const d = { ...initialDraft(turn, "en", strings.en), doc };
+    expect(sectionsOf(d)).toEqual([{ heading: "H", blocks: blocksOf(text) }]);
+  });
+  it("text before the first heading goes under the fallback; empty paragraphs are dropped", () => {
+    const d = { ...initialDraft(turn, "en", strings.en), lead: "Lead", doc: { type: "doc", content: [{ type: "paragraph" }, { type: "paragraph", content: [{ type: "text", text: "a" }] }, { type: "paragraph", content: [{ type: "text", text: "  " }] }, { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "H" }] }] } };
+    expect(sectionsOf(d)).toEqual([{ heading: "Lead", blocks: [{ type: "paragraph", runs: [{ text: "a" }] }] }, { heading: "H", blocks: [] }]);
   });
   it("splits an over-long paragraph without losing text and flags section limits", () => {
     const long = "word ".repeat(2000);
-    const ps = paragraphsOf(long);
-    expect(ps.every((p) => p.length <= LIM.para)).toBe(true);
-    expect(ps.join(" ").replace(/\s+/g, " ")).toBe(long.trim());
-    const d = initialDraft(turn, "th", strings.th);
-    expect(draftIssue(d)).toBeNull();
-    expect(draftIssue({ ...d, title: " " })).toBe("title");
-    expect(draftIssue({ ...d, sections: Array(31).fill(d.sections[0]) })).toBe("limits");
+    const d0 = initialDraft(turn, "th", strings.th);
+    const bs = sectionsOf({ ...d0, doc: docFromSections([{ heading: "h", text: long }]) })[0].blocks;
+    expect(bs[0].type === "paragraph" && bs[0].runs.length).toBeGreaterThan(1);
+    expect(bs.every((b) => b.type === "paragraph" && b.runs.every((r) => r.text.length <= LIM.para))).toBe(true);
+    expect(bs.map((b) => b.type === "paragraph" && b.runs.map((r) => r.text).join("")).join("").replace(/\s+/g, " ")).toBe(long.trim());
+    expect(draftIssue(d0)).toBeNull();
+    expect(draftIssue({ ...d0, title: " " })).toBe("title");
+    expect(draftIssue({ ...d0, doc: docFromSections(Array.from({ length: 31 }, () => ({ heading: "h", text: "x" }))) })).toBe("limits");
   });
   it("payload follows the contract and drops non-http urls", () => {
     const p = toPayload(initialDraft(turn, "en", strings.en), "pdf", turn);
@@ -65,7 +77,7 @@ describe("markdown blocks", () => {
     const t = blocksOf(`| a | b |\n|---|---|\n${rows}`);
     expect(t.map((x) => x.type === "table" && x.rows.length)).toEqual([100, 100, 50]);
     const d = initialDraft(turn, "th", strings.th);
-    const wide = (n: number) => ({ ...d, sections: [{ heading: "h", text: `|${"a|".repeat(n)}\n|${"-|".repeat(n)}\n|${"b|".repeat(n)}` }] });
+    const wide = (n: number) => ({ ...d, doc: docFromSections([{ heading: "h", text: `|${"a|".repeat(n)}\n|${"-|".repeat(n)}\n|${"b|".repeat(n)}` }]) });
     expect(draftIssue(wide(12))).toBeNull();
     expect(draftIssue(wide(13))).toBe("table");
     expect(toPayload(wide(3), "pdf", turn).sections[0].blocks[0]).toMatchObject({ type: "table", header: ["a", "a", "a"] });
