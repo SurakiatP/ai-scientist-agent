@@ -1,15 +1,14 @@
 import type { JSONContent } from "@tiptap/react";
-import remarkParse from "remark-parse";
-import { unified } from "unified";
 import { API_BASE } from "./config";
-import { inline, inlineNodes, LIM, runsOf, type Run } from "./exportReport";
+import { inlineNodes, LIM, runsOf, type Run } from "./exportReport";
 import type { Lang } from "./strings";
 
 // Report translation. The document is cut into segments (title, subtitle, then one per paragraph/heading in order) with bold/italic/code
 // kept as inline markdown, translated by the server, and poured back into the same nodes, so structure and attrs never change.
 const TEXTBLOCK = new Set(["paragraph", "heading"]);
 
-const escape = (s: string) => s.replace(/([\\*_`])/g, "\\$1");
+// Inline markdown subset shared with the model: \x escape, `code`, ** bold, * italic, \n hard break. Nothing else is special.
+const escape = (s: string) => s.replace(/([\\*`])/g, "\\$1");
 function mdRun(r: Run): string {
   return r.text.split("\n").map((line) => {
     const [, a, body, b] = /^(\s*)([\s\S]*?)(\s*)$/.exec(line)!;
@@ -24,10 +23,43 @@ function mdRun(r: Run): string {
 }
 const toMd = (n: JSONContent) => runsOf(n.content).map(mdRun).join("");
 
-function runsFromMd(md: string): Run[] {
-  const kids = (unified().use(remarkParse).parse(md) as { children?: { type: string; children?: never[] }[] }).children ?? [];
-  if (kids.length === 1 && kids[0].type === "paragraph") return inline(kids[0].children ?? []);
-  return md ? [{ text: md }] : []; // anything but one paragraph (a stray "# " or "- ") stays plain text
+// Not CommonMark: Thai has no spaces, so ** and * toggle wherever they stand. A marker with no partner is plain text.
+type Tok = { k: "t" | "c" | "B" | "I"; v: string };
+export function runsFromMd(md: string): Run[] {
+  const toks: Tok[] = [];
+  const text = (v: string) => { const l = toks.at(-1); if (l?.k === "t") l.v += v; else toks.push({ k: "t", v }); };
+  for (let i = 0; i < md.length;) {
+    const c = md[i];
+    if (c === "\\") { text(i + 1 < md.length ? md[i + 1] : "\\"); i += 2; }
+    else if (c === "`") {
+      let n = 1; while (md[i + n] === "`") n++;
+      let j = i + n, end = -1;
+      while (j < md.length) { if (md[j] !== "`") { j++; continue; } let m = 1; while (md[j + m] === "`") m++; if (m === n) { end = j; break; } j += m; }
+      if (end < 0) { text(md.slice(i, i + n)); i += n; continue; }
+      let v = md.slice(i + n, end);
+      if (v.length > 2 && v.startsWith(" ") && v.endsWith(" ") && v.trim()) v = v.slice(1, -1);
+      toks.push({ k: "c", v }); i = end + n;
+    } else if (c === "*") {
+      let n = 0; while (md[i + n] === "*") n++;
+      for (let k = n; k > 0; k -= 2) toks.push(k >= 2 ? { k: "B", v: "**" } : { k: "I", v: "*" });
+      i += n;
+    } else { text(c); i++; }
+  }
+  for (const k of ["B", "I"] as const) {
+    const at = toks.flatMap((t, x) => (t.k === k ? [x] : []));
+    if (at.length % 2) toks[at.at(-1)!] = { k: "t", v: k === "B" ? "**" : "*" };
+  }
+  const out: Run[] = [];
+  let bold = false, italic = false;
+  for (const t of toks) {
+    if (t.k === "B") { bold = !bold; continue; }
+    if (t.k === "I") { italic = !italic; continue; }
+    const g = { ...(bold && { bold }), ...(italic && { italic }), ...(t.k === "c" && { code: true }) };
+    const l = out.at(-1);
+    if (l && !!l.bold === !!g.bold && !!l.italic === !!g.italic && !!l.code === !!g.code) l.text += t.v;
+    else out.push({ text: t.v, ...g });
+  }
+  return out;
 }
 const plainOf = (md: string) => runsFromMd(md).map((r) => r.text).join("").replace(/\n/g, " ").trim();
 
@@ -37,7 +69,7 @@ function blocks(n: JSONContent, f: (b: JSONContent) => JSONContent): JSONContent
 }
 
 export function segmentsOf(doc: JSONContent, title: string, subtitle: string): string[] {
-  const out = [title, subtitle];
+  const out = [escape(title), escape(subtitle)];
   blocks(doc, (b) => { out.push(toMd(b)); return b; });
   return out;
 }
@@ -67,8 +99,13 @@ export type TrError = "422" | "429" | "502" | "504" | "net" | "other";
 
 // Same-tab cache of finished translations, newest last, capped by size.
 const KEY = "scientist-tr-v1", CAP = 2_000_000;
-const load = (): [string, string[]][] => { try { const v = JSON.parse(sessionStorage.getItem(KEY) ?? "[]"); return Array.isArray(v) ? v : []; } catch { return []; } };
-const cached = (k: string) => load().find(([x]) => x === k)?.[1];
+const load = (): [string, string[]][] => {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((e): e is [string, string[]] => Array.isArray(e) && e.length === 2 && typeof e[0] === "string" && Array.isArray(e[1]) && e[1].every((x: unknown) => typeof x === "string")) : [];
+  } catch { return []; }
+};
+export const cachedTranslation = (target: Lang, segs: string[]) => { const hit = load().find(([x]) => x === `${target}:${hashOf(segs)}`)?.[1]; return hit?.length === segs.length ? hit : undefined; };
 function remember(k: string, v: string[]) {
   try {
     const all = load().filter(([x]) => x !== k);
@@ -97,8 +134,8 @@ async function request(target: Lang, segments: string[], signal: AbortSignal): P
 // Empty segments are not sent. Returns one translated string per input segment.
 export async function translateSegments(target: Lang, segs: string[], signal: AbortSignal): Promise<string[]> {
   const key = `${target}:${hashOf(segs)}`;
-  const hit = cached(key);
-  if (hit?.length === segs.length) return hit;
+  const hit = cachedTranslation(target, segs);
+  if (hit) return hit;
   const idx = segs.flatMap((s, i) => (s.trim() ? [i] : []));
   const got = idx.length ? await request(target, idx.map((i) => segs[i]), signal) : [];
   const out = segs.map(() => "");

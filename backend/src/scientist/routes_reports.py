@@ -140,7 +140,7 @@ async def export(req: ExportRequest, request: Request):
 log = logging.getLogger(__name__)
 PROMPT = (Path(__file__).parent / "prompts" / "translate.md").read_text()
 T_TIMEOUT_S, BATCH_CHARS, PARALLEL, T_MAX_QUEUE, CACHE_SIZE = 90, 6000, 3, 10, 512
-T_MAX_SEGMENTS, T_MAX_SEGMENT, T_MAX_TOTAL = 2000, 5000, 200_000
+T_MAX_SEGMENTS, T_MAX_SEGMENT, T_MAX_TOTAL = 2000, 12000, 200_000
 CACHE: OrderedDict[str, str] = OrderedDict()  # ponytail: in-process LRU, lost on restart; Redis only if several workers
 
 
@@ -163,25 +163,26 @@ def _key(model: str, target: str, seg: str) -> str:
     return hashlib.sha256(json.dumps([model, target, seg]).encode()).hexdigest()
 
 
-def _batches(todo: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:
+def _batches(todo: list[str]) -> list[list[str]]:
     out, n = [], 0
     for item in todo:
-        if not out or n + len(item[1]) > BATCH_CHARS:
+        if not out or n + len(item) > BATCH_CHARS:
             out.append([])
             n = 0
         out[-1].append(item)
-        n += len(item[1])
+        n += len(item)
     return out
 
 
-async def _one(batch: list[tuple[int, str]], target: str, model: str) -> list[str]:
+async def _one(batch: list[str], target: str, model: str) -> list[str]:
     # JSON keeps the text a string; escaping "<" stops it from closing the block early
-    data = "<data>\n" + json.dumps({"target": target, "segments": [s for _, s in batch]}, ensure_ascii=False).replace("<", "\\u003c") + "\n</data>"
+    data = "<data>\n" + json.dumps({"target": target, "segments": batch}, ensure_ascii=False).replace("<", "\\u003c") + "\n</data>"
     for _ in range(2):  # one retry: a wrong item count or malformed JSON is usually a one-off
         try:
-            r = await llm.complete(PROMPT, data, model=model, max_tokens=12000, json_mode=True)
+            r = await llm.complete(PROMPT, data, model=model, max_tokens=16000, json_mode=True)
             t = json.loads(r.text)["t"]
-            if isinstance(t, list) and len(t) == len(batch) and all(isinstance(x, str) for x in t):
+            # every input here is non-blank, so a blank output is a miss too
+            if isinstance(t, list) and len(t) == len(batch) and all(isinstance(x, str) and x.strip() for x in t):
                 return t
         except Exception as e:
             log.warning("translate batch failed: %s", type(e).__name__)
@@ -194,30 +195,42 @@ async def translate(req: TranslateRequest, request: Request):
     st = request.app.state
     model = st.settings.model
     keys = [_key(model, req.target, s) for s in req.segments]
-    out = [("" if not s.strip() else CACHE.get(k)) for s, k in zip(req.segments, keys)]
-    todo = [(i, req.segments[i]) for i, o in enumerate(out) if o is None]
+    out: list[str | None] = []
+    for s, k in zip(req.segments, keys):
+        if (hit := CACHE.get(k)) is not None:
+            CACHE.move_to_end(k)
+        out.append("" if not s.strip() else hit)
+    # identical uncached segments are translated once
+    todo = list(dict.fromkeys(req.segments[i] for i, o in enumerate(out) if o is None))
     if todo:
         g = st.translate_gate
         if g.free == 0 and len(g.queue) >= T_MAX_QUEUE:
             raise HTTPException(429, "too many translations queued; try again shortly")
         acc, sem = usage.Acc(), asyncio.Semaphore(PARALLEL)
         usage.CURRENT.set(acc)  # llm.complete counts its calls here; tasks below inherit it
+        done: dict[str, str] = {}
 
         async def run(batch):
             async with sem:
-                for (i, _), t in zip(batch, await _one(batch, req.target, model)):
-                    out[i] = t
-                    CACHE[keys[i]] = t
-                    CACHE.move_to_end(keys[i])
+                for src, t in zip(batch, await _one(batch, req.target, model)):
+                    done[src] = t
+                    # keyed by the configured model although llm may fall back to FALLBACK_MODEL for a call; accepted
+                    k = _key(model, req.target, src)
+                    CACHE[k] = t
+                    CACHE.move_to_end(k)
                 while len(CACHE) > CACHE_SIZE:
                     CACHE.popitem(last=False)
 
         async def slot():
             async for _ in g.acquire():
                 pass
+            tasks = [asyncio.create_task(run(b)) for b in _batches(todo)]
             try:
-                await asyncio.gather(*map(run, _batches(todo)))
+                await asyncio.gather(*tasks)
             finally:
+                for t in tasks:
+                    t.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)  # settled before the slot is given back
                 g.release()
 
         ok = False
@@ -233,4 +246,5 @@ async def translate(req: TranslateRequest, request: Request):
                 t = asyncio.create_task(usage.record(st.db, mode="translate", phases={}, acc=acc, ok=ok))
                 usage.PENDING.add(t)
                 t.add_done_callback(usage.PENDING.discard)
+        out = [o if o is not None else done[s] for o, s in zip(out, req.segments)]
     return {"segments": out}

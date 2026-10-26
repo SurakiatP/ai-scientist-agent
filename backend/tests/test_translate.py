@@ -16,12 +16,17 @@ def tr(monkeypatch):
         monkeypatch.setenv(k, v)
     get_settings.cache_clear()
     routes_reports.CACHE.clear()
-    st = {"calls": [], "bad": 0}
+    st = {"calls": [], "bad": 0, "blank": 0, "hook": None}
 
     async def complete(system, user, *, model=None, max_tokens, json_mode=False, settings=None):
         data = json.loads(user.removeprefix("<data>\n").removesuffix("\n</data>"))
         st["calls"].append({"system": system, "user": user, "json_mode": json_mode, "data": data})
         segs = data["segments"]
+        if st["hook"]:
+            await st["hook"](data)
+        if st["blank"] > 0:
+            st["blank"] -= 1
+            return llm.LlmResult(text=json.dumps({"t": [" "] * len(segs)}), prompt_tokens=1, completion_tokens=1, cached_tokens=0)
         if st["bad"] > 0:
             st["bad"] -= 1
             segs = segs[:-1]
@@ -81,12 +86,48 @@ async def test_mismatch_twice_is_502(tr):
 @pytest.mark.parametrize("body", [
     {"target": "fr", "segments": ["a"]},
     {"target": "th", "segments": ["a"] * 2001},
-    {"target": "th", "segments": ["a" * 5001]},
-    {"target": "th", "segments": ["a" * 5000] * 41},
+    {"target": "th", "segments": ["a" * 12001]},
+    {"target": "th", "segments": ["a" * 10000] * 21},
 ])
 async def test_limits_422(tr, body):
     assert (await post(body)).status_code == 422 and tr["calls"] == []
 
 
-async def test_non_json_415(tr):
-    assert (await post({"target": "th", "segments": ["a"]}, ct="text/plain")).status_code in (415, 422)  # as export: FastAPI may reject the body first
+async def test_text_plain_body_is_rejected_before_the_model(tr):
+    # FastAPI refuses a non-JSON body (422) before require_json can answer 415; either way no model call
+    r = await post({"target": "th", "segments": ["a"]}, ct="text/plain")
+    assert r.status_code in (415, 422) and tr["calls"] == []
+
+
+async def test_blank_output_for_text_is_a_miss(tr):
+    tr["blank"] = 2
+    r = await post({"target": "th", "segments": ["a"]})
+    assert r.status_code == 502 and len(tr["calls"]) == 2
+
+
+async def test_duplicates_translated_once(tr):
+    r = await post({"target": "th", "segments": ["a", "b", "a"]})
+    assert r.json()["segments"] == ["th:a", "th:b", "th:a"]
+    assert tr["calls"][0]["data"]["segments"] == ["a", "b"]
+
+
+async def test_failed_batch_cancels_others_and_frees_the_gate(tr):
+    import asyncio
+    state = {"cancelled": False}
+
+    async def hook(data):
+        if data["segments"][0].startswith("b"):
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                state["cancelled"] = True
+                raise
+        else:
+            tr["bad"] = 1  # first batch: short answer, twice
+
+    tr["hook"] = hook
+    tr["bad"] = 99
+    app = create_app()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.post("/v1/reports/translate", json={"target": "th", "segments": ["a" * 5000, "b" * 5000]})
+        assert r.status_code == 502 and state["cancelled"] and app.state.translate_gate.free == 2

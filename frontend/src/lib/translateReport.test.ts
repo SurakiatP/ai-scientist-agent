@@ -1,6 +1,7 @@
+// @vitest-environment jsdom
 import type { JSONContent } from "@tiptap/react";
 import { describe, expect, it } from "vitest";
-import { applySegments, hashOf, segmentsOf } from "./translateReport";
+import { applySegments, cachedTranslation, hashOf, runsFromMd, segmentsOf, translateSegments } from "./translateReport";
 
 const t = (text: string, ...marks: string[]): JSONContent => ({ type: "text", text, ...(marks.length ? { marks: marks.map((type) => ({ type })) } : {}) });
 const p = (...content: JSONContent[]): JSONContent => ({ type: "paragraph", ...(content.length ? { content } : {}) });
@@ -46,5 +47,48 @@ describe("segments", () => {
   it("hash tells same from edited", () => {
     expect(hashOf(["a", "b"])).toBe(hashOf(["a", "b"]));
     expect(hashOf(["a", "b"])).not.toBe(hashOf(["a", "c"]));
+  });
+});
+
+describe("inline tokenizer", () => {
+  const r = (md: string) => runsFromMd(md);
+  it("toggles ** and * without flanking rules (Thai has no spaces)", () => {
+    expect(r("value**(p<0.05)**")).toEqual([{ text: "value" }, { text: "(p<0.05)", bold: true }]);
+    expect(r("**ผล.**ต่อ")).toEqual([{ text: "ผล.", bold: true }, { text: "ต่อ" }]);
+    expect(r("***ab***")).toEqual([{ text: "ab", bold: true, italic: true }]);
+  });
+  it("everything else is literal", () => {
+    for (const x of ["1. **Intro**", "- item", "# x", "&amp;", "[a](b)", "<http://a.b>", "> q", "a_b_c"]) expect(r(x).map((y) => y.text).join("")).toBe(x.replace(/\*\*/g, ""));
+    expect(r("1. **Intro**")).toEqual([{ text: "1. " }, { text: "Intro", bold: true }]);
+  });
+  it("hard breaks, unmatched markers, escapes and code", () => {
+    expect(r("a\n\nb")).toEqual([{ text: "a\n\nb" }]);
+    expect(r("a **b")).toEqual([{ text: "a **b" }]);
+    expect(r("a * b")).toEqual([{ text: "a * b" }]);
+    expect(r("\\*x\\* \\\\")).toEqual([{ text: "*x* \\" }]);
+    expect(r("`a*b` and `` x`y ``")).toEqual([{ text: "a*b", code: true }, { text: " and " }, { text: "x`y", code: true }]);
+    expect(r("`open")).toEqual([{ text: "`open" }]);
+  });
+  it("identity round trip of tricky text", () => {
+    const d: JSONContent = { type: "doc", content: [
+      p(t("1. "), t("Intro", "bold")), p(t("- item & [a](b) <http://a.b> # x *star* \\ back")), p(t("a"), { type: "hardBreak" }, { type: "hardBreak" }, t("b")),
+      p(t("x*y", "code"), t(" `tick` **lit**")), p(t("ผล.", "bold"), t("ต่อ")),
+    ] };
+    const segs = segmentsOf(d, "A *b* `c`", "S\\");
+    const out = applySegments(d, segs);
+    expect(out.doc).toEqual(d);
+    expect([out.title, out.subtitle]).toEqual(["A *b* `c`", "S\\"]);
+  });
+});
+
+describe("session cache", () => {
+  it("ignores corrupted entries", async () => {
+    for (const bad of ["not json", "{}", '[1,["a"]]', '[["k",[1]]]', '[["k","x"]]']) {
+      sessionStorage.setItem("scientist-tr-v1", bad);
+      expect(cachedTranslation("th", ["a"])).toBeUndefined();
+    }
+    sessionStorage.setItem("scientist-tr-v1", JSON.stringify([["junk", 3], [`th:${hashOf(["a"])}`, ["ก"]]]));
+    expect(cachedTranslation("th", ["a"])).toEqual(["ก"]);
+    await expect(translateSegments("th", ["a"], new AbortController().signal)).resolves.toEqual(["ก"]);
   });
 });

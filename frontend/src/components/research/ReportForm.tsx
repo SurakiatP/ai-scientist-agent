@@ -16,8 +16,9 @@ import { enterFade } from "@/lib/motion";
 import { useGoFiles } from "@/lib/nav";
 import { usePreview } from "@/lib/preview";
 import { usePrefs, useT } from "@/lib/prefs";
-import type { Lang } from "@/lib/strings";
-import { applySegments, hashOf, segmentsOf, shapeOf, translateSegments, type TrError } from "@/lib/translateReport";
+import { strings, type Lang } from "@/lib/strings";
+import { EditorState } from "@tiptap/pm/state";
+import { applySegments, cachedTranslation, hashOf, segmentsOf, shapeOf, translateSegments, type TrError } from "@/lib/translateReport";
 import type { JSONContent } from "@tiptap/react";
 import { PreviewPane } from "./PreviewPane";
 import { ReportSheet } from "./ReportSheet";
@@ -36,15 +37,14 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   const [ver, setVer] = useState(0); // bumps per edit; the document is read out of the editor once per version
   const editor = useEditor({ extensions: reportExtensions, content: base.doc, immediatelyRender: false, onUpdate: () => setVer((v) => v + 1), editorProps: { attributes: { role: "textbox", "aria-multiline": "true", "aria-label": t.fBody } } });
   const doc = useMemo(() => (editor && ver ? editor.getJSON() : base.doc), [editor, ver, base.doc]);
-  const d = useMemo<Draft>(() => ({ ...base, doc }), [base, doc]);
+  const d = useMemo<Draft>(() => ({ ...base, doc, lead: strings[base.lang].reportAnswerSection }), [base, doc]); // the lead heading follows the document language
   const issue = useMemo(() => draftIssue(d), [d]);
   const [pv, setPv] = useState(false);
   const [clean, setClean] = useState({ ver: 0, base }); // last saved (or opened) state
   const [fontTouched, setFontTouched] = useState(false); // a style change resets the font to the style default until the user picks one
   const [ask, setAsk] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const [edited, setEdited] = useState(false); // a translation counts as an edit for the discard prompt
-  const dirty = ver !== clean.ver || base !== clean.base || edited;
+  const dirty = ver !== clean.ver || base !== clean.base;
   const leave = () => (dirty ? setAsk(true) : onClose());
   const preview = usePreview(useMemo(() => (pv && !issue ? toPayload(d, "pdf", turn) : null), [pv, d, issue, turn]));
   const sheetRefs = useMemo(() => refsOf(turn), [turn]);
@@ -57,6 +57,16 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   const [trErr, setTrErr] = useState<TrError | null>(null);
   const [shape, setShape] = useState<ReturnType<typeof shapeOf> | null>(null);
   useEffect(() => { editor?.setEditable(!tr, false); }, [editor, tr]);
+  const cancelBtn = useRef<HTMLButtonElement>(null), wasTr = useRef(false);
+  useEffect(() => { // focus follows the work: Cancel while translating, the language select afterwards
+    const back = wasTr.current;
+    if (tr) cancelBtn.current?.focus();
+    wasTr.current = !!tr;
+    if (tr || !back) return;
+    // after the dialog's own focus handling; narrow screens: the select lives in the closed settings popover
+    const id = setTimeout(() => (document.getElementById("rf-lang") ?? document.getElementById("rf-settings"))?.focus(), 50);
+    return () => clearTimeout(id);
+  }, [tr]);
   useEffect(() => () => abort.current?.abort(), []);
   const switchLang = async (to: Lang) => {
     if (!editor || to === base.lang || tr) return;
@@ -68,11 +78,20 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
     const keep = { ...versions.current[from], doc: cur, title: base.title, subtitle: base.subtitle };
     const show = (v: Ver) => {
       editor.commands.setContent(v.doc, { emitUpdate: true });
+      editor.view.updateState(EditorState.create({ doc: editor.state.doc, selection: editor.state.selection, plugins: editor.state.plugins })); // fresh plugin state: Ctrl+Z cannot cross languages
       setBase((x) => ({ ...x, lang: to, title: v.title, subtitle: v.subtitle }));
-      setEdited(true);
+    };
+    const apply = (out: string[]) => {
+      const r = applySegments(cur, out);
+      show({ ...r, srcHash: h });
+      const done = segmentsOf(editor.getJSON(), r.title, r.subtitle);
+      versions.current[to] = { doc: editor.getJSON(), title: r.title, subtitle: r.subtitle, srcHash: h };
+      versions.current[from] = { ...keep, srcHash: hashOf(done) };
     };
     const stored = versions.current[to];
     if (stored && stored.srcHash === h) { versions.current[from] = keep; show(stored); return; }
+    const hit = cachedTranslation(to, segs);
+    if (hit) { apply(hit); return; }
     const ac = new AbortController();
     abort.current = ac;
     setTr(to);
@@ -80,11 +99,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
     try {
       const out = await translateSegments(to, segs, ac.signal);
       if (ac.signal.aborted) return;
-      const r = applySegments(cur, out);
-      show({ ...r, srcHash: h });
-      const done = segmentsOf(editor.getJSON(), r.title, r.subtitle);
-      versions.current[to] = { doc: editor.getJSON(), title: r.title, subtitle: r.subtitle, srcHash: h };
-      versions.current[from] = { ...keep, srcHash: hashOf(done) };
+      apply(out);
     } catch (e) {
       if (ac.signal.aborted || (e as Error)?.name === "AbortError") return;
       setTrErr(typeof e === "string" ? (e as TrError) : "other");
@@ -99,12 +114,13 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   const trBar = tr && (
     <Stack direction="row" sx={{ alignItems: "center", gap: 1 }}>
       <CircularProgress size={16} aria-hidden />
-      <Button size="small" color="inherit" onClick={() => abort.current?.abort()} sx={{ minHeight: 44 }}>{t.trCancel}</Button>
+      {!wide && <Box component="span" aria-hidden sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>{tr === "en" ? t.trToEn : t.trToTh}</Box>}
+      <Button ref={cancelBtn} size="small" color="inherit" onClick={() => abort.current?.abort()} sx={{ minHeight: 44 }}>{t.trCancel}</Button>
     </Stack>
   );
   const fields = (
     <>
-      <TextField select size="small" label={t.fLang} aria-busy={!!tr || undefined} value={tr ?? base.lang} disabled={!!tr} onChange={(e) => void switchLang(e.target.value as Lang)} sx={{ minWidth: 140 }}>
+      <TextField select id="rf-lang" size="small" label={t.fLang} aria-busy={!!tr || undefined} value={tr ?? base.lang} disabled={!!tr} onChange={(e) => void switchLang(e.target.value as Lang)} sx={{ minWidth: 140 }}>
         <MenuItem value="th">ไทย</MenuItem>
         <MenuItem value="en">English</MenuItem>
       </TextField>
@@ -164,7 +180,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
         disabled={!!tr}
         extra={!wide && (
           <Tooltip title={t.fSettings} describeChild>
-            <IconButton aria-label={t.fSettings} aria-haspopup="dialog" aria-expanded={!!anchor} onClick={(e) => setAnchor(e.currentTarget)} sx={{ width: 44, height: 44 }}><TuneRoundedIcon /></IconButton>
+            <IconButton id="rf-settings" aria-label={t.fSettings} aria-haspopup="dialog" aria-expanded={!!anchor} onClick={(e) => setAnchor(e.currentTarget)} sx={{ width: 44, height: 44 }}><TuneRoundedIcon /></IconButton>
           </Tooltip>
         )}
       />

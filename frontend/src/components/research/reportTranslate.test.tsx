@@ -14,7 +14,8 @@ const ok = (j: unknown) => Promise.resolve(new Response(JSON.stringify(j), { sta
 // fake model: prefixes every segment with the target language
 const echo = (init: RequestInit) => { const b = JSON.parse(String(init.body)); return ok({ segments: b.segments.map((s: string) => `${b.target}:${s}`) }); };
 const lang = () => screen.getByRole("combobox", { name: t.fLang });
-const pick = async (name: string) => { if (!screen.queryByRole("combobox", { name: t.fLang })) fireEvent.click(screen.getByRole("button", { name: t.fSettings })); fireEvent.mouseDown(lang()); fireEvent.click(await screen.findByRole("option", { name })); };
+// a real click focuses the settings button; the popover gives focus back to it
+const pick = async (name: string) => { if (!screen.queryByRole("combobox", { name: t.fLang })) { const b = screen.getByRole("button", { name: t.fSettings }); b.focus(); fireEvent.click(b); } fireEvent.mouseDown(lang()); fireEvent.click(await screen.findByRole("option", { name })); };
 const body = () => document.querySelector(".ProseMirror") as HTMLElement;
 
 beforeEach(() => {
@@ -59,13 +60,15 @@ describe("translate on language change", () => {
     await pick("ไทย");
     expect(await screen.findByTestId("sheet-skeleton")).toBeInTheDocument();
     expect(body().getAttribute("contenteditable")).toBe("false");
-    expect(screen.getByText(t.trToTh)).toBeInTheDocument();
+    expect(screen.getAllByText(t.trToTh).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: t.trCancel })).toHaveFocus();
     expect(screen.getByRole("button", { name: t.fSavePdf })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: t.trCancel }));
     await waitFor(() => expect(screen.queryByTestId("sheet-skeleton")).toBeNull());
     expect(signal!.aborted).toBe(true);
     expect(body().getAttribute("contenteditable")).toBe("true");
     expect(body().textContent).toContain("Body text.");
+    await waitFor(() => expect(document.getElementById("rf-settings")).toHaveFocus());
     fireEvent.click(screen.getByRole("button", { name: t.fSettings })); expect(lang()).toHaveTextContent("English");
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -90,6 +93,24 @@ describe("translate on language change", () => {
     await waitFor(() => expect(body().textContent).toContain("th:Body"));
     fireEvent.click(screen.getByRole("button", { name: t.fCancel }));
     expect(within(await screen.findByRole("dialog", { name: t.fDiscardTitle })).getByText(t.fDiscardBody)).toBeInTheDocument();
+  });
+  it("saving after a translation clears the discard prompt", async () => {
+    fetchMock.mockImplementation((u: string, init: RequestInit) => (String(u).includes("/reports/translate") ? echo(init) : String(u).includes("/reports/export") ? Promise.resolve(new Response(new Blob(["%PDF"]), { status: 200 })) : Promise.resolve(new Response(JSON.stringify({ id: "a".repeat(32), name: "x.pdf", size: 5, kind: "pdf" }), { status: 200 }))));
+    const onClose = vi.fn();
+    render(<ReportForm turn={turn} onClose={onClose} />);
+    await pick("ไทย");
+    await waitFor(() => expect(body().textContent).toContain("th:Body"));
+    fireEvent.click(screen.getByRole("button", { name: t.fSavePdf }));
+    await waitFor(() => expect(screen.getAllByText(t.fSaved, { exact: false }).length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByRole("button", { name: t.fCancel }));
+    expect(onClose).toHaveBeenCalled();
+  });
+  it("undo after a translation does not bring the old language back", async () => {
+    render(<ReportForm turn={turn} onClose={() => {}} />);
+    await pick("ไทย");
+    await waitFor(() => expect(body().textContent).toContain("th:Body"));
+    fireEvent.click(screen.getByRole("button", { name: t.tbUndo }));
+    expect(body().textContent).toContain("th:Body");
   });
   it("reopening in the same tab reuses the stored translation", async () => {
     const a = render(<ReportForm turn={turn} onClose={() => {}} />);
