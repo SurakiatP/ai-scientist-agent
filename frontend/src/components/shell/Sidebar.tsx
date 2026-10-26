@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Box, Button, IconButton, InputAdornment, Stack, TextField, Typography } from "@mui/material";
@@ -14,6 +14,7 @@ import ViewSidebarOutlinedIcon from "@mui/icons-material/ViewSidebarOutlined";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import { SyncChip } from "@/components/sync/SyncUI";
 import { useSync } from "@/lib/sync";
+import { queueStatus, type QueueStatus } from "@/lib/runs";
 import { create } from "zustand";
 import { UI } from "@/lib/config";
 import { useHydrated } from "@/lib/history";
@@ -35,6 +36,34 @@ export const Mark = () => (
 );
 
 const rowSx = { justifyContent: "flex-start", gap: 1.5, ...UI.row, px: 1.25, borderRadius: 1.2, fontWeight: 400, fontSize: "0.875rem", minWidth: 0, "& .MuiSvgIcon-root": { fontSize: 20 } } as const;
+
+// How busy the server is: one quiet line, polled every 15 s only while the tab is visible and only with the shared database.
+export const LOAD_POLL_MS = 15_000;
+export function ServerLoad() {
+  const t = useT();
+  const on = useSync((s) => s.status !== "disabled" && s.status !== "connecting");
+  const [q, setQ] = useState<QueueStatus | null>(null);
+  useEffect(() => {
+    if (!on) return;
+    let timer: ReturnType<typeof setTimeout> | undefined, dead = false;
+    const tick = async () => {
+      if (document.visibilityState === "visible") { try { const r = await queueStatus(); if (!dead) setQ(r); } catch { if (!dead) setQ(null); } }
+      if (!dead) timer = setTimeout(tick, LOAD_POLL_MS);
+    };
+    const wake = () => { if (document.visibilityState === "visible") { clearTimeout(timer); void tick(); } };
+    void tick();
+    document.addEventListener("visibilitychange", wake);
+    return () => { dead = true; clearTimeout(timer); document.removeEventListener("visibilitychange", wake); };
+  }, [on]);
+  if (!on || !q?.research) return null;
+  const line = (k: "serverLoad" | "serverLoadAnalysis", x: QueueStatus["research"]) => t[k].replace("{running}", String(x.running)).replace("{limit}", String(x.limit)).replace("{queued}", String(x.queued));
+  const a = q.analysis && q.analysis.running + q.analysis.queued > 0 ? q.analysis : null;
+  return (
+    <Typography aria-live="off" sx={{ px: 1.25, pb: 0.5, fontSize: "0.6875rem", color: "text.secondary", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>
+      {line("serverLoad", q.research)}{a ? ` · ${line("serverLoadAnalysis", a)}` : ""}
+    </Typography>
+  );
+}
 
 export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollapse?: () => void }) {
   const t = useT();
@@ -86,6 +115,7 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
       </Box>
       <Stack sx={{ borderTop: 1, borderColor: "divider", pt: 1, flexShrink: 0 }}>
         <SyncChip />
+        <ServerLoad />
         <Button component={Link} href="/files" color="inherit" startIcon={<FolderCopyOutlinedIcon />} onClick={() => onPick?.()} aria-current={onFiles ? "page" : undefined}
           sx={{ ...rowSx, bgcolor: onFiles ? "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)" : "transparent", fontWeight: onFiles ? 600 : 400 }}>{t.files}</Button>
         {shared && (

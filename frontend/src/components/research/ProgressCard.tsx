@@ -6,6 +6,7 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import type { Turn } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
+import { useForeign } from "@/lib/run";
 import type { Progress } from "@/lib/progress";
 import { ease, enterRise, prefersReduced, stageCheckSx, stageDotSx, stageFillSx, stageRingSx, stageSettleSx } from "@/lib/motion";
 import { PlanCard, type RowState } from "./PlanCard";
@@ -14,8 +15,13 @@ import type { Strings } from "@/lib/strings";
 // Backend has no separate "check" phase: stage 4 is only reached when the run is done.
 export const stageIndex = (p: Progress) => (p.phase === "waiting" || p.phase === "planning" ? 0 : p.phase === "searching" ? 1 : p.phase === "writing" ? 2 : 3);
 export const stagesDone = (p: Progress) => (p.phase === "done" ? 4 : stageIndex(p));
+// "Queue 2 · about 3 min": the place in the server queue, and the wait when the server can estimate one.
+export const queueText = (p: Progress, t: Strings) => {
+  const row = t.queueRow.replace("{n}", String(p.waiting ?? "")).trim();
+  return typeof p.eta === "number" ? `${row} · ${p.eta < 60 ? t.queueEtaUnder : t.queueEta.replace("{m}", String(Math.ceil(p.eta / 60)))}` : row;
+};
 export const statusText = (p: Progress, t: Strings) =>
-  p.phase === "waiting" ? `${t.waiting} ${p.waiting ?? ""}`.trim() : p.phase === "planning" ? t.planning : p.phase === "writing" ? t.writing : p.phase === "done" ? t.done : t.searching;
+  p.phase === "waiting" ? queueText(p, t) : p.phase === "planning" ? t.planning : p.phase === "writing" ? t.writing : p.phase === "done" ? t.done : t.searching;
 
 const mmss = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 
@@ -96,6 +102,7 @@ const tint = (pct: number) => `color-mix(in srgb, var(--mui-palette-evidence-unv
 export function ProgressCard({ turn }: { turn: Turn }) {
   const t = useT();
   const p = turn.progress, running = turn.status === "running";
+  const other = useForeign(turn.id) && running; // someone else's run: watched here, stopped only where it was started
   const [rows0] = useState(p.searches.length); // rows present on mount never animate
   const step = Math.min(4, stageIndex(p) + 1);
   const cur = p.searches.find((s) => !p.answered.includes(s.term))?.term; // what is being worked on right now
@@ -112,6 +119,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
           </Typography>
           {running && <Elapsed since={turn.createdAt} />}
         </Stack>
+        {other && <Typography sx={{ mt: -1, fontSize: "0.8125rem", color: "text.secondary" }}>{t.otherDevice}</Typography>}
         {/* >= lg the right-hand ProgressPanel already carries the stage list */}
         <Box sx={{ display: { xs: "block", lg: "none" } }}><Stages p={p} running={running} /></Box>
         {turn.plan ? (

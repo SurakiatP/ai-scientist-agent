@@ -10,6 +10,7 @@ const run = vi.hoisted(() => ({ turnId: null as string | null, startRun: vi.fn(a
 vi.mock("@/lib/run", () => ({
   useRunState: () => ({ sessionId: null, turnId: run.turnId }),
   startRun: run.startRun, startAnalysis: run.startAnalysis,
+  startError: () => null, useForeign: () => false,
   canStart: () => (run.turnId ? { ok: false, reason: "busy" } : { ok: true }),
 }));
 

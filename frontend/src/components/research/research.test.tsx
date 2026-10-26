@@ -50,7 +50,7 @@ describe("ProgressCard", () => {
   });
   it("shows the queue position while waiting", () => {
     render(<ProgressCard turn={turn({ phase: "waiting", waiting: 3 })} />);
-    expect(screen.getAllByText(`${t.waiting} 3`).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(t.queueRow.replace("{n}", "3")).length).toBeGreaterThan(0);
   });
 });
 
@@ -78,7 +78,7 @@ describe("ProgressPanel", () => {
   });
   it("shows queue position while waiting and 4 / 4 when done", () => {
     const r = render(<ProgressPanel turn={turn({ phase: "waiting", waiting: 3 })} />);
-    expect(screen.getByText(`${t.waiting} 3`)).toBeInTheDocument();
+    expect(screen.getByText(t.queueRow.replace("{n}", "3"))).toBeInTheDocument();
     r.unmount();
     render(<ProgressPanel turn={turn({ ...busy, phase: "done" }, { status: "done" })} />);
     expect(screen.getByText("4 / 4")).toBeInTheDocument();

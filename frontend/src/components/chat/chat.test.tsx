@@ -21,6 +21,7 @@ vi.mock("@/lib/run", () => ({
   approvePlan: run.approvePlan,
   cancelPlan: run.cancelPlan,
   stopRun: run.stopRun,
+  startError: () => null, useForeign: () => false,
   canStart: () => (run.turnId ? { ok: false, reason: "busy" } : { ok: true }),
 }));
 const upload = vi.hoisted(() => ({ fn: vi.fn() }));
