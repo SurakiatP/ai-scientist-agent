@@ -40,7 +40,7 @@ function Btn({ label, onClick, icon, pressed, disabled }: { label: string; onCli
 }
 
 // Word-style formatting bar. Scrolls sideways on narrow screens instead of wrapping.
-export function ReportToolbar({ editor, extra }: { editor: Editor | null; extra?: ReactNode }) {
+export function ReportToolbar({ editor, extra, disabled = false }: { editor: Editor | null; extra?: ReactNode; disabled?: boolean }) {
   const t = useT();
   const labelId = useId();
   const s = useEditorState({
@@ -57,7 +57,9 @@ export function ReportToolbar({ editor, extra }: { editor: Editor | null; extra?
       role="toolbar"
       aria-label={t.tbBar}
       aria-orientation="horizontal"
-      sx={{ display: "flex", alignItems: "center", gap: 0.5, px: 1.5, py: 0.75, overflowX: "auto", borderBottom: 1, borderColor: "divider", bgcolor: "background.paper", scrollbarWidth: "thin" }}
+      aria-disabled={disabled || undefined}
+      inert={disabled}
+      sx={{ opacity: disabled ? 0.5 : 1, transition: "opacity 160ms cubic-bezier(0.16,1,0.3,1)", display: "flex", alignItems: "center", gap: 0.5, px: 1.5, py: 0.75, overflowX: "auto", borderBottom: 1, borderColor: "divider", bgcolor: "background.paper", scrollbarWidth: "thin" }}
     >
       <Btn label={t.tbUndo} icon={<UndoRoundedIcon />} disabled={!s?.undo} onClick={run((c) => c.undo())} />
       <Btn label={t.tbRedo} icon={<RedoRoundedIcon />} disabled={!s?.redo} onClick={run((c) => c.redo())} />

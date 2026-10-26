@@ -84,6 +84,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     app.state.settings, app.state.gate = settings, RunGate(settings.max_concurrent_runs)
     app.state.analyze_gate = RunGate(settings.sandbox_max_concurrent)
     app.state.preview_gate = RunGate(settings.preview_max_concurrent)
+    app.state.translate_gate = RunGate(2)
     app.state.previews = PreviewStore(settings.preview_max_entries, settings.preview_ttl_seconds)
     app.state.store = store
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins,

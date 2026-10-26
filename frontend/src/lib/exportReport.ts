@@ -38,7 +38,7 @@ type N = { type: string; value?: string; url?: string; alt?: string; ordered?: b
 const plain = (n: N): string => n.value ?? n.alt ?? (n.children ?? []).map(plain).join("");
 
 // Inline mdast -> runs (adjacent runs with the same format merge). Text is never rewritten; a link whose text is not its URL keeps the URL in parentheses.
-function inline(nodes: N[], f: Omit<Run, "text"> = {}, out: Run[] = []): Run[] {
+export function inline(nodes: N[], f: Omit<Run, "text"> = {}, out: Run[] = []): Run[] {
   const push = (text: string, g: Omit<Run, "text">) => {
     if (!text) return;
     const l = out.at(-1);
@@ -145,7 +145,7 @@ const textNode = (r: Run): JSONContent => {
   return { type: "text", text: r.text, ...(marks.length ? { marks } : {}) };
 };
 // Runs -> inline nodes; "\n" becomes a hard break (a text node may not hold one).
-const inlineNodes = (runs: Run[]): JSONContent[] => runs.flatMap((r) => r.text.split("\n").flatMap((t, i) => [...(i ? [{ type: "hardBreak" }] : []), ...(t ? [textNode({ ...r, text: t })] : [])]));
+export const inlineNodes = (runs: Run[]): JSONContent[] => runs.flatMap((r) => r.text.split("\n").flatMap((t, i) => [...(i ? [{ type: "hardBreak" }] : []), ...(t ? [textNode({ ...r, text: t })] : [])]));
 const para = (runs: Run[]): JSONContent => { const content = inlineNodes(runs); return content.length ? { type: "paragraph", content } : { type: "paragraph" }; };
 const cell = (type: string, text: string): JSONContent => ({ type, content: [para(text ? [{ text }] : [])] });
 
@@ -164,7 +164,7 @@ export function docFromSections(sections: { heading: string; text: string }[]): 
 }
 
 // Inline nodes -> runs (adjacent runs with the same format merge; empty runs vanish).
-function runsOf(nodes: JSONContent[] = [], out: Run[] = []): Run[] {
+export function runsOf(nodes: JSONContent[] = [], out: Run[] = []): Run[] {
   for (const n of nodes) {
     const text = n.type === "hardBreak" ? "\n" : n.text ?? "";
     if (!text) continue;
