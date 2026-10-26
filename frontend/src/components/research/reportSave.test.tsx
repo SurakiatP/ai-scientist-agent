@@ -109,7 +109,23 @@ describe("ReportForm save", () => {
     await settle();
     expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes("/preview")).length).toBeGreaterThan(0);
   });
+  it("asks before discarding edits, not when nothing changed", async () => {
+    const onClose = vi.fn();
+    render(<ReportForm turn={turn} onClose={onClose} />);
+    fireEvent.click(screen.getByRole("button", { name: t.fCancel }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    cleanup();
+    onClose.mockClear();
+    render(<ReportForm turn={turn} onClose={onClose} />);
+    fireEvent.change(screen.getByRole("textbox", { name: t.fSubtitle }), { target: { value: "changed" } });
+    fireEvent.click(screen.getByRole("button", { name: t.fCancel }));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: t.fKeepEditing }));
+    fireEvent.click(await screen.findByRole("button", { name: t.fCancel }));
+    fireEvent.click(await screen.findByRole("button", { name: t.fDiscard }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
   it("has th/en parity for new keys", () => {
-    for (const k of ["fSavePdf", "fSaveDocx", "fSaveNote", "fSaved", "fOpenFiles", "fSaveFail", "pvShow", "tbBar", "tbBold", "tbTable", "fBody"] as const) expect(strings.th[k]).toBeTruthy();
+    for (const k of ["fSavePdf", "fSaveDocx", "fSaveNote", "fSaved", "fOpenFiles", "fSaveFail", "pvShow", "tbBar", "tbBold", "tbTable", "fBody", "fHeadingLong", "fSettings", "fDiscard"] as const) expect(strings.th[k]).toBeTruthy();
   });
 });

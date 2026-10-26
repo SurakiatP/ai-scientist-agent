@@ -47,8 +47,8 @@ function inline(nodes: N[], f: Omit<Run, "text"> = {}, out: Run[] = []): Run[] {
   return out;
 }
 
-// Split runs into paragraph blocks that respect the per-run and runs-per-block limits.
-function pack(runs: Run[]): Block[] {
+// Split runs so none is over the per-run limit (no text lost).
+function splitRuns(runs: Run[]): Run[] {
   const flat: Run[] = [];
   for (const r of runs) {
     let t = r.text;
@@ -60,6 +60,11 @@ function pack(runs: Run[]): Block[] {
     }
     if (t) flat.push({ ...r, text: t });
   }
+  return flat;
+}
+// Split runs into paragraph blocks that respect the per-run and runs-per-block limits.
+function pack(runs: Run[]): Block[] {
+  const flat = splitRuns(runs);
   const out: Block[] = [];
   for (let i = 0; i < flat.length; i += LIM.runs) out.push({ type: "paragraph", runs: flat.slice(i, i + LIM.runs) });
   return out;
@@ -88,7 +93,7 @@ function walk(nodes: N[], out: Block[]) {
     else if (n.type === "list") {
       const items: Run[][] = [];
       listItems(n, items);
-      for (let i = 0; i < items.length; i += LIM.items) out.push({ type: n.ordered ? "numbered" : "bullets", items: items.slice(i, i + LIM.items) });
+      for (let i = 0; i < items.length; i += LIM.items) out.push({ type: n.ordered ? "numbered" : "bullets", items: items.slice(i, i + LIM.items).map(splitRuns) });
     } else if (n.type === "table") {
       const [head, ...body] = (n.children ?? []).map((r) => (r.children ?? []).map(plain));
       for (let i = 0; i === 0 || i < body.length; i += LIM.rows) out.push({ type: "table", header: head ?? [], rows: body.slice(i, i + LIM.rows) });
@@ -158,14 +163,15 @@ function runsOf(nodes: JSONContent[] = [], out: Run[] = []): Run[] {
   }
   return out;
 }
-const flatText = (n: JSONContent): string => n.text ?? (n.content ?? []).map(flatText).join("");
+const flatText = (n: JSONContent): string => (n.type === "hardBreak" ? " " : n.text ?? (n.content ?? []).map(flatText).join(""));
 function itemRuns(list: JSONContent, out: Run[][]) {
   for (const li of list.content ?? []) {
     const runs: Run[] = [];
     for (const c of li.content ?? []) {
       if (c.type === "bulletList" || c.type === "orderedList") continue;
       if (runs.length) runs.push({ text: " " });
-      runsOf(c.content, runs);
+      if (c.type === "paragraph") runsOf(c.content, runs);
+      else { const x = flatText(c).trim(); if (x) runs.push({ text: x }); } // e.g. a table inside an item: keep its text
     }
     out.push(runs);
     for (const c of li.content ?? []) if (c.type === "bulletList" || c.type === "orderedList") itemRuns(c, out); // nested lists are flattened
@@ -175,7 +181,7 @@ const blocksOfNode = (n: JSONContent): Block[] => {
   if (n.type === "bulletList" || n.type === "orderedList") {
     const items: Run[][] = [];
     itemRuns(n, items);
-    return Array.from({ length: Math.ceil(items.length / LIM.items) }, (_, i) => ({ type: n.type === "bulletList" ? "bullets" : "numbered", items: items.slice(i * LIM.items, (i + 1) * LIM.items) }) as Block);
+    return Array.from({ length: Math.ceil(items.length / LIM.items) }, (_, i) => ({ type: n.type === "bulletList" ? "bullets" : "numbered", items: items.slice(i * LIM.items, (i + 1) * LIM.items).map(splitRuns) }) as Block);
   }
   if (n.type === "table") {
     const [head = [], ...body] = (n.content ?? []).map((r) => (r.content ?? []).map((c) => (c.content ?? []).map(flatText).join(" ").trim()));
@@ -201,11 +207,17 @@ export function initialDraft(turn: Turn, lang: Lang, t: Strings): Draft {
   return { style: "standard", title: docTitle(turn), subtitle: turn.answer ? turn.question.slice(0, LIM.subtitle) : "", refs: true, lang, lead: t.reportAnswerSection, doc: docFromSections(draftSections(turn.answer?.content ?? "", t.reportAnswerSection)) };
 }
 
-export function draftIssue(d: Draft): "title" | "limits" | "table" | null {
+const MAX_CHARS = 200_000; // backend ExportRequest total: title + headings + every run, header and cell
+const blockChars = (b: Block) => b.type === "paragraph" ? b.runs.reduce((n, r) => n + r.text.length, 0) : b.type === "table" ? [...b.header, ...b.rows.flat()].reduce((n, c) => n + c.length, 0) : b.items.flat().reduce((n, r) => n + r.text.length, 0);
+
+export function draftIssue(d: Draft): "title" | "limits" | "heading" | "table" | null {
   if (!d.title.trim()) return "title";
   const ss = sectionsOf(d);
-  if (ss.length > LIM.sections || ss.some((s) => s.heading.length > LIM.heading)) return "limits";
-  return ss.some((s) => s.blocks.length > LIM.paras) ? "limits" : ss.some((s) => tableIssue(s.blocks)) ? "table" : null;
+  if (ss.some((s) => s.heading.length > LIM.heading)) return "heading";
+  if (ss.length > LIM.sections || ss.some((s) => s.blocks.length > LIM.paras)) return "limits";
+  if (ss.some((s) => s.blocks.some((b) => (b.type === "paragraph" && b.runs.length > LIM.runs) || ((b.type === "bullets" || b.type === "numbered") && b.items.some((i) => i.length > LIM.runs))))) return "limits";
+  if (d.title.length + ss.reduce((n, s) => n + s.heading.length + s.blocks.reduce((m, b) => m + blockChars(b), 0), 0) > MAX_CHARS) return "limits";
+  return ss.some((s) => tableIssue(s.blocks)) ? "table" : null;
 }
 
 export function toPayload(d: Draft, format: Format, turn: Turn): Payload {

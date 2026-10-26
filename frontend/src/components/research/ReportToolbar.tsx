@@ -40,7 +40,7 @@ function Btn({ label, onClick, icon, pressed, disabled }: { label: string; onCli
 }
 
 // Word-style formatting bar. Scrolls sideways on narrow screens instead of wrapping.
-export function ReportToolbar({ editor }: { editor: Editor | null }) {
+export function ReportToolbar({ editor, extra }: { editor: Editor | null; extra?: ReactNode }) {
   const t = useT();
   const labelId = useId();
   const s = useEditorState({
@@ -91,6 +91,7 @@ export function ReportToolbar({ editor }: { editor: Editor | null }) {
           <Btn label={t.tbTableDel} icon={<DeleteOutlineRoundedIcon />} onClick={run((c) => c.deleteTable())} />
         </>
       )}
+      {extra && <Box sx={{ ml: "auto", pl: 1, flex: "none" }}>{extra}</Box>}
     </Box>
   );
 }

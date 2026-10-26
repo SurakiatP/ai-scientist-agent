@@ -1,7 +1,6 @@
 "use client";
 import { Box, TextareaAutosize } from "@mui/material";
 import { EditorContent, type Editor } from "@tiptap/react";
-import { useEffect, useRef, useState } from "react";
 import { LIM, type ReportStyle } from "@/lib/exportReport";
 import { useT } from "@/lib/prefs";
 import { sarabun } from "@/lib/sheetFont";
@@ -15,33 +14,26 @@ const SHEET = {
 } as const;
 const W = 21 * 37.8; // A4 width in px
 
-const field = { display: "block", width: "100%", border: 0, outline: 0, bgcolor: "transparent", color: "inherit", font: "inherit", textAlign: "center", resize: "none", p: 0, m: 0, overflow: "hidden", "&::placeholder": { color: "#6b6b6b", opacity: 1 } } as const;
+const field = { display: "block", width: "100%", border: 0, outline: 0, bgcolor: "transparent", color: "inherit", font: "inherit", textAlign: "center", resize: "none", p: 0, m: 0, overflow: "hidden", "&::placeholder": { color: "#6b6b6b", opacity: 1 }, "&:focus-visible": { outline: "2px solid #1565c0", outlineOffset: 2, borderRadius: "2px" } } as const;
 
 // The A4 page. Typing happens on it; margins and sizes follow the chosen style like the exported file.
-export function ReportSheet({ editor, style, title, subtitle, onTitle, onSubtitle }: { editor: Editor | null; style: ReportStyle; title: string; subtitle: string; onTitle: (v: string) => void; onSubtitle: (v: string) => void }) {
+export function ReportSheet({ editor, wide, style, title, subtitle, onTitle, onSubtitle }: { editor: Editor | null; wide: boolean; style: ReportStyle; title: string; subtitle: string; onTitle: (v: string) => void; onSubtitle: (v: string) => void }) {
   const t = useT();
-  const s = SHEET[style];
-  const [top, right, bottom, left] = s.pad;
-  const wrap = useRef<HTMLDivElement>(null);
-  const [zoom, setZoom] = useState(1);
-  useEffect(() => {
-    const el = wrap.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => setZoom(Math.min(1, Math.max(0.3, (el.clientWidth - 32) / W))));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  const a4 = SHEET[style];
+  // Below md the page reflows at a readable size (16px body, same proportions) instead of shrinking the A4 sheet.
+  const k = wide ? 1 : 16 / (a4.body * 1.333);
+  const s = { body: a4.body * k, head: a4.head * k, title: a4.title * k };
+  const [top, right, bottom, left] = a4.pad;
   const next = (e: React.KeyboardEvent) => { if (e.key === "Enter") { e.preventDefault(); editor?.commands.focus("start"); } };
   return (
-    <Box ref={wrap} sx={{ flex: 1, minWidth: 0, overflow: "auto", bgcolor: "action.selected", py: 3, px: 2 }}>
+    <Box sx={{ flex: 1, minWidth: 0, overflow: "auto", bgcolor: "action.selected", py: { xs: 0, md: 3 }, px: { xs: 0, md: 2 } }}>
       <Box
         component="article"
         sx={{
-          zoom, width: W, minHeight: 297 * 3.78, mx: "auto", boxSizing: "border-box", bgcolor: "#fff", color: "#1b1b1b",
+          width: wide ? W : "100%", minHeight: wide ? 297 * 3.78 : "100%", mx: "auto", boxSizing: "border-box", bgcolor: "#fff", color: "#1b1b1b",
           boxShadow: "0 1px 3px rgba(16,24,40,0.14), 0 10px 28px rgba(16,24,40,0.1)",
-          p: `${cm(top)} ${cm(right)} ${cm(bottom)} ${cm(left)}`,
+          p: wide ? `${cm(top)} ${cm(right)} ${cm(bottom)} ${cm(left)}` : "24px 20px",
           fontFamily: sarabun.style.fontFamily, fontSize: pt(s.body), lineHeight: 1.55, colorScheme: "light",
-          "&:focus-within": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 3 },
           "& ::selection": { bgcolor: "#cfe3ff", color: "#111" },
           "& textarea, & .ProseMirror": { caretColor: "#1b1b1b" },
           "& .ProseMirror": {
@@ -50,7 +42,7 @@ export function ReportSheet({ editor, style, title, subtitle, onTitle, onSubtitl
             "& h2": { fontSize: pt(s.head), fontWeight: 700, lineHeight: 1.35, m: `${pt(s.head * 0.9)} 0 ${pt(s.head * 0.35)}`, textWrap: "balance" },
             "& ul, & ol": { m: `0 0 ${pt(s.body * 0.6)}`, pl: "1.6em" },
             "& li > p": { m: 0 },
-            "& code": { fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: "0.9em" },
+            "& code": { fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: "0.9em", bgcolor: "#f1f2f4", borderRadius: "3px", px: "0.25em" },
             "& table": { borderCollapse: "collapse", width: "100%", tableLayout: "fixed", m: `0 0 ${pt(s.body * 0.8)}` },
             "& th, & td": { border: "1px solid #3a3a3a", p: "4px 8px", verticalAlign: "top", textAlign: "left", position: "relative", minWidth: 40 },
             "& th": { fontWeight: 700, bgcolor: "#eef0f3" },

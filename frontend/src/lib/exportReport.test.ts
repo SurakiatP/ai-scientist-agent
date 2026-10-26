@@ -83,3 +83,43 @@ describe("markdown blocks", () => {
     expect(toPayload(wide(3), "pdf", turn).sections[0].blocks[0]).toMatchObject({ type: "table", header: ["a", "a", "a"] });
   });
 });
+
+describe("editor schema and limits", () => {
+  const d0 = () => initialDraft(turn, "en", strings.en);
+  it("inline code and fenced code survive loading into a real editor", async () => {
+    const { Editor } = await import("@tiptap/core");
+    const { reportExtensions } = await import("./reportExtensions");
+    const sections = [{ heading: "H", text: "use `x` here\n\n```\ncode line\n```\n\n- item `y`" }];
+    const doc = docFromSections(sections);
+    const ed = new Editor({ extensions: reportExtensions, content: doc });
+    const got = sectionsOf({ doc: ed.getJSON(), lead: "L" });
+    expect(got).toEqual(sectionsOf({ doc, lead: "L" }));
+    expect(JSON.stringify(got)).toContain("code line");
+    expect(JSON.stringify(got)).toContain('"code":true');
+    expect(got[0].heading).toBe("H");
+    ed.destroy();
+  });
+  it("splits an over-long list item run and flags too many runs / over 200k chars", () => {
+    const item = (text: string) => ({ ...d0(), doc: docFromSections([{ heading: "h", text: `- ${text}` }]) });
+    const b = sectionsOf(item("word ".repeat(1200)))[0].blocks[0];
+    expect(b.type === "bullets" && b.items[0].every((r) => r.text.length <= LIM.para) && b.items[0].length > 1).toBe(true);
+    expect(draftIssue(item("word ".repeat(1200)))).toBeNull();
+    const many = { ...d0(), doc: { type: "doc", content: [{ type: "bulletList", content: [{ type: "listItem", content: [{ type: "paragraph", content: Array.from({ length: 201 }, (_, i) => ({ type: "text", text: "a", marks: [{ type: i % 2 ? "bold" : "italic" }] })) }] }] }] } };
+    expect(draftIssue(many)).toBe("limits");
+    const para = (n: number) => ({ type: "paragraph", content: [{ type: "text", text: "a".repeat(n) }] });
+    const big = (total: number) => ({ ...d0(), title: "T", doc: { type: "doc", content: Array.from({ length: total / 5000 }, () => para(5000)).reduce<object[]>((a, p, i) => [...a, ...(i % 40 === 0 ? [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "h" }] }] : []), p], []) } });
+    expect(draftIssue(big(195000))).toBeNull();
+    expect(draftIssue({ ...big(200000), title: "TT" })).toBe("limits");
+  });
+  it("keeps text of a table inside a list item; hard breaks become spaces; long heading has its own issue", () => {
+    const cellP = (t: string) => ({ type: "paragraph", content: [{ type: "text", text: t }] });
+    const doc = { type: "doc", content: [
+      { type: "bulletList", content: [{ type: "listItem", content: [cellP("a"), { type: "table", content: [{ type: "tableRow", content: [{ type: "tableCell", content: [cellP("SECRET")] }] }] }] }] },
+      { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "A" }, { type: "hardBreak" }, { type: "text", text: "B" }] },
+    ] };
+    const ss = sectionsOf({ doc, lead: "L" });
+    expect(JSON.stringify(ss[0].blocks)).toContain("SECRET");
+    expect(ss[1].heading).toBe("A B");
+    expect(draftIssue({ ...d0(), doc: docFromSections([{ heading: "x".repeat(201), text: "" }]) })).toBe("heading");
+  });
+});
