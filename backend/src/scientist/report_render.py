@@ -13,6 +13,26 @@ from fpdf import FPDF
 from pythainlp.tokenize import word_tokenize
 
 FONTS = Path(__file__).parent / "fonts"
+# font id -> (dir under fonts/ == file prefix, name written into DOCX). PDF embeds the OFL face; Word looks up the docx name on the reader's machine.
+FONTS_BY_ID = {
+    "sarabun": ("sarabun/Sarabun", "Sarabun"),
+    "th-sarabun-new": ("sarabun/Sarabun", "TH Sarabun New"),
+    "th-sarabun-psk": ("sarabun/Sarabun", "TH SarabunPSK"),
+    "th-sarabun-it9": ("sarabun/Sarabun", "TH SarabunIT๙"),
+    "th-niramit": ("niramit/Niramit", "TH Niramit AS"),
+    "th-chakra-petch": ("chakrapetch/ChakraPetch", "TH Chakra Petch"),
+    "th-baijam": ("baijamjuree/BaiJamjuree", "TH Baijam"),
+    "th-k2d": ("k2d/K2D", "TH K2D July8"),
+    "th-krub": ("krub/Krub", "TH Krub"),
+    "th-koho": ("koho/KoHo", "TH KoHo"),
+    "noto-sans-thai": ("notosansthai/NotoSansThai", "Noto Sans Thai"),
+    "ibm-plex-sans-thai": ("ibmplexsansthai/IBMPlexSansThai", "IBM Plex Sans Thai"),
+    "prompt": ("prompt/Prompt", "Prompt"),
+    "kanit": ("kanit/Kanit", "Kanit"),
+}
+# families without italic files reuse upright files so fpdf2 can still register all four styles
+NO_ITALIC = {"notosansthai", "ibmplexsansthai"}
+OFFICIAL_DEFAULT = "th-sarabun-new"  # official style with no explicit font keeps the government-letter face in DOCX
 ZWSP = "​"
 THAI = re.compile("[฀-๿]")
 CTRL = re.compile("[\x00-\x08\x0b-\x1f\x7f​]")  # keeps \n and \t; drops stray ZWSP so ours is the only one
@@ -30,7 +50,6 @@ LABELS = {
 
 @dataclass(frozen=True)
 class Style:
-    docx_font: str  # name Word looks up on the reader's machine; Word does not embed fonts
     body: int
     heading: int
     title: int
@@ -39,9 +58,9 @@ class Style:
 
 
 STYLES = {
-    "standard": Style("Sarabun", 12, 15, 22, (2.5, 2.5, 2.5, 2.5), False),
+    "standard": Style(12, 15, 22, (2.5, 2.5, 2.5, 2.5), False),
     # Thai government letter (saraban rule): 16 pt body, 18 pt headings, margins 3/3/2/2 cm, Arabic numerals
-    "official": Style("TH Sarabun New", 16, 18, 20, (3, 3, 2, 2), True),
+    "official": Style(16, 18, 20, (3, 3, 2, 2), True),
 }
 
 
@@ -91,7 +110,7 @@ class _Pdf(FPDF):
 
     def footer(self):
         self.set_y(-15)
-        self.set_font("Sarabun", "", 10)
+        self.set_font("F", "", 10)
         self.cell(0, 8, f"{self.page_word} {self.page_no()}", align="C")
 
 
@@ -99,10 +118,12 @@ def render_pdf(d: dict) -> bytes:
     st, lang = STYLES[d["style"]], d["language"]
     pdf = _Pdf(format="A4")
     pdf.page_word = LABELS[lang]["page"]
-    pdf.add_font("Sarabun", "", str(FONTS / "Sarabun-Regular.ttf"))
-    pdf.add_font("Sarabun", "B", str(FONTS / "Sarabun-Bold.ttf"))
-    pdf.add_font("Sarabun", "I", str(FONTS / "Sarabun-Italic.ttf"))
-    pdf.add_font("Sarabun", "BI", str(FONTS / "Sarabun-BoldItalic.ttf"))
+    base = str(FONTS / FONTS_BY_ID[d.get("font") or "sarabun"][0])
+    plain = base.split("/")[-2] in NO_ITALIC
+    for style, suffix in (("", "Regular"), ("B", "Bold"), ("I", "Italic"), ("BI", "BoldItalic")):
+        if plain:
+            suffix = "Bold" if "B" in style else "Regular"
+        pdf.add_font("F", style, f"{base}-{suffix}.ttf")
     pdf.set_text_shaping(True)
     left, top, right, bottom = st.margins
     pdf.set_margins(left * 10, top * 10, right * 10)
@@ -111,7 +132,7 @@ def render_pdf(d: dict) -> bytes:
     pdf.add_page()
 
     def para(text, size, bold=False, gap=2):
-        pdf.set_font("Sarabun", "B" if bold else "", size)
+        pdf.set_font("F", "B" if bold else "", size)
         pdf.multi_cell(0, size * 0.5, segment(clean(text)), new_x="LMARGIN", new_y="NEXT")  # left-aligned, not justified
         pdf.ln(gap)
 
@@ -120,8 +141,8 @@ def render_pdf(d: dict) -> bytes:
             t, b = clean(r["text"]), "B" if r["bold"] else ""
             if r["code"] and t.isascii():
                 pdf.set_font("Courier", b + ("I" if r["italic"] else ""), size - 1)
-            else:  # Thai in a code run stays in Sarabun: the core Courier font has no Thai glyphs
-                pdf.set_font("Sarabun", b + ("I" if r["italic"] else ""), size)
+            else:  # Thai in a code run stays in the document font: the core Courier font has no Thai glyphs
+                pdf.set_font("F", b + ("I" if r["italic"] else ""), size)
             pdf.write(size * 0.5, segment(t))
 
     def block(b):
@@ -132,7 +153,7 @@ def render_pdf(d: dict) -> bytes:
         elif b["type"] == "table":
             n = max([len(b["header"])] + [len(r) for r in b["rows"]])
             pad = lambda row: [clean(c) for c in row] + [""] * (n - len(row))
-            pdf.set_font("Sarabun", "", size - 1)
+            pdf.set_font("F", "", size - 1)
             with pdf.table(first_row_as_headings=bool(b["header"]), text_align="LEFT") as tb:
                 for row in ([b["header"]] if b["header"] else []) + b["rows"]:
                     r = tb.row()
@@ -142,7 +163,7 @@ def render_pdf(d: dict) -> bytes:
         else:
             base = pdf.l_margin
             for k, item in enumerate(b["items"], 1):
-                pdf.set_font("Sarabun", "", size)
+                pdf.set_font("F", "", size)
                 pdf.set_x(base + 1)
                 pdf.write(size * 0.5, "\u2022" if b["type"] == "bullets" else f"{k}.")
                 pdf.l_margin = base + 7
@@ -195,7 +216,7 @@ def render_docx(d: dict) -> bytes:
     sec.page_width, sec.page_height = Cm(21), Cm(29.7)
     sec.left_margin, sec.top_margin, sec.right_margin, sec.bottom_margin = (Cm(m) for m in st.margins)
     doc.core_properties.title = clean(d["title"])
-    f = st.docx_font
+    f = FONTS_BY_ID[d.get("font") or (OFFICIAL_DEFAULT if d["style"] == "official" else "sarabun")][1]
 
     def para(text, size, bold=False, keep=False):
         p = doc.add_paragraph()

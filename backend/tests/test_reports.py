@@ -6,6 +6,7 @@ import httpx
 import pytest
 from pypdf import PdfReader
 
+from scientist import report_render
 from scientist.config import get_settings
 from scientist.main import create_app
 
@@ -63,6 +64,26 @@ async def test_docx(style, font, monkeypatch):
     xml = z.read("word/document.xml").decode()
     assert TH in xml and f'w:cs="{font}"' in xml and "<w:szCs" in xml and "<w:bCs" in xml
     assert "ยังไม่ยืนยัน" in xml and "javascript:" not in xml
+
+
+FAMILY = {"sarabun": "Sarabun", "th-sarabun-new": "Sarabun", "th-sarabun-psk": "Sarabun", "th-sarabun-it9": "Sarabun",
+          "th-niramit": "Niramit", "th-chakra-petch": "ChakraPetch", "th-baijam": "BaiJamjuree", "th-k2d": "K2D",
+          "th-krub": "Krub", "th-koho": "KoHo", "noto-sans-thai": "NotoSansThai", "ibm-plex-sans-thai": "IBMPlexSansThai",
+          "prompt": "Prompt", "kanit": "Kanit"}
+
+
+@pytest.mark.parametrize("font", FAMILY)
+async def test_every_font(font, monkeypatch):
+    r = await post(body(font=font, sections=[{"heading": "บทนำ", "paragraphs": ["ผู้ป่วยที่เป็นโรคเบาหวาน *x*"]}]), monkeypatch)
+    assert r.status_code == 200 and "ผู้ป่วย" in pdf_text(r).replace(" ", "")
+    assert FAMILY[font].encode() in r.content  # /BaseFont /XXXXXX+<PostScript name>
+    d = await post(body(format="docx", font=font), monkeypatch)
+    xml = zipfile.ZipFile(io.BytesIO(d.content)).read("word/document.xml").decode()
+    assert f'w:ascii="{report_render.FONTS_BY_ID[font][1]}"' in xml and f'w:cs="{report_render.FONTS_BY_ID[font][1]}"' in xml
+
+
+async def test_unknown_font(monkeypatch):
+    assert (await post(body(font="comic-sans"), monkeypatch)).status_code == 422
 
 
 async def test_english_and_filename(monkeypatch):

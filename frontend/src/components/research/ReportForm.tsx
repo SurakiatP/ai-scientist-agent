@@ -1,7 +1,7 @@
 "use client";
 import { srOnly } from "@/lib/config";
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel, Popover, IconButton, MenuItem, Stack, Switch, TextField, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel, ListSubheader, Popover, IconButton, MenuItem, Stack, Switch, TextField, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import BookmarkAddOutlinedIcon from "@mui/icons-material/BookmarkAddOutlined";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
@@ -10,7 +10,7 @@ import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import { useEditor } from "@tiptap/react";
 import type { Turn } from "@/lib/chat";
-import { draftIssue, errorText, initialDraft, toPayload, useExport, type Draft, type Format } from "@/lib/exportReport";
+import { defaultFont, draftIssue, errorText, FONTS, initialDraft, toPayload, useExport, type Draft, type Format } from "@/lib/exportReport";
 import { reportExtensions } from "@/lib/reportExtensions";
 import { enterFade } from "@/lib/motion";
 import { useGoFiles } from "@/lib/nav";
@@ -38,6 +38,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   const issue = useMemo(() => draftIssue(d), [d]);
   const [pv, setPv] = useState(false);
   const [clean, setClean] = useState({ ver: 0, base }); // last saved (or opened) state
+  const [fontTouched, setFontTouched] = useState(false); // a style change resets the font to the style default until the user picks one
   const [ask, setAsk] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const dirty = ver !== clean.ver || base !== clean.base;
@@ -51,9 +52,15 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
         <MenuItem value="th">ไทย</MenuItem>
         <MenuItem value="en">English</MenuItem>
       </TextField>
-      <TextField select size="small" label={t.fStyle} value={base.style} onChange={(e) => set({ style: e.target.value as Draft["style"] })} sx={{ minWidth: 160 }}>
+      <TextField select size="small" label={t.fStyle} value={base.style} onChange={(e) => { const style = e.target.value as Draft["style"]; set(fontTouched ? { style } : { style, font: defaultFont(style) }); }} sx={{ minWidth: 160 }}>
         <MenuItem value="standard">{t.fStyleStd}</MenuItem>
         <MenuItem value="official">{t.fStyleOfficial}</MenuItem>
+      </TextField>
+      <TextField select size="small" label={t.fFont} value={base.font} onChange={(e) => { setFontTouched(true); set({ font: e.target.value as Draft["font"] }); }} sx={{ minWidth: 200 }} slotProps={{ select: { MenuProps: { slotProps: { paper: { sx: { maxHeight: 360 } } } } } }}>
+        {(["gov", "sipa", "general"] as const).flatMap((g) => [
+          <ListSubheader key={g}>{t[`fFontGroup_${g}`]}</ListSubheader>,
+          ...FONTS.filter((f) => f.group === g).map((f) => <MenuItem key={f.id} value={f.id} sx={{ fontFamily: f.cssFamily, minHeight: 44 }}>{f.label}</MenuItem>),
+        ])}
       </TextField>
       <FormControlLabel control={<Switch checked={base.refs} onChange={(e) => set({ refs: e.target.checked })} />} label={t.fRefs} />
     </>
@@ -109,7 +116,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
       )}
       <Box sx={{ flex: 1, minHeight: 0, display: "flex" }}>
         <Box sx={{ display: sheetOn ? "flex" : "none", flex: 1, minWidth: 0 }}>
-          <ReportSheet editor={editor} wide={wide} style={base.style} title={base.title} subtitle={base.subtitle} onTitle={(title) => set({ title })} onSubtitle={(subtitle) => set({ subtitle })} />
+          <ReportSheet editor={editor} wide={wide} style={base.style} font={base.font} title={base.title} subtitle={base.subtitle} onTitle={(title) => set({ title })} onSubtitle={(subtitle) => set({ subtitle })} />
         </Box>
         {pv && (
           <Box sx={{ ...enterFade, flex: { xs: 1, md: "0 0 380px" }, minWidth: 0, overflow: "auto", p: 2, borderLeft: { md: 1 }, borderColor: "divider" }}>

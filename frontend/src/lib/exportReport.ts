@@ -5,6 +5,7 @@ import type { JSONContent } from "@tiptap/react";
 import { create } from "zustand";
 import { useChatStore, type Turn } from "./chat";
 import { API_BASE } from "./config";
+import { FACE } from "./reportFonts";
 import { registerUpload, useFilesStore } from "./files";
 import { uploadFile, UploadError } from "./sse";
 import { doiOf, httpUrl, paperLink } from "./refs";
@@ -14,9 +15,21 @@ import type { Lang, Strings } from "./strings";
 export const LIM = { title: 200, subtitle: 300, heading: 200, para: 5000, sections: 30, paras: 60, refs: 100, runs: 200, cols: 12, rows: 100, cell: 500, items: 100 } as const;
 export type Format = "pdf" | "docx";
 export type ReportStyle = "standard" | "official";
-export type Draft = { style: ReportStyle; title: string; subtitle: string; refs: boolean; lang: Lang; doc: JSONContent; lead: string };
+export type FontGroup = "gov" | "sipa" | "general";
+const F = (id: keyof typeof FACE, label: string, group: FontGroup) => ({ id, label, group, cssFamily: FACE[id] });
+// Single source of the picker; ids match FONTS_BY_ID in backend/src/scientist/report_render.py.
+export const FONTS = [
+  F("th-sarabun-new", "TH Sarabun New", "gov"), F("th-sarabun-psk", "TH SarabunPSK", "gov"), F("th-sarabun-it9", "TH SarabunIT๙", "gov"),
+  F("th-niramit", "TH Niramit AS", "sipa"), F("th-chakra-petch", "TH Chakra Petch", "sipa"), F("th-baijam", "TH Baijam", "sipa"),
+  F("th-k2d", "TH K2D July8", "sipa"), F("th-krub", "TH Krub", "sipa"), F("th-koho", "TH KoHo", "sipa"),
+  F("sarabun", "Sarabun", "general"), F("noto-sans-thai", "Noto Sans Thai", "general"), F("ibm-plex-sans-thai", "IBM Plex Sans Thai", "general"),
+  F("prompt", "Prompt", "general"), F("kanit", "Kanit", "general"),
+];
+export type FontId = (typeof FONTS)[number]["id"];
+export const defaultFont = (style: ReportStyle): FontId => (style === "official" ? "th-sarabun-new" : "sarabun");
+export type Draft = { style: ReportStyle; font: FontId; title: string; subtitle: string; refs: boolean; lang: Lang; doc: JSONContent; lead: string };
 type Section = { heading: string; blocks: Block[] };
-type Payload = { format: Format; style: ReportStyle; language: Lang; title: string; subtitle: string | null; sections: { heading: string; paragraphs: string[]; blocks: Block[] }[]; references: unknown[] };
+type Payload = { format: Format; style: ReportStyle; font: FontId; language: Lang; title: string; subtitle: string | null; sections: { heading: string; paragraphs: string[]; blocks: Block[] }[]; references: unknown[] };
 
 export type Run = { text: string; bold?: boolean; italic?: boolean; code?: boolean };
 export type Block = { type: "paragraph"; runs: Run[] } | { type: "bullets" | "numbered"; items: Run[][] } | { type: "table"; header: string[]; rows: string[][] };
@@ -204,7 +217,7 @@ export function sectionsOf(d: Pick<Draft, "doc" | "lead">): Section[] {
 }
 
 export function initialDraft(turn: Turn, lang: Lang, t: Strings): Draft {
-  return { style: "standard", title: docTitle(turn), subtitle: turn.answer ? turn.question.slice(0, LIM.subtitle) : "", refs: true, lang, lead: t.reportAnswerSection, doc: docFromSections(draftSections(turn.answer?.content ?? "", t.reportAnswerSection)) };
+  return { style: "standard", font: defaultFont("standard"), title: docTitle(turn), subtitle: turn.answer ? turn.question.slice(0, LIM.subtitle) : "", refs: true, lang, lead: t.reportAnswerSection, doc: docFromSections(draftSections(turn.answer?.content ?? "", t.reportAnswerSection)) };
 }
 
 const MAX_CHARS = 200_000; // backend ExportRequest total: title + headings + every run, header and cell
@@ -225,7 +238,7 @@ export function toPayload(d: Draft, format: Format, turn: Turn): Payload {
     id: r.id, title: r.paper.title, authors: r.paper.authors, year: r.paper.year ?? null,
     doi: doiOf(r.paper) || null, url: httpUrl(paperLink(r.paper) ?? r.paper.url) ?? null, status: r.status,
   })) : [];
-  return { format, style: d.style, language: d.lang, title: d.title.trim().slice(0, LIM.title), subtitle: d.subtitle.trim().slice(0, LIM.subtitle) || null, sections: sectionsOf(d).map((s) => ({ heading: s.heading.trim() || " ", paragraphs: [], blocks: s.blocks })), references: refs };
+  return { format, style: d.style, font: d.font, language: d.lang, title: d.title.trim().slice(0, LIM.title), subtitle: d.subtitle.trim().slice(0, LIM.subtitle) || null, sections: sectionsOf(d).map((s) => ({ heading: s.heading.trim() || " ", paragraphs: [], blocks: s.blocks })), references: refs };
 }
 
 export type ExportError = "413" | "422" | "503" | "net" | "other";

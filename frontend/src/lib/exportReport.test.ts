@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Turn } from "./chat";
-import { blocksOf, docFromSections, draftIssue, draftSections, errorText, fileNameOf, initialDraft, requestExport, sectionsOf, toPayload, LIM } from "./exportReport";
+import { blocksOf, docFromSections, draftIssue, draftSections, errorText, fileNameOf, initialDraft, requestExport, sectionsOf, toPayload, FONTS, defaultFont, LIM } from "./exportReport";
 import { strings } from "./strings";
 
 const turn = { id: "t", question: "Q?", createdAt: 0, status: "done", progress: {} as never, answer: { content: "intro\n\n## A\n\np1\n\np2\n\n```\n# not heading\n```\n\n### B\n\nx", references: [{ id: "1", status: "verified", paper: { title: "T", authors: ["a"], year: 2020, doi: "doi:10.1000/x", pmid: null, url: "javascript:1" } }] } } as Turn;
@@ -38,7 +38,18 @@ describe("export draft", () => {
   it("payload follows the contract and drops non-http urls", () => {
     const p = toPayload(initialDraft(turn, "en", strings.en), "pdf", turn);
     expect(p).toMatchObject({ format: "pdf", language: "en", references: [{ id: "1", doi: "10.1000/x", url: "https://doi.org/10.1000/x", status: "verified" }] });
+    expect(p.font).toBe("sarabun");
+    expect(toPayload({ ...initialDraft(turn, "en", strings.en), font: "th-niramit" }, "pdf", turn).font).toBe("th-niramit");
     expect(toPayload({ ...initialDraft(turn, "en", strings.en), refs: false }, "docx", turn).references).toEqual([]);
+  });
+});
+
+describe("FONTS", () => {
+  it("lists the 14 backend ids once, with a face each; style picks the default", () => {
+    expect(FONTS).toHaveLength(14);
+    expect(new Set(FONTS.map((f) => f.id)).size).toBe(14);
+    expect(FONTS.every((f) => f.cssFamily && f.label)).toBe(true);
+    expect([defaultFont("standard"), defaultFont("official")]).toEqual(["sarabun", "th-sarabun-new"]);
   });
 });
 

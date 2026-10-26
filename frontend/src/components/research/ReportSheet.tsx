@@ -1,9 +1,8 @@
 "use client";
 import { Box, TextareaAutosize } from "@mui/material";
 import { EditorContent, type Editor } from "@tiptap/react";
-import { LIM, type ReportStyle } from "@/lib/exportReport";
+import { FONTS, LIM, type FontId, type ReportStyle } from "@/lib/exportReport";
 import { useT } from "@/lib/prefs";
-import { sarabun } from "@/lib/sheetFont";
 
 // Mirrors STYLES in backend/src/scientist/report_render.py. 1 cm = 37.8 px, 1 pt = 1.333 px.
 const cm = (n: number) => `${(n * 37.8).toFixed(1)}px`;
@@ -17,7 +16,7 @@ const W = 21 * 37.8; // A4 width in px
 const field = { display: "block", width: "100%", border: 0, outline: 0, bgcolor: "transparent", color: "inherit", font: "inherit", textAlign: "center", resize: "none", p: 0, m: 0, overflow: "hidden", "&::placeholder": { color: "#6b6b6b", opacity: 1 }, "&:focus-visible": { outline: "2px solid #1565c0", outlineOffset: 2, borderRadius: "2px" } } as const;
 
 // The A4 page. Typing happens on it; margins and sizes follow the chosen style like the exported file.
-export function ReportSheet({ editor, wide, style, title, subtitle, onTitle, onSubtitle }: { editor: Editor | null; wide: boolean; style: ReportStyle; title: string; subtitle: string; onTitle: (v: string) => void; onSubtitle: (v: string) => void }) {
+export function ReportSheet({ editor, wide, style, font, title, subtitle, onTitle, onSubtitle }: { editor: Editor | null; wide: boolean; style: ReportStyle; font: FontId; title: string; subtitle: string; onTitle: (v: string) => void; onSubtitle: (v: string) => void }) {
   const t = useT();
   const a4 = SHEET[style];
   // Below md the page reflows at a readable size (16px body, same proportions) instead of shrinking the A4 sheet.
@@ -33,7 +32,7 @@ export function ReportSheet({ editor, wide, style, title, subtitle, onTitle, onS
           width: wide ? W : "100%", minHeight: wide ? 297 * 3.78 : "100%", mx: "auto", boxSizing: "border-box", bgcolor: "#fff", color: "#1b1b1b",
           boxShadow: "0 1px 3px rgba(16,24,40,0.14), 0 10px 28px rgba(16,24,40,0.1)",
           p: wide ? `${cm(top)} ${cm(right)} ${cm(bottom)} ${cm(left)}` : "24px 20px",
-          fontFamily: sarabun.style.fontFamily, fontSize: pt(s.body), lineHeight: 1.55, colorScheme: "light",
+          fontFamily: FONTS.find((f) => f.id === font)?.cssFamily, fontSize: pt(s.body), lineHeight: 1.55, colorScheme: "light",
           "& ::selection": { bgcolor: "#cfe3ff", color: "#111" },
           "& textarea, & .ProseMirror": { caretColor: "#1b1b1b" },
           "& .ProseMirror": {
