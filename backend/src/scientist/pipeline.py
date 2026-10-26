@@ -101,7 +101,7 @@ async def ask(question: str, runner: BranchRunner, *, settings: Settings, client
         return
     async with aclosing(gate.acquire()) as waits:
         async for position in waits:
-            yield Waiting(position=position)
+            yield Waiting(position=position, eta_seconds=getattr(gate, "eta", lambda _: None)(position))
     try:
         # aclosing: when our consumer goes away, _run's cleanup (killing the bridges) runs now, not at GC
         async with aclosing(_run(question, runner, settings, client, mode, history, plan)) as events:
@@ -261,7 +261,7 @@ async def _chat(question: str, memory: list, settings: Settings, gate: RunGate) 
         return
     async with aclosing(gate.acquire()) as waits:
         async for position in waits:
-            yield Waiting(position=position)
+            yield Waiting(position=position, eta_seconds=getattr(gate, "eta", lambda _: None)(position))
     try:
         block, refs = _memory_block(memory)
         try:

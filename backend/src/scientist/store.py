@@ -95,6 +95,7 @@ class TurnIn(BaseModel):
     analysis: dict | list | None = None
     refused: str | None = Field(None, max_length=4000)
     error: str | None = Field(None, max_length=4000)
+    run_id: str | None = OptUid
     version: int | None = Field(None, ge=1, le=MAX_VERSION)
 
     @model_validator(mode="after")
@@ -284,6 +285,8 @@ class Store:
                         raise Conflict("turn belongs to another session")
                     if body.version is not None and body.version != r.version:  # the version the client last saw
                         raise Conflict("version conflict", _row(r))
+                    if r.run_id and not vals.get("run_id"):
+                        vals.pop("run_id", None)  # a client copy without the link never detaches a server-owned turn
                     upd = {**vals, "version": r.version + 1, "updated_at": sa.func.now()}
                     async with s.begin_nested():
                         out = _row((await s.execute(sa.update(m.turns).where(m.turns.c.id == tid).values(**upd).returning(m.turns))).one())
@@ -292,6 +295,21 @@ class Store:
             await s.execute(sa.update(m.sessions).where(m.sessions.c.id == sid)
                             .values(updated_at=sa.func.now(), sort_ts=sa.func.now()))
         self._changed("turn", out, session_id=sid)
+        return out
+
+    async def write_turn_server(self, tid: str, **fields: Any) -> dict | None:
+        """The run service's write: no client version check, always bumps the version and broadcasts. None = the turn
+        (or its session) is gone."""
+        async with self.tx() as s:
+            r = await self._get(s, m.turns, tid)
+            if r is None:
+                return None
+            out = _row((await s.execute(sa.update(m.turns).where(m.turns.c.id == tid)
+                                        .values(**fields, version=r.version + 1, updated_at=sa.func.now())
+                                        .returning(m.turns))).one())
+            await s.execute(sa.update(m.sessions).where(m.sessions.c.id == r.session_id)
+                            .values(updated_at=sa.func.now(), sort_ts=sa.func.now()))
+        self._changed("turn", out, session_id=str(out["session_id"]))
         return out
 
     async def truncate_turns(self, sid: str, from_idx: int) -> dict:
@@ -362,6 +380,11 @@ class Store:
         cut = sa.func.now() - sa.func.make_interval(0, 0, 0, self.settings.usage_retention_days)
         async with self.tx() as s:
             return (await s.execute(sa.delete(m.usage_events).where(m.usage_events.c.at < cut))).rowcount
+
+    async def purge_runs(self) -> int:
+        cut = sa.func.now() - sa.func.make_interval(0, 0, 0, self.settings.run_retention_days)
+        async with self.tx() as s:  # run_events go with them (ON DELETE CASCADE)
+            return (await s.execute(sa.delete(m.runs).where(m.runs.c.finished_at < cut))).rowcount
 
     # --- one-shot import of the browser's old data ---------------------------------------------------------------------
     async def import_all(self, raw: dict) -> dict:

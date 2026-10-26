@@ -84,6 +84,11 @@ class Settings(BaseSettings):
     preview_max_concurrent: int = 2  # document previews rendering at once; up to 10 more may wait, the rest get 429
     preview_ttl_seconds: int = 600
     preview_max_entries: int = 20
+    # server-side run queue (needs the database); per browser "client id", used only for fairness
+    max_running_per_client: int = Field(1, ge=1)
+    max_queued_per_client: int = Field(2, ge=0)
+    run_queue_max: int = Field(20, ge=0)  # runs allowed to wait across all clients; more get 429 queue_full
+    run_retention_days: int = Field(7, ge=1)
     contact_email: str = ""  # sent as mailto in the citation-check User-Agent (Crossref/NCBI polite pool)
 
 

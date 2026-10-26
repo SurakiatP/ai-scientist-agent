@@ -460,9 +460,9 @@ async def test_summary(api):
     assert (await api.get("/v1/usage/summary", params={"days": 0})).status_code == 422
 
 
-# --- usage through the real routes -----------------------------------------------------------------------------------------
-async def test_ask_and_analyze_routes_write_usage_rows(env, store, fakes, newdb, tmp_path, fake_complete, monkeypatch):  # noqa: F811
-    from test_analyze import GOOD, analyze
+# --- usage through the real run routes -------------------------------------------------------------------------------------
+async def test_runs_write_usage_rows_and_a_failing_database_never_touches_the_run(env, store, fakes, newdb, tmp_path, fake_complete, monkeypatch):  # noqa: F811
+    from test_analyze import GOOD
     from test_pipeline import FAKE, Q, answer, crossref, paper, strategy
     from scientist.hermes import HermesRuntime
     import sys
@@ -477,32 +477,46 @@ async def test_ask_and_analyze_routes_write_usage_rows(env, store, fakes, newdb,
     fake_complete["strategy"] = strategy("base editing")
     rt = HermesRuntime(get_settings(), command=[sys.executable, FAKE, str(script)])
     app = create_app(runner=rt, client=crossref(), store=store)
+    store.objs["f" * 32] = (b"a,b\n1,2\n", {"content_type": "text/csv", "name": "d.csv"})
+    cid = {"x-client-id": u()}
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
-            assert (await c.post("/v1/async/ask", json={"question": Q, "mode": "deep"})).status_code == 200
-            assert (await c.post("/v1/async/ask", json={"question": Q, "mode": "quick"})).status_code == 200
+            sid = await mk_session(c)
             mem = [{"question": "q", "answer": "a [1]", "references": []}]
-            assert (await c.post("/v1/async/ask", json={"question": Q, "mode": "chat", "memory": mem})).status_code == 200
+            turns = {}
+            for kind, extra in (("deep", {}), ("quick", {}), ("chat", {"memory": mem})):
+                turns[kind] = u()
+                r = await c.post("/v1/runs", json={"session_id": sid, "turn_id": turns[kind], "kind": "ask", "question": Q, "mode": kind, **extra}, headers={"x-client-id": u()})
+                assert r.status_code == 202, r.text
+                await _done(c, r.json()["run"]["id"])
             ask_complete = llm.complete
 
             async def analysis_complete(*a, **k):
                 return llm.LlmResult(text=GOOD, prompt_tokens=1, completion_tokens=1, cached_tokens=0)
             monkeypatch.setattr(llm, "complete", analysis_complete)
-            ev = await analyze(c, store)
+            turns["analysis"] = u()
+            r = await c.post("/v1/runs", json={"session_id": sid, "turn_id": turns["analysis"], "kind": "analyze", "question": "Plot column trend in genome data", "file_id": "f" * 32}, headers=cid)
+            await _done(c, r.json()["run"]["id"])
             monkeypatch.setattr(llm, "complete", ask_complete)
-            assert ev[-1]["type"] == "complete", ev
         await usage.drain()
-        r = sql(newdb, "select mode, ok, papers_found from usage_events order by id")
+        r = sql(newdb, "select mode, ok, papers_found, session_id::text, turn_id::text from usage_events order by id")
         # rows are written by background tasks, so their order is not the request order
-        assert sorted((m, o) for m, o, _ in r) == sorted([("deep", True), ("quick", True), ("chat", True), ("analysis", True)])
-        assert [p for m, _, p in r if m == "deep"] == [1]
-        # a database that fails on every write must not touch the run
-        app.state.db.session = lambda: (_ for _ in ()).throw(psycopg.OperationalError("down"))
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
-            r = await c.post("/v1/async/ask", json={"question": Q, "mode": "quick"})
-        assert r.status_code == 200 and '"complete"' in r.text
-        await usage.drain()
-    await app.state.db.close()
+        assert sorted((m, o, s, t) for m, o, _, s, t in r) == sorted((k, True, sid, t) for k, t in turns.items())
+        assert [p for m, _, p, *_ in r if m == "deep"] == [1]
+        # a database that fails on every write must not raise out of the usage recorder
+        class Down:
+            def session(self):
+                raise psycopg.OperationalError("down")
+        await usage.record(Down(), mode="quick", phases={}, acc=usage.Acc(), ok=True)
+
+
+async def _done(c, rid):
+    for _ in range(300):
+        if (st := (await c.get(f"/v1/runs/{rid}")).json()["status"]) not in ("queued", "running"):
+            assert st == "done", st
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError("run did not finish")
 
 
 # --- final review fixes (I1-I5, M1-M11) --------------------------------------------------------------------------------

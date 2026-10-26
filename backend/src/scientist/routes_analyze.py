@@ -11,7 +11,7 @@ from contextlib import aclosing
 from urllib.parse import quote, unquote
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, field_validator
 
 from scientist import llm, sandbox
@@ -21,7 +21,6 @@ from scientist.guardrail import guard
 from scientist.object_store import ObjectMissing
 from scientist.routes_ask import HEADERS, _sse
 from scientist.routes_files import ID
-from scientist.usage import track
 
 router = APIRouter()
 SYSTEM = (Path(__file__).parent / "prompts/analyze.md").read_text()
@@ -134,7 +133,7 @@ async def _slot(file_id: str, question: str, *, gate, store, settings: Settings,
     """Wait for a sandbox slot (Waiting events), and only then load the file: waiters hold no data."""
     async with aclosing(gate.acquire()) as waits:
         async for position in waits:
-            yield Waiting(position=position)
+            yield Waiting(position=position, eta_seconds=getattr(gate, "eta", lambda _: None)(position))
     try:
         try:
             data, _ = await store.get(file_id)
@@ -149,17 +148,16 @@ async def _slot(file_id: str, question: str, *, gate, store, settings: Settings,
         gate.release()
 
 
-@router.post("/v1/async/analyze")
-async def analyze_route(body: AnalyzeRequest, request: Request) -> StreamingResponse:
-    st = request.app.state
+async def prepare(st, file_id: str) -> tuple[object, str, str]:
+    """Checks shared by the direct route and POST /v1/runs: (object store, file name, extension) or an HTTP error."""
     if not st.settings.sandbox_enabled:
         raise HTTPException(503, "analysis is disabled on this deployment")
     if (store := st.store) is None:
         raise HTTPException(503, "file storage unavailable")
-    if not ID.fullmatch(body.file_id):
+    if not ID.fullmatch(file_id):
         raise HTTPException(404, "file not found")
     try:
-        meta = await store.head(body.file_id)
+        meta = await store.head(file_id)
     except ObjectMissing:
         raise HTTPException(404, "file not found")
     except Exception:
@@ -168,12 +166,19 @@ async def analyze_route(body: AnalyzeRequest, request: Request) -> StreamingResp
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if ext not in EXTS:
         raise HTTPException(422, f"analysis supports {', '.join(sorted(EXTS))} files")
+    return store, name, ext
+
+
+@router.post("/v1/async/analyze")
+async def analyze_route(body: AnalyzeRequest, request: Request) -> StreamingResponse:
+    st = request.app.state
+    if st.db is not None:
+        return JSONResponse({"detail": "use POST /v1/runs", "code": "use_runs"}, status_code=409)  # runs belong to the server
+    store, name, ext = await prepare(st, body.file_id)
     gate = st.analyze_gate
     if gate.free == 0 and len(gate.queue) >= st.settings.analyze_max_queue:  # before any storage read or model call
         raise HTTPException(429, "too many analyses queued; try again shortly")
     events = _slot(body.file_id, body.question, gate=gate, store=store, settings=st.settings, name=name, ext=ext)
-    if st.db is not None:
-        events = track(events, mode="analysis", db=st.db)
     return StreamingResponse(_sse(events, st.settings.sse_ping_seconds), media_type="text/event-stream",
                              headers=HEADERS)
 

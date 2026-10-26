@@ -29,7 +29,7 @@ turns = sa.Table(
     sa.Column("progress", pg.JSONB), sa.Column("plan", pg.JSONB), sa.Column("analysis", pg.JSONB),
     sa.Column("refused", sa.Text), sa.Column("error", sa.Text),
     _ts("created_at", nullable=False, server_default=NOW), _ts("updated_at", nullable=False, server_default=NOW),
-    sa.Column("version", sa.Integer, nullable=False, server_default="1"))
+    sa.Column("version", sa.Integer, nullable=False, server_default="1"), sa.Column("run_id", UUID))
 files = sa.Table(
     "files", md, sa.Column("id", sa.CHAR(32), primary_key=True), sa.Column("project_id", UUID, sa.ForeignKey("projects.id", ondelete="SET NULL")),
     sa.Column("name", sa.Text, nullable=False), sa.Column("size", sa.BigInteger, nullable=False, server_default="0"),
@@ -45,3 +45,13 @@ usage_events = sa.Table(
 turn_tombstones = sa.Table(
     "turn_tombstones", md, sa.Column("id", UUID, primary_key=True), sa.Column("session_id", UUID, nullable=False),
     _ts("created_at", nullable=False, server_default=NOW))
+
+runs = sa.Table(
+    "runs", md, sa.Column("id", UUID, primary_key=True), sa.Column("client_id", sa.Text, nullable=False),
+    sa.Column("session_id", UUID), sa.Column("turn_id", UUID), sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("mode", sa.Text), sa.Column("request", pg.JSONB), sa.Column("status", sa.Text, nullable=False),
+    _ts("created_at", nullable=False, server_default=NOW), _ts("started_at"), _ts("finished_at"), sa.Column("error", sa.Text))
+run_events = sa.Table(
+    "run_events", md, sa.Column("run_id", UUID, sa.ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True),
+    sa.Column("seq", sa.Integer, primary_key=True), _ts("at", nullable=False, server_default=NOW),
+    sa.Column("event", pg.JSONB, nullable=False))
