@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type Turn } from "@/lib/chat";
-import { libraryName, useExport } from "@/lib/exportReport";
+import { docFromSections, libraryName, useExport } from "@/lib/exportReport";
 import { useFilesStore } from "@/lib/files";
 import { usePrefs } from "@/lib/prefs";
 import { strings } from "@/lib/strings";
@@ -58,7 +58,7 @@ describe("ReportForm save", () => {
     flow(() => upJson(), () => new Response("x"));
     fetchMock.mockImplementationOnce(() => new Promise(() => {})); // preview or export, whichever comes first stays pending
     render(<ReportForm turn={turn} onClose={() => {}} />);
-    await act(async () => { void useExport.getState().save({ style: "standard", title: "T", subtitle: "", refs: false, lang: "en", sections: [{ heading: "h", text: "b" }] }, "pdf", turn); });
+    await act(async () => { void useExport.getState().save({ style: "standard", title: "T", subtitle: "", refs: false, lang: "en", lead: "L", doc: docFromSections([{ heading: "h", text: "b" }]) }, "pdf", turn); });
     expect(screen.getByRole("button", { name: t.fSaveDocx })).toBeDisabled();
   });
   it.each([[422, "fErr422"], [503, "fErr503"]] as const)("export %i leaves the library untouched", async (status, key) => {
@@ -84,7 +84,48 @@ describe("ReportForm save", () => {
     await settle(); expect(screen.getByText(t.fSaveFail, { exact: false })).toBeInTheDocument();
     expect(useFilesStore.getState().files).toEqual([]);
   });
+  it("disables saving while the title is empty and says why", async () => {
+    flow(() => upJson());
+    render(<ReportForm turn={turn} onClose={() => {}} />);
+    fireEvent.change(screen.getByRole("textbox", { name: t.fDocTitle }), { target: { value: " " } });
+    expect(screen.getByRole("button", { name: t.fSavePdf })).toBeDisabled();
+    expect(screen.getByRole("button", { name: t.fSaveDocx })).toBeDisabled();
+    expect(screen.getByText(t.fNeedTitle)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: t.fDocTitle }), { target: { value: "T" } });
+    expect(screen.getByRole("button", { name: t.fSavePdf })).toBeEnabled();
+  });
+  it("shows the answer on the page with a toolbar; preview requests start only after the toggle", async () => {
+    flow(() => upJson());
+    render(<ReportForm turn={turn} onClose={() => {}} />);
+    expect(screen.getByRole("toolbar", { name: t.tbBar })).toBeInTheDocument();
+    for (const k of ["tbBold", "tbItalic", "tbBullets", "tbNumbered", "tbTable", "tbUndo", "tbRedo"] as const) expect(screen.getByRole("button", { name: t[k] })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("textbox", { name: t.fBody })).toHaveTextContent("Body text."));
+    await settle();
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes("/preview"))).toHaveLength(0);
+    const toggle = screen.getByRole("button", { name: t.pvShow });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await settle();
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes("/preview")).length).toBeGreaterThan(0);
+  });
+  it("asks before discarding edits, not when nothing changed", async () => {
+    const onClose = vi.fn();
+    render(<ReportForm turn={turn} onClose={onClose} />);
+    fireEvent.click(screen.getByRole("button", { name: t.fCancel }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    cleanup();
+    onClose.mockClear();
+    render(<ReportForm turn={turn} onClose={onClose} />);
+    fireEvent.change(screen.getByRole("textbox", { name: t.fSubtitle }), { target: { value: "changed" } });
+    fireEvent.click(screen.getByRole("button", { name: t.fCancel }));
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: t.fKeepEditing }));
+    fireEvent.click(await screen.findByRole("button", { name: t.fCancel }));
+    fireEvent.click(await screen.findByRole("button", { name: t.fDiscard }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
   it("has th/en parity for new keys", () => {
-    for (const k of ["fSavePdf", "fSaveDocx", "fSaveNote", "fSaved", "fOpenFiles", "fSaveFail"] as const) expect(strings.th[k]).toBeTruthy();
+    for (const k of ["fSavePdf", "fSaveDocx", "fSaveNote", "fSaved", "fOpenFiles", "fSaveFail", "pvShow", "tbBar", "tbBold", "tbTable", "fBody", "fHeadingLong", "fSettings", "fDiscard"] as const) expect(strings.th[k]).toBeTruthy();
   });
 });
