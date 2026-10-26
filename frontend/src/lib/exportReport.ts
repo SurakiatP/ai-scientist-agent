@@ -216,6 +216,13 @@ export function sectionsOf(d: Pick<Draft, "doc" | "lead">): Section[] {
   return out;
 }
 
+// True when blocks sit above the first heading: the file then gets an extra first section (numbered 1 in official style).
+export function hasLead(d: Pick<Draft, "doc">): boolean {
+  const c = d.doc.content ?? [];
+  const i = c.findIndex((n) => n.type === "heading");
+  return (i === -1 ? c : c.slice(0, i)).some((n) => blocksOfNode(n).length > 0);
+}
+
 export function initialDraft(turn: Turn, lang: Lang, t: Strings): Draft {
   return { style: "standard", font: defaultFont("standard"), title: docTitle(turn), subtitle: turn.answer ? turn.question.slice(0, LIM.subtitle) : "", refs: true, lang, lead: t.reportAnswerSection, doc: docFromSections(draftSections(turn.answer?.content ?? "", t.reportAnswerSection)) };
 }

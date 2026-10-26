@@ -80,6 +80,7 @@ async def test_every_font(font, monkeypatch):
     d = await post(body(format="docx", font=font), monkeypatch)
     xml = zipfile.ZipFile(io.BytesIO(d.content)).read("word/document.xml").decode()
     assert f'w:ascii="{report_render.FONTS_BY_ID[font][1]}"' in xml and f'w:cs="{report_render.FONTS_BY_ID[font][1]}"' in xml
+    assert f'w:eastAsia="{report_render.FONTS_BY_ID[font][1]}"' in xml
 
 
 async def test_unknown_font(monkeypatch):

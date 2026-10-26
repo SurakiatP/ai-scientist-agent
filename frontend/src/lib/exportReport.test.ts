@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Turn } from "./chat";
-import { blocksOf, docFromSections, draftIssue, draftSections, errorText, fileNameOf, initialDraft, requestExport, sectionsOf, toPayload, refLines, FONTS, defaultFont, LIM } from "./exportReport";
+import { blocksOf, docFromSections, draftIssue, draftSections, errorText, fileNameOf, initialDraft, requestExport, sectionsOf, toPayload, refLines, hasLead, FONTS, defaultFont, LIM } from "./exportReport";
 import { strings } from "./strings";
 
 const turn = { id: "t", question: "Q?", createdAt: 0, status: "done", progress: {} as never, answer: { content: "intro\n\n## A\n\np1\n\np2\n\n```\n# not heading\n```\n\n### B\n\nx", references: [{ id: "1", status: "verified", paper: { title: "T", authors: ["a"], year: 2020, doi: "doi:10.1000/x", pmid: null, url: "javascript:1" } }] } } as Turn;
@@ -146,5 +146,16 @@ describe("refLines", () => {
     expect(refLines([{ ...R, year: 2020 }], "en")).toEqual(["[1] (2020). T. (could not be checked)"]);
     expect(refLines([{ ...R, authors: ["A", "B"], year: 2020, doi: "10/x", url: "https://u", status: "verified" }], "th")).toEqual(["[1] A, B (2020). T. DOI: 10/x https://u (พบตัวระบุอ้างอิง)"]);
     expect(refLines([{ ...R, authors: ["A"], url: "javascript:x", status: "unverified" }], "th")).toEqual(["[1] A. T. (ยังไม่ยืนยัน)"]);
+  });
+});
+
+describe("hasLead", () => {
+  const h = { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "H" }] };
+  const p = (text?: string) => ({ type: "paragraph", ...(text ? { content: [{ type: "text", text }] } : {}) });
+  it("is true only when real content sits above the first heading", () => {
+    expect(hasLead({ doc: { type: "doc", content: [h, p("x")] } })).toBe(false);
+    expect(hasLead({ doc: { type: "doc", content: [p(), h, p("x")] } })).toBe(false);
+    expect(hasLead({ doc: { type: "doc", content: [p("lead"), h] } })).toBe(true);
+    expect(hasLead({ doc: { type: "doc", content: [p("only")] } })).toBe(true);
   });
 });

@@ -18,7 +18,7 @@ const W = 21 * 37.8; // A4 width in px
 const field = { display: "block", width: "100%", border: 0, outline: 0, bgcolor: "transparent", color: "inherit", font: "inherit", textAlign: "center", resize: "none", p: 0, m: 0, overflow: "hidden", "&::placeholder": { color: "#6b6b6b", opacity: 1 }, "&:focus-visible": { outline: "2px solid #1565c0", outlineOffset: 2, borderRadius: "2px" } } as const;
 
 // The A4 page. Typing happens on it; margins and sizes follow the chosen style like the exported file.
-export function ReportSheet({ editor, wide, style, font, lang, refs, title, subtitle, onTitle, onSubtitle }: { editor: Editor | null; wide: boolean; style: ReportStyle; font: FontId; lang: Lang; refs: RefOut[] | null; title: string; subtitle: string; onTitle: (v: string) => void; onSubtitle: (v: string) => void }) {
+export function ReportSheet({ editor, wide, style, font, lang, refs, title, subtitle, onTitle, onSubtitle, lead = false }: { lead?: boolean; editor: Editor | null; wide: boolean; style: ReportStyle; font: FontId; lang: Lang; refs: RefOut[] | null; title: string; subtitle: string; onTitle: (v: string) => void; onSubtitle: (v: string) => void }) {
   const t = useT();
   const a4 = SHEET[style];
   // Below md the page reflows at a readable size (16px body, same proportions) instead of shrinking the A4 sheet.
@@ -41,7 +41,7 @@ export function ReportSheet({ editor, wide, style, font, lang, refs, title, subt
           "& .ProseMirror": {
             outline: 0, minHeight: 360, overflowWrap: "anywhere",
             "& p": { m: `0 0 ${pt(s.body * 0.6)}` },
-            ...(style === "official" && { counterReset: "sec", "& h2::before": { counterIncrement: "sec", content: 'counter(sec) ". "' } }), // numbers are shown, never stored in the document
+            ...(style === "official" && { counterReset: lead ? "sec 1" : "sec", "& h2::before": { counterIncrement: "sec", content: 'counter(sec) ". "' } }), // numbers are shown, never stored in the document
             "& h2": { fontSize: pt(s.head), fontWeight: 700, lineHeight: 1.35, m: `${pt(s.head * 0.9)} 0 ${pt(s.head * 0.35)}`, textWrap: "balance" },
             "& ul, & ol": { m: `0 0 ${pt(s.body * 0.6)}`, pl: "1.6em" },
             "& li > p": { m: 0 },

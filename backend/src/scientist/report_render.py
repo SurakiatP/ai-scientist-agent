@@ -198,6 +198,7 @@ def _run(p, text, font, size, bold=False, italic=False, code=False):
     for a in ("w:ascii", "w:hAnsi"):
         f.set(qn(a), "Courier New" if code else font)
     f.set(qn("w:cs"), font)  # Thai (complex script) always in the document font
+    f.set(qn("w:eastAsia"), font)
     for tag, val in (("w:szCs", str(size * 2)),) + ((("w:bCs", None),) if bold else ()) + ((("w:iCs", None),) if italic else ()):
         e = OxmlElement(tag)
         if val:
