@@ -158,13 +158,16 @@ class HermesRuntime(BranchRunner):
             await self._stop(proc)
 
     async def _stop(self, proc: asyncio.subprocess.Process) -> None:
-        if proc.returncode is None:
-            proc.terminate()  # bridge removes its sandbox container on SIGTERM
-            try:
-                await asyncio.wait_for(proc.wait(), 15)
-            except TimeoutError:
-                await kill_and_reap(proc)
-        self.procs.discard(proc)
+        # finally: a second cancel during the wait (seen on Linux) must not leave the process tracked; it already has SIGTERM
+        try:
+            if proc.returncode is None:
+                proc.terminate()  # bridge removes its sandbox container on SIGTERM
+                try:
+                    await asyncio.wait_for(proc.wait(), 15)
+                except TimeoutError:
+                    await kill_and_reap(proc)
+        finally:
+            self.procs.discard(proc)
 
     async def close(self) -> None:
         await asyncio.gather(*(self._stop(p) for p in list(self.procs)))

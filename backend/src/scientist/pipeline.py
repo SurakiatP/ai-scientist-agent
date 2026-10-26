@@ -130,7 +130,8 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
 
     async def run_all() -> None:
         try:
-            await asyncio.gather(*(branch(s) for s in plan.searches))
+            # return_exceptions: on cancel, wait for every branch to stop its bridge (without it gather ends at the first one)
+            await asyncio.gather(*(branch(s) for s in plan.searches), return_exceptions=True)
         finally:
             queue.put_nowait(DONE)
 

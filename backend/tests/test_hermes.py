@@ -180,3 +180,18 @@ def test_prepare_writes_only_to_runtime_dir(settings, tmp_path, monkeypatch):
     env = HermesRuntime(s)._prepare()
     assert (tmp_path / "rw/hermes-home/config.yaml").is_file() and not (cache / "hermes-home").exists()
     assert env["HERMES_HOME"] == str(tmp_path / "rw/hermes-home")
+
+
+async def test_stop_cancelled_twice_still_untracks_the_process(settings, tmp_path):
+    rt = runtime(settings, tmp_path, {})
+    proc = await asyncio.create_subprocess_exec(sys.executable, "-c", "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('ready', flush=True); time.sleep(30)", stdout=asyncio.subprocess.PIPE)
+    await proc.stdout.readline()  # SIGTERM is ignored from here on, so the graceful wait really waits
+    rt.procs.add(proc)
+    stop = asyncio.create_task(rt._stop(proc))
+    await asyncio.sleep(0.2)  # inside the graceful wait
+    stop.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await stop
+    assert proc not in rt.procs
+    proc.kill()
+    await proc.wait()
