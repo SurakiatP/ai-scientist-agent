@@ -118,7 +118,9 @@ describe("importOld", () => {
 });
 
 describe("trash page", () => {
-  const trash = { sessions: [{ id: U(1), title: "Old chat", deleted_at: new Date().toISOString() }], projects: [{ id: U(2), name: "Lab", deleted_at: new Date().toISOString() }], files: [] };
+  // fixed order: the list sorts newest first, so "Old chat" (deleted later) is always row 0
+  const now = Date.now();
+  const trash = { sessions: [{ id: U(1), title: "Old chat", deleted_at: new Date(now).toISOString() }], projects: [{ id: U(2), name: "Lab", deleted_at: new Date(now - 60_000).toISOString() }], files: [] };
   const wire = (extra?: (u: string, m: string) => Response | undefined) => fetchMock.mockImplementation(async (u: string, init?: RequestInit) => {
     const m = init?.method ?? "GET", url = String(u);
     return extra?.(url, m) ?? (url.includes("/store/trash") && m === "GET" ? reply(trash) : url.includes("/snapshot") ? reply({ projects: [], sessions: [], files: [] }) : reply({}));
