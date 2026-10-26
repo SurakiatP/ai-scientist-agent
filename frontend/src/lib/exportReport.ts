@@ -216,7 +216,7 @@ export function draftIssue(d: Draft): "title" | "limits" | "heading" | "table" |
   if (ss.some((s) => s.heading.length > LIM.heading)) return "heading";
   if (ss.length > LIM.sections || ss.some((s) => s.blocks.length > LIM.paras)) return "limits";
   if (ss.some((s) => s.blocks.some((b) => (b.type === "paragraph" && b.runs.length > LIM.runs) || ((b.type === "bullets" || b.type === "numbered") && b.items.some((i) => i.length > LIM.runs))))) return "limits";
-  if (d.title.length + ss.reduce((n, s) => n + s.heading.length + s.blocks.reduce((m, b) => m + blockChars(b), 0), 0) > MAX_CHARS) return "limits";
+  if (d.title.length + ss.reduce((n, s) => n + (s.heading.trim() || " ").length + s.blocks.reduce((m, b) => m + blockChars(b), 0), 0) > MAX_CHARS) return "limits";
   return ss.some((s) => tableIssue(s.blocks)) ? "table" : null;
 }
 

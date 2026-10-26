@@ -110,6 +110,10 @@ describe("editor schema and limits", () => {
     const big = (total: number) => ({ ...d0(), title: "T", doc: { type: "doc", content: Array.from({ length: total / 5000 }, () => para(5000)).reduce<object[]>((a, p, i) => [...a, ...(i % 40 === 0 ? [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "h" }] }] : []), p], []) } });
     expect(draftIssue(big(195000))).toBeNull();
     expect(draftIssue({ ...big(200000), title: "TT" })).toBe("limits");
+    // empty headings are sent as " " and the server counts them
+    const emptyHead = { type: "heading", attrs: { level: 2 }, content: [] };
+    const tight = { ...d0(), title: "T", doc: { type: "doc", content: [emptyHead, ...Array.from({ length: 39 }, () => para(5000)), emptyHead, para(4999)] } };
+    expect(draftIssue(tight)).toBe("limits");
   });
   it("keeps text of a table inside a list item; hard breaks become spaces; long heading has its own issue", () => {
     const cellP = (t: string) => ({ type: "paragraph", content: [{ type: "text", text: t }] });

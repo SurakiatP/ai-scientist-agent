@@ -26,7 +26,7 @@ const hidden = srOnly;
 export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void }) {
   const t = useT();
   const lang = usePrefs((s) => s.lang);
-  const wide = useMediaQuery(useTheme().breakpoints.up("md"));
+  const wide = useMediaQuery(useTheme().breakpoints.up("md"), { noSsr: true }); // dialog mounts only in the browser
   const [base, setBase] = useState<Draft>(() => initialDraft(turn, lang, t));
   const { busy, error, saved, upErr, save } = useExport();
   const goFiles = useGoFiles();
@@ -37,14 +37,14 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   const d = useMemo<Draft>(() => ({ ...base, doc }), [base, doc]);
   const issue = useMemo(() => draftIssue(d), [d]);
   const [pv, setPv] = useState(false);
-  const [init] = useState(base);
+  const [clean, setClean] = useState({ ver: 0, base }); // last saved (or opened) state
   const [ask, setAsk] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const dirty = ver > 0 || base !== init;
+  const dirty = ver !== clean.ver || base !== clean.base;
   const leave = () => (dirty ? setAsk(true) : onClose());
   const preview = usePreview(useMemo(() => (pv && !issue ? toPayload(d, "pdf", turn) : null), [pv, d, issue, turn]));
   const set = (p: Partial<Draft>) => setBase((x) => ({ ...x, ...p }));
-  const make = (f: Format) => { if (!issue) void save(d, f, turn); };
+  const make = async (f: Format) => { if (issue) return; const at = { ver, base }; await save(d, f, turn); if (useExport.getState().saved) setClean(at); };
   const fields = (
     <>
       <TextField select size="small" label={t.fLang} value={base.lang} onChange={(e) => set({ lang: e.target.value as Lang })} sx={{ minWidth: 140 }}>
