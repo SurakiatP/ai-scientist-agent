@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import type { JSONContent } from "@tiptap/react";
 import { describe, expect, it } from "vitest";
+import { runsOf } from "./exportReport";
 import { applySegments, cachedTranslation, hashOf, runsFromMd, segmentsOf, translateSegments } from "./translateReport";
 
 const t = (text: string, ...marks: string[]): JSONContent => ({ type: "text", text, ...(marks.length ? { marks: marks.map((type) => ({ type })) } : {}) });
@@ -90,5 +91,38 @@ describe("session cache", () => {
     sessionStorage.setItem("scientist-tr-v1", JSON.stringify([["junk", 3], [`th:${hashOf(["a"])}`, ["ก"]]]));
     expect(cachedTranslation("th", ["a"])).toEqual(["ก"]);
     await expect(translateSegments("th", ["a"], new AbortController().signal)).resolves.toEqual(["ก"]);
+  });
+});
+
+describe("run sequences", () => {
+  type R = { text: string; bold?: boolean; italic?: boolean; code?: boolean };
+  const merge = (rs: R[]) => rs.reduce<R[]>((o, r) => { const l = o.at(-1); if (l && !!l.bold === !!r.bold && !!l.italic === !!r.italic && !!l.code === !!r.code) l.text += r.text; else o.push({ ...r }); return o; }, []);
+  const node = (r: R): JSONContent => ({ type: "text", text: r.text, marks: [r.bold && "bold", r.italic && "italic", r.code && "code"].filter(Boolean).map((type) => ({ type: type as string })) });
+  const trip = (rs: R[]) => {
+    const d: JSONContent = { type: "doc", content: [{ type: "paragraph", content: rs.map(node) }] };
+    const [, , seg] = segmentsOf(d, "", "");
+    return { seg, back: runsOf(applySegments(d, ["", "", seg]).doc.content![0].content) };
+  };
+  const F = { plain: {}, bold: { bold: true }, italic: { italic: true }, both: { bold: true, italic: true } };
+  const names = Object.keys(F) as (keyof typeof F)[];
+  it.each(names.flatMap((a) => names.filter((b) => b !== a).map((b) => [a, b] as const)))("%s then %s, letters touching", (a, b) => {
+    const rs: R[] = [{ text: "ก", ...F[a] }, { text: "ข", ...F[b] }];
+    expect(trip(rs).back).toEqual(rs.map((r) => ({ text: r.text, ...(r.bold && { bold: true }), ...(r.italic && { italic: true }) })));
+  });
+  it("matches the spec examples", () => {
+    expect(trip([{ text: "ก", italic: true }, { text: "ข", bold: true, italic: true }]).seg).toBe("*ก**ข***");
+    expect(trip([{ text: "ก", bold: true, italic: true }, { text: "ข", italic: true }]).seg).toBe("***ก**ข*");
+  });
+  it("random sequences round trip (seeded)", () => {
+    let x = 12345;
+    const rnd = (n: number) => { x = (Math.imul(x, 1103515245) + 12345) & 0x7fffffff; return x % n; };
+    const alpha = ["ก", "ข", "a", " ", "*", "`", "\\", "\n", "x*y", "``"];
+    for (let k = 0; k < 400; k++) {
+      const rs: R[] = Array.from({ length: 1 + rnd(6) }, () => ({ text: Array.from({ length: 1 + rnd(4) }, () => alpha[rnd(alpha.length)]).join(""), ...(rnd(2) && { bold: true }), ...(rnd(2) && { italic: true }), ...(rnd(4) === 0 && { code: true }) }));
+      // a line break is a node of its own with no marks, so compare per character and ignore the format of "\n"
+      const chars = (l: R[]) => l.flatMap((r) => [...r.text].map((c) => c + (c === "\n" ? "" : `${r.bold ? "b" : ""}${r.italic ? "i" : ""}${r.code ? "c" : ""}`)));
+      const { back, seg } = trip(rs);
+      expect(chars(back), JSON.stringify(rs) + " -> " + seg).toEqual(chars(merge(rs)));
+    }
   });
 });

@@ -9,19 +9,21 @@ const TEXTBLOCK = new Set(["paragraph", "heading"]);
 
 // Inline markdown subset shared with the model: \x escape, `code`, ** bold, * italic, \n hard break. Nothing else is special.
 const escape = (s: string) => s.replace(/([\\*`])/g, "\\$1");
-function mdRun(r: Run): string {
-  return r.text.split("\n").map((line) => {
-    const [, a, body, b] = /^(\s*)([\s\S]*?)(\s*)$/.exec(line)!;
-    if (!body) return line;
-    let x: string;
-    if (r.code) { const fence = "`".repeat(Math.max(0, ...(body.match(/`+/g) ?? []).map((m) => m.length)) + 1); x = body.startsWith("`") || body.endsWith("`") ? `${fence} ${body} ${fence}` : fence + body + fence; }
-    else x = escape(body);
-    if (r.italic) x = `*${x}*`;
-    if (r.bold) x = `**${x}**`;
-    return a + x + b;
-  }).join("\n");
+function codeSpan(body: string): string {
+  const fence = "`".repeat(Math.max(0, ...(body.match(/`+/g) ?? []).map((m) => m.length)) + 1);
+  const pad = body.startsWith("`") || body.endsWith("`") || (body.startsWith(" ") && body.endsWith(" ") && !!body.trim());
+  return pad ? `${fence} ${body} ${fence}` : fence + body + fence;
 }
-const toMd = (n: JSONContent) => runsOf(n.content).map(mdRun).join("");
+// ** and * only toggle, so between neighbouring runs just the marks that change are written (3 stars = both), and the end closes what is open.
+function toMd(n: JSONContent): string {
+  let b = false, i = false, out = "";
+  for (const r of runsOf(n.content)) {
+    out += "*".repeat((!!r.bold !== b ? 2 : 0) + (!!r.italic !== i ? 1 : 0));
+    b = !!r.bold; i = !!r.italic;
+    out += r.code ? codeSpan(r.text) : escape(r.text);
+  }
+  return out + "*".repeat((b ? 2 : 0) + (i ? 1 : 0));
+}
 
 // Not CommonMark: Thai has no spaces, so ** and * toggle wherever they stand. A marker with no partner is plain text.
 type Tok = { k: "t" | "c" | "B" | "I"; v: string };
