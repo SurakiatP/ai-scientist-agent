@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { landing } from "@/lib/strings";
 import { usePrefs } from "@/lib/prefs";
@@ -58,19 +58,28 @@ describe("landing page", () => {
 
   it("language toggle switches prefs and the page", () => {
     render(<Home />);
-    fireEvent.click(screen.getByRole("button", { name: landing.th.langLabel }));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "English" }));
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: landing.th.langLabel })).getByRole("radio", { name: "English" }));
     expect(usePrefs.getState().lang).toBe("en");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(landing.en.titleA);
   });
 
-  it("theme menu sets light, dark or system via setMode", () => {
-    render(<Home />);
-    for (const [label, v] of [[landing.th.themeLight, "light"], [landing.th.themeDark, "dark"], [landing.th.themeSystem, "system"]]) {
+  it("the theme button is one push: each press goes to the next of light, dark, system", () => {
+    const { rerender } = render(<Home />);
+    for (const [from, to] of [["light", "dark"], ["dark", "system"], ["system", "light"]]) {
+      cs.mode = from; rerender(<Home />);
       fireEvent.click(screen.getByRole("button", { name: new RegExp(landing.th.themeLabel) }));
-      fireEvent.click(screen.getByRole("menuitemradio", { name: label }));
-      expect(cs.setMode).toHaveBeenLastCalledWith(v);
+      expect(cs.setMode).toHaveBeenLastCalledWith(to);
     }
+    expect(screen.queryByRole("menu")).toBeNull(); // nothing opens
+  });
+
+  it("the header links to separate pages, with a guide marked as in development, and has no login", () => {
+    render(<Home />);
+    const nav = screen.getByRole("navigation", { name: landing.th.navLabel });
+    expect(within(nav).getByRole("link", { name: landing.th.navHow })).toHaveAttribute("href", "/how-it-works");
+    expect(within(nav).getByRole("link", { name: landing.th.navCheck })).toHaveAttribute("href", "/faq");
+    expect(within(nav).getByRole("link", { name: new RegExp(landing.th.navDocs) })).toHaveAttribute("href", "/docs");
+    expect(within(nav).queryByText(/เข้าสู่ระบบ|log ?in|sign ?up/i)).toBeNull();
   });
 
   it("steps and section titles are h2s; the example label is not a heading; nav anchors exist", () => {

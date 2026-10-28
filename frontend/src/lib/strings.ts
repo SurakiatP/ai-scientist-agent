@@ -1046,6 +1046,14 @@ export const landing = {
     checkBody: "ป้ายว่าตรวจแล้วยืนยันเพียงว่า DOI, PMID หรือ arXiv ID นั้นมีอยู่จริง ไม่ได้ยืนยันว่างานนั้นสนับสนุนประโยคที่อ้างถึง โมเดลยังผิดพลาดได้ ควรเปิดอ่านต้นฉบับก่อนนำไปใช้",
     scope: "ตอบเฉพาะคำถามวิจัยทางวิทยาศาสตร์ ไม่ต้องเข้าสู่ระบบ ประวัติเก็บในเบราว์เซอร์นี้ แต่คำถามถูกส่งไปยังเซิร์ฟเวอร์และผู้ให้บริการโมเดลเพื่อสร้างคำตอบ",
     footer: "พร้อมแล้ว เริ่มจากคำถามแรกของคุณ",
+    navDocs: "คู่มือ",
+    soon: "กำลังพัฒนา",
+    home: "หน้าแรก",
+    other: "ผลิตภัณฑ์อื่น",
+    prev: "ก่อนหน้า",
+    next: "ถัดไป",
+    stepsHead: "ทำงานอย่างไร",
+    goodHead: "ควรรู้",
     langSwitch: "Switch to English",
     themeLabel: "ธีม",
     themeLight: "สว่าง",
@@ -1089,6 +1097,14 @@ export const landing = {
     checkBody: "A checked reference only confirms that the DOI, PMID or arXiv ID exists. It does not confirm the paper supports the sentence citing it. The model can still be wrong, so read the source before you rely on it.",
     scope: "Only scientific research questions are answered. No login. History stays in this browser, but your question is sent to the server and the model provider to produce the answer.",
     footer: "Ready when you are. Start with your first question.",
+    navDocs: "Guide",
+    soon: "In development",
+    home: "Home",
+    other: "More of the product",
+    prev: "Previous",
+    next: "Next",
+    stepsHead: "How it works",
+    goodHead: "Good to know",
     langSwitch: "เปลี่ยนเป็นภาษาไทย",
     themeLabel: "Theme",
     themeLight: "Light",
@@ -1098,6 +1114,171 @@ export const landing = {
     navLabel: "Main",
   },
 } as const;
+
+// Text of the public pages behind the landing header menu (features, how it works, FAQ, guide). Only what the app does today.
+type Block = { t: string; d: string };
+type Feature = { tab: string; blurb: string; title: string; lead: string; steps: readonly Block[]; good: readonly string[]; note: string };
+type Info = { title: string; lead: string; sections: readonly { head: string; items: readonly Block[] }[]; note: string };
+export const featureSlugs = ["chat", "deep-research", "references"] as const;
+export type FeatureSlug = (typeof featureSlugs)[number];
+export const sitePages: Record<"th" | "en", { features: Record<FeatureSlug, Feature>; how: Info; faq: Info; docs: { title: string; lead: string; body: string; links: string } }> = {
+  th: {
+    features: {
+      chat: {
+        tab: "สนทนา", blurb: "ถามเป็นภาษาธรรมดา ดูและแก้แผนก่อนค้น",
+        title: "ถามเป็นภาษาธรรมดา แล้วดูและแก้แผนก่อนเริ่มค้น",
+        lead: "พิมพ์คำถามวิจัยเป็นภาษาไทยหรืออังกฤษ โหมดค้นคว้าเชิงลึกจะเสนอแผนคำค้นให้ตรวจและแก้ก่อนเริ่มค้นจริง",
+        steps: [
+          { t: "พิมพ์คำถาม", d: "เป็นภาษาไทยหรืออังกฤษ กด Enter เพื่อส่ง และ Shift+Enter เพื่อขึ้นบรรทัดใหม่" },
+          { t: "เลือกโหมด", d: "ค้นคว้าเชิงลึก ค้นหาทั่วไป หรือตอบคำถาม แต่ละโหมดทำงานต่างกัน" },
+          { t: "ตรวจแผนก่อนค้น", d: "ในโหมดค้นคว้าเชิงลึก แอปรอให้คุณตรวจและแก้แผนคำค้นก่อนเริ่มจริง ปิดขั้นตอนนี้ได้ในการตั้งค่า" },
+          { t: "ถามต่อในแชตเดิม", d: "คำถามถัดไปอยู่ในแชตเดียวกัน เปิดดูหลักฐานหรือสร้างรายงานสรุปจากคำตอบได้" },
+        ],
+        good: ["ตอบเฉพาะคำถามวิจัยทางวิทยาศาสตร์", "ไม่ต้องเข้าสู่ระบบ"],
+        note: "คุณเห็นแผนและความคืบหน้าก่อนที่คำตอบจะมา",
+      },
+      "deep-research": {
+        tab: "ค้นคว้าเชิงลึก", blurb: "วางแผนคำค้น ค้นจากแหล่งวิชาการ",
+        title: "ค้นจากแหล่งวิชาการ และเห็นความคืบหน้าระหว่างทำงาน",
+        lead: "เอเจนต์วางแผนคำค้นและค้นจากแหล่งวิชาการ งานที่พบทยอยขึ้นให้เห็นระหว่างทำงาน",
+        steps: [
+          { t: "วางแผน", d: "เอเจนต์วางแผนคำค้นได้สูงสุด 5 คำ" },
+          { t: "ค้นหา", d: "ค้นจากแหล่งวิชาการ งานที่พบทยอยขึ้นให้เห็นทีละรายการ" },
+          { t: "เขียน", d: "เอเจนต์ถูกสั่งให้เขียนคำตอบจากงานที่ค้นเจอเท่านั้น" },
+          { t: "ตรวจ", d: "ตรวจรหัสอ้างอิงของคำตอบก่อนแสดงผล" },
+        ],
+        good: ["หยุดงานได้ระหว่างที่ทำอยู่", "เมื่อมีผู้ใช้หลายคน งานเข้าคิว และเห็นลำดับคิวกับเวลารอโดยประมาณ"],
+        note: "ถูกสั่งให้เขียนจากงานที่พบ แต่ไม่ได้รับประกันว่าทุกประโยคถูกต้อง",
+      },
+      references: {
+        tab: "อ้างอิงตรวจสอบได้", blurb: "ตรวจว่า DOI, PMID, arXiv ID มีอยู่จริง",
+        title: "อ้างอิงที่ตรวจได้ว่ารหัสมีอยู่จริง",
+        lead: "อ้างอิงที่มี DOI, PMID หรือ arXiv ID จะถูกตรวจว่าเลขนั้นมีอยู่จริง ส่วนที่ยืนยันไม่ได้มีป้ายเตือน",
+        steps: [
+          { t: "ตรวจรหัสอ้างอิง", d: "รายการที่มี DOI, PMID หรือ arXiv ID ถูกตรวจกับ Crossref, PubMed หรือ arXiv" },
+          { t: "ป้ายเตือน", d: "รายการที่ยืนยันไม่ได้จะมีป้ายเตือนกำกับ" },
+          { t: "เปิดดูแหล่งที่มา", d: "กดเลขอ้างอิง [n] ในคำตอบเพื่อเปิดดูแหล่งที่มาข้างคำตอบ" },
+          { t: "ส่งออกรายงาน", d: "สร้างรายงานจากคำตอบ แก้บนหน้า A4 แล้วบันทึกเป็น DOCX หรือ PDF พร้อมรายการอ้างอิง" },
+        ],
+        good: ["ป้ายว่าตรวจแล้วยืนยันเพียงว่ารหัสนั้นมีอยู่จริง ไม่ได้ยืนยันว่างานนั้นสนับสนุนประโยคที่อ้างถึง", "โมเดลยังผิดพลาดได้ ควรเปิดอ่านต้นฉบับก่อนนำไปใช้"],
+        note: "รายการที่ไม่มี DOI, PMID หรือ arXiv ID ตรวจรหัสไม่ได้",
+      },
+    },
+    how: {
+      title: "วิธีทำงาน ตั้งแต่คำถามถึงรายงาน",
+      lead: "แอปช่วยค้นและเรียบเรียงจากงานวิชาการ คุณเป็นคนตรวจและตัดสินใจ",
+      sections: [
+        { head: "ลำดับการทำงาน", items: [
+          { t: "1. ถาม", d: "พิมพ์คำถามวิจัยเป็นภาษาไทยหรืออังกฤษ" },
+          { t: "2. ค้นหา", d: "เอเจนต์วางแผนคำค้นได้สูงสุด 5 คำ และค้นจากแหล่งวิชาการ งานที่พบทยอยขึ้นให้เห็นระหว่างทำงาน" },
+          { t: "3. ตรวจ", d: "คำตอบมาพร้อมอ้างอิง รายการที่มี DOI, PMID หรือ arXiv ID จะถูกตรวจกับ Crossref, PubMed หรือ arXiv รายการที่ยืนยันไม่ได้จะมีป้ายเตือน" },
+          { t: "4. สรุปเป็นรายงาน", d: "สร้างรายงานจากคำตอบ แก้บนหน้า A4 แล้วบันทึกเป็น DOCX หรือ PDF" },
+        ] },
+        { head: "สิ่งที่คุณควบคุมได้", items: [
+          { t: "ตรวจแผนก่อนค้น", d: "ในโหมดค้นคว้าเชิงลึก ดูและแก้แผนคำค้นก่อนเริ่ม หรือปิดขั้นตอนนี้ในการตั้งค่า" },
+          { t: "หยุดงานได้", d: "หยุดงานที่กำลังทำได้ตลอด" },
+          { t: "ภาษาและธีม", d: "ใช้ได้ทั้งไทยและอังกฤษ และเลือกสว่าง มืด หรือตามระบบ เปลี่ยนภาษาของรายงานแล้วแอปแปลเนื้อหาให้" },
+        ] },
+      ],
+      note: "การตรวจอ้างอิงยืนยันว่ารหัสมีอยู่จริง ไม่ได้ยืนยันว่างานนั้นสนับสนุนประโยคที่อ้างถึง",
+    },
+    faq: {
+      title: "คำถามที่พบบ่อย",
+      lead: "คำตอบสั้นๆ ที่ตรงตามที่แอปทำอยู่ตอนนี้",
+      sections: [{ head: "เกี่ยวกับการใช้งาน", items: [
+        { t: "การตรวจอ้างอิงหมายถึงอะไร", d: "ป้ายว่าตรวจแล้วยืนยันเพียงว่า DOI, PMID หรือ arXiv ID นั้นมีอยู่จริง ไม่ได้ยืนยันว่างานนั้นสนับสนุนประโยคที่อ้างถึง โมเดลยังผิดพลาดได้ ควรเปิดอ่านต้นฉบับก่อนนำไปใช้" },
+        { t: "ตอบอะไรได้ และข้อมูลของฉันไปที่ไหน", d: "ตอบเฉพาะคำถามวิจัยทางวิทยาศาสตร์ ไม่ต้องเข้าสู่ระบบ ประวัติเก็บในเบราว์เซอร์นี้ แต่คำถามถูกส่งไปยังเซิร์ฟเวอร์และผู้ให้บริการโมเดลเพื่อสร้างคำตอบ" },
+        { t: "ต้องเข้าสู่ระบบไหม", d: "ไม่ต้อง เริ่มถามได้ทันทีจากปุ่มเริ่มต้นใช้งาน" },
+        { t: "ใช้ภาษาอะไรได้", d: "ถามเป็นภาษาไทยหรืออังกฤษได้ และสลับภาษาของหน้าจอได้ในการตั้งค่า" },
+      ] }],
+      note: "ไม่พบคำตอบที่ต้องการ? ดูภาพรวมได้ที่หน้าวิธีทำงาน",
+    },
+    docs: {
+      title: "คู่มือการใช้งาน",
+      lead: "คู่มือกำลังพัฒนา ยังไม่เปิดให้อ่านในตอนนี้",
+      body: "เรากำลังจัดทำคู่มือที่อธิบายการใช้งานทีละขั้น ระหว่างนี้ดูภาพรวมของแอปได้จากหน้าต่อไปนี้",
+      links: "อ่านเพิ่มเติม",
+    },
+  },
+  en: {
+    features: {
+      chat: {
+        tab: "Converse", blurb: "Ask in plain language, edit the plan first",
+        title: "Ask in plain language, then review and edit the plan before it starts",
+        lead: "Type a research question in Thai or English. Deep research proposes a search plan for you to review and edit before the real search begins.",
+        steps: [
+          { t: "Type a question", d: "In Thai or English. Enter sends, Shift+Enter starts a new line." },
+          { t: "Pick a mode", d: "Deep research, general search or answer. Each mode works differently." },
+          { t: "Review the plan", d: "In deep research the app waits for you to review and edit the search plan before it starts. You can turn this step off in Settings." },
+          { t: "Keep asking in the same chat", d: "Follow-up questions stay in the same chat. Open the evidence, or build a summary report from an answer." },
+        ],
+        good: ["Only scientific research questions are answered", "No login"],
+        note: "You see the plan and the progress before the answer arrives.",
+      },
+      "deep-research": {
+        tab: "Deep research", blurb: "Plans the queries, searches scholarly sources",
+        title: "Search scholarly sources and watch the progress as it works",
+        lead: "An agent plans the queries and searches scholarly sources. Papers appear as they are found.",
+        steps: [
+          { t: "Plan", d: "The agent plans up to five search queries." },
+          { t: "Search", d: "It searches scholarly sources. Papers appear one by one as they are found." },
+          { t: "Write", d: "The agent is instructed to write the answer only from the papers it found." },
+          { t: "Check", d: "The identifiers of the references are checked before the answer is shown." },
+        ],
+        good: ["You can stop a run while it is working", "With several users, runs queue and you see your place and a rough wait"],
+        note: "It is instructed to write from the papers it finds, which does not guarantee every sentence is right.",
+      },
+      references: {
+        tab: "Checkable references", blurb: "DOI, PMID and arXiv IDs checked to exist",
+        title: "References whose identifiers are checked to exist",
+        lead: "References with a DOI, PMID or arXiv ID are checked that the identifier exists. Any that cannot be confirmed carry a warning.",
+        steps: [
+          { t: "Identifier check", d: "References with a DOI, PMID or arXiv ID are checked against Crossref, PubMed or arXiv." },
+          { t: "Warning label", d: "References that cannot be confirmed carry a warning." },
+          { t: "Open the source", d: "Click a reference number [n] in the answer to open the source beside it." },
+          { t: "Export a report", d: "Build a report from the answer, edit it on an A4 page and save it as DOCX or PDF with the reference list." },
+        ],
+        good: ["A checked label only confirms the identifier exists. It does not confirm the paper supports the sentence citing it.", "The model can still be wrong, so read the source before you rely on it."],
+        note: "References without a DOI, PMID or arXiv ID cannot be checked by identifier.",
+      },
+    },
+    how: {
+      title: "How it works, from question to report",
+      lead: "The app helps search and write up from scholarly work. You review and decide.",
+      sections: [
+        { head: "The steps", items: [
+          { t: "1. Ask", d: "Type a research question in Thai or English." },
+          { t: "2. Search", d: "The agent plans up to five searches across scholarly sources. Papers appear as they are found." },
+          { t: "3. Check", d: "The answer arrives with references. Those with a DOI, PMID or arXiv ID are checked against Crossref, PubMed or arXiv, and any that cannot be confirmed carry a warning." },
+          { t: "4. Write it up", d: "Build a report from the answer, edit it on an A4 page and save it as DOCX or PDF." },
+        ] },
+        { head: "What you control", items: [
+          { t: "Review the plan first", d: "In deep research, review and edit the search plan before it starts, or turn this off in Settings." },
+          { t: "Stop a run", d: "You can stop a run that is working at any time." },
+          { t: "Language and theme", d: "Thai and English, with light, dark or system themes. Change the report language and the app translates the content." },
+        ] },
+      ],
+      note: "A reference check confirms the identifier exists. It does not confirm the paper supports the sentence citing it.",
+    },
+    faq: {
+      title: "Frequently asked questions",
+      lead: "Short answers that match what the app does today.",
+      sections: [{ head: "About using it", items: [
+        { t: "What the reference check means", d: "A checked reference only confirms that the DOI, PMID or arXiv ID exists. It does not confirm the paper supports the sentence citing it. The model can still be wrong, so read the source before you rely on it." },
+        { t: "What can it answer, and where does my data go?", d: "Only scientific research questions are answered. No login. History stays in this browser, but your question is sent to the server and the model provider to produce the answer." },
+        { t: "Do I need to log in?", d: "No. Start asking right away from Get started." },
+        { t: "Which languages can I use?", d: "Ask in Thai or English, and switch the interface language in Settings." },
+      ] }],
+      note: "Did not find your answer? See the overview on How it works.",
+    },
+    docs: {
+      title: "User guide",
+      lead: "The guide is in development and is not available to read yet.",
+      body: "We are writing a step-by-step guide. Until then, the overview of the app is on these pages.",
+      links: "Read more",
+    },
+  },
+};
 
 export const MAX_QUESTION = 2000;
 

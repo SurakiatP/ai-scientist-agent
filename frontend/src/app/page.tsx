@@ -1,19 +1,12 @@
 "use client";
 import Link from "next/link";
-import { Box, Button, Stack, Typography, useColorScheme } from "@mui/material";
+import { Box, Button, Stack, Typography } from "@mui/material";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
-import MenuRoundedIcon from "@mui/icons-material/MenuRounded";
-import { Dropdown, LogoMark } from "@/components/landing/Dropdown";
-import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
-import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
-import SettingsBrightnessOutlinedIcon from "@mui/icons-material/SettingsBrightnessOutlined";
+import { LandingHeader, ring, wrap } from "@/components/landing/LandingHeader";
 import { useHydrated } from "@/lib/history";
 import { usePrefs } from "@/lib/prefs";
 import { landing } from "@/lib/strings";
 
-const gutter = { xs: 2, sm: 4, lg: 6 };
-const wrap = { maxWidth: 1320, mx: "auto", px: gutter };
-const ring = { "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 3 } };
 const pill = { borderRadius: 999 };
 // soft teal glow taken from the theme's primary: strong on dark, a faint wash on light
 const glow = (x: string, y: string, a: number) => `radial-gradient(60% 55% at ${x} ${y}, rgb(var(--mui-palette-primary-mainChannel) / ${a}), transparent 70%)`;
@@ -33,15 +26,8 @@ const trace = {
 export default function Home() {
   const hydrated = useHydrated();
   const prefLang = usePrefs((s) => s.lang);
-  const setLang = usePrefs((s) => s.setLang);
-  const { mode, setMode } = useColorScheme();
   const lang = hydrated ? prefLang : "th";
   const L = landing[lang];
-  const m = hydrated ? mode ?? "system" : "system";
-  const ic = { fontSize: 20 };
-  const modes = [{ value: "light", label: L.themeLight, icon: <LightModeOutlinedIcon sx={ic} /> }, { value: "dark", label: L.themeDark, icon: <DarkModeOutlinedIcon sx={ic} /> }, { value: "system", label: L.themeSystem, icon: <SettingsBrightnessOutlinedIcon sx={ic} /> }];
-  const modeName = modes.find((x) => x.value === m)!.label;
-  const navItems = [{ value: "why", href: "#why", label: L.navProduct }, { value: "how", href: "#how", label: L.navHow }, { value: "faq", href: "#faq", label: L.navCheck }];
   const cta = (sx = {}) => (
     <Button component={Link} href="/chat" variant="contained" size="large" endIcon={<ArrowForwardRoundedIcon />} sx={{ minHeight: 48, px: 3, ...pill, ...ring, ...sx }}>
       {L.cta}
@@ -50,28 +36,8 @@ export default function Home() {
   const divider = { borderLeft: { md: 1 }, borderColor: "divider" };
 
   return (
-    <Box lang={lang} sx={{ position: "relative", overflow: "hidden", "&::before": { content: '""', position: "absolute", inset: 0, height: 900, pointerEvents: "none", backgroundImage: [glow("78%", "0%", 0.2), glow("12%", "42%", 0.12)].join(","), "[data-mui-color-scheme='light'] &": { opacity: 0.45 } } }}>
-      <Box component="header" sx={{ position: "relative", borderBottom: 1, borderColor: "divider" }}>
-        <Stack direction="row" component="nav" aria-label={L.navLabel} sx={{ ...wrap, minHeight: 72, alignItems: "center", gap: { xs: 0.5, md: 1 } }}>
-          <Box component={Link} href="/" aria-label={L.brand} sx={{ display: "flex", alignItems: "center", gap: 1.25, color: "primary.main", textDecoration: "none", mr: { xs: 1, md: 6 }, minHeight: 44, ...ring }}>
-            <LogoMark />
-            <Typography component="span" noWrap sx={{ fontSize: { xs: "1.1875rem", sm: "1.375rem" }, fontWeight: 600, letterSpacing: "-0.01em", color: "text.primary" }}>{L.brand}</Typography>
-          </Box>
-          <Stack direction="row" sx={{ display: { xs: "none", md: "flex" }, gap: 4, mr: "auto" }}>
-            {navItems.map((n) => (
-              <Box key={n.value} component="a" href={n.href} sx={{ color: "text.primary", textDecoration: "none", fontSize: "0.9375rem", py: 1.5, "&:hover": { color: "primary.main" }, ...ring }}>{n.label}</Box>
-            ))}
-          </Stack>
-          <Dropdown ariaLabel={L.langLabel} label={lang === "th" ? "ไทย" : "English"} selected={lang} onSelect={(v) => setLang(v as "th" | "en")}
-            items={[{ value: "th", label: "ไทย", lang: "th" }, { value: "en", label: "English", lang: "en" }]} sx={{ ml: { xs: "auto", md: 0 } }} />
-          <Box aria-hidden="true" sx={{ width: "1px", height: 24, bgcolor: "divider" }} />
-          <Dropdown ariaLabel={`${L.themeLabel}: ${modeName}`} label={<><Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>{L.themeLabel}:{"\u00a0"}</Box>{modeName}</>} selected={m} onSelect={(v) => setMode(v as "light")} items={modes} />
-          <Box sx={{ display: { xs: "none", md: "block" }, ml: 1.5 }}>{cta({ minHeight: 48, px: 3, whiteSpace: "nowrap", "& .MuiButton-endIcon": { display: "none" } })}</Box>
-          <Box sx={{ display: { xs: "block", md: "none" } }}>
-            <Dropdown ariaLabel={L.menu} icon={<MenuRoundedIcon />} items={navItems} sx={{ minWidth: 44, px: 1 }} />
-          </Box>
-        </Stack>
-      </Box>
+    <Box lang={lang} sx={{ position: "relative", overflow: "clip", "&::before": { content: '""', position: "absolute", inset: 0, height: 900, pointerEvents: "none", backgroundImage: [glow("78%", "0%", 0.2), glow("12%", "42%", 0.12)].join(","), "[data-mui-color-scheme='light'] &": { opacity: 0.45 } } }}>
+      <LandingHeader />
 
       <Box component="main" sx={{ position: "relative" }}>
         <Box sx={{ ...wrap, pt: { xs: 3, md: 7 }, pb: { xs: 5, md: 8 }, display: "grid", gap: { xs: 5, md: 8 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1.5fr) minmax(0,1fr)" }, alignItems: "start" }}>

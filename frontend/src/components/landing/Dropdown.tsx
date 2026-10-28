@@ -4,7 +4,7 @@ import { Box, Button, ListItemIcon, Menu, MenuItem } from "@mui/material";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
 
-export type DropItem = { value: string; label: string; href?: string; lang?: string; icon?: React.ReactNode };
+export type DropItem = { value: string; label: string; href?: string; lang?: string; icon?: React.ReactNode; note?: string; chip?: string };
 
 // Small menu button used by the landing header for language, theme and the mobile nav.
 export function Dropdown({ label, ariaLabel, items, selected, onSelect, icon, sx }: {
@@ -24,11 +24,12 @@ export function Dropdown({ label, ariaLabel, items, selected, onSelect, icon, sx
         {icon}{label}
       </Button>
       <Menu id={id} anchorEl={el} open={!!el} onClose={close} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}
+        transitionDuration={{ enter: 220, exit: 120 }}
         slotProps={{
-          list: { "aria-label": ariaLabel, sx: { p: 0.5 } },
-          paper: { sx: { mt: 1, minWidth: 184, borderRadius: 3, border: 1, borderColor: "divider", bgcolor: "background.paper", backgroundImage: "none", boxShadow: "0 12px 32px -8px rgba(11, 22, 32, 0.28), 0 2px 6px rgba(11, 22, 32, 0.08)" } },
+          list: { "aria-label": ariaLabel, sx: { p: 0.75, display: "grid", gap: 0.25 } },
+          paper: { sx: { mt: 1, minWidth: 208, maxWidth: 320, borderRadius: 3.5, border: 1, borderColor: "divider", bgcolor: "background.paper", backgroundImage: "none", boxShadow: "0 16px 40px -12px rgba(11, 22, 32, 0.3), 0 2px 6px rgba(11, 22, 32, 0.06)" } },
         }}>
-        {items.map((it) => {
+        {items.map((it, i) => {
           const on = it.value === selected;
           return (
             <MenuItem
@@ -36,14 +37,21 @@ export function Dropdown({ label, ariaLabel, items, selected, onSelect, icon, sx
               {...(it.href ? { component: "a", href: it.href } : {})}
               onClick={() => { onSelect?.(it.value); close(); }}
               sx={{
-                minHeight: 44, gap: 1.25, px: 1.25, borderRadius: 2, fontSize: "0.9375rem", fontWeight: on ? 600 : 400,
-                "& + &": { mt: 0.25 },
-                "&.Mui-selected, &.Mui-selected:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 12%, transparent)", color: "primary.main" },
+                minHeight: 44, gap: 1.5, px: 1.5, py: 0.75, borderRadius: 2.5, fontSize: "0.9375rem", fontWeight: on ? 600 : 500, color: on ? "primary.main" : "text.primary",
+                transition: "background-color 140ms ease-out, color 140ms ease-out",
+                "&:hover": { bgcolor: "action.hover" },
+                "&.Mui-focusVisible": { bgcolor: "action.hover", outline: "2px solid", outlineColor: "primary.main", outlineOffset: -2 },
+                "&.Mui-selected, &.Mui-selected:hover, &.Mui-selected.Mui-focusVisible": { bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.12)" },
+                "@media (prefers-reduced-motion: no-preference)": { animation: `dd-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both`, animationDelay: `${i * 35}ms`, "@keyframes dd-in": { from: { transform: "translateY(-4px)" }, to: { transform: "none" } } },
               }}
             >
-              {it.icon && <ListItemIcon sx={{ minWidth: 0, color: "inherit", opacity: on ? 1 : 0.7 }}>{it.icon}</ListItemIcon>}
-              <Box component="span" sx={{ flex: 1 }}>{it.label}</Box>
-              {on && <CheckRoundedIcon aria-hidden fontSize="small" sx={{ ml: 1.5 }} />}
+              {it.icon && <ListItemIcon sx={{ minWidth: 0, width: 32, height: 32, justifyContent: "center", borderRadius: 2, color: "inherit", bgcolor: on ? "rgb(var(--mui-palette-primary-mainChannel) / 0.14)" : "action.hover" }}>{it.icon}</ListItemIcon>}
+              <Box component="span" sx={{ flex: 1, minWidth: 0 }}>
+                {it.label}
+                {it.note && <Box component="span" sx={{ display: "block", fontSize: "0.8125rem", fontWeight: 400, lineHeight: 1.5, color: "text.secondary", whiteSpace: "normal" }}>{it.note}</Box>}
+              </Box>
+              {it.chip && <Box component="span" sx={{ flexShrink: 0, px: 1, py: 0.25, borderRadius: 999, border: 1, borderColor: "divider", fontSize: "0.6875rem", fontWeight: 500, color: "text.secondary" }}>{it.chip}</Box>}
+              {on && <CheckRoundedIcon aria-hidden fontSize="small" sx={{ ml: 1 }} />}
             </MenuItem>
           );
         })}
