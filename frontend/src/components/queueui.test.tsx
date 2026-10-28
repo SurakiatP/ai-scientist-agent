@@ -9,10 +9,10 @@ import { usePrefs } from "@/lib/prefs";
 import { emptyProgress } from "@/lib/progress";
 import { strings } from "@/lib/strings";
 import { useSync } from "@/lib/sync";
+import { useLoad } from "@/lib/runs";
 
 const status = vi.hoisted(() => ({ fn: vi.fn() }));
-vi.mock("@/lib/runs", () => ({ queueStatus: status.fn }));
-vi.mock("@/lib/run", () => ({ useRunState: () => ({ sessionId: null, turnId: null }), useForeign: (id: string) => id === "other", startRun: vi.fn(), startAnalysis: vi.fn(), startError: () => null, approvePlan: vi.fn(), cancelPlan: vi.fn(), stopRun: vi.fn(), canStart: () => ({ ok: true }) }));
+vi.mock("@/lib/run", () => ({ useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true),  useRunState: () => ({ sessionId: null, turnId: null }), useForeign: (id: string) => id === "other", startRun: vi.fn(), startAnalysis: vi.fn(), startError: () => null, approvePlan: vi.fn(), cancelPlan: vi.fn(), stopRun: vi.fn(async () => true), canStart: () => ({ ok: true }) }));
 
 const waiting = (n: number, eta?: number): Turn => ({ id: "t", question: "q", createdAt: Date.now(), status: "running", progress: { ...emptyProgress, phase: "waiting", waiting: n, ...(eta !== undefined ? { eta } : {}) } });
 afterEach(cleanup);
@@ -53,11 +53,14 @@ describe("server load line", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     status.fn.mockReset(); status.fn.mockResolvedValue(q);
+    // the shared poller calls fetch itself: count only the status requests
+    vi.stubGlobal("fetch", vi.fn(async (u: string) => { if (!String(u).endsWith("/v1/runs/status")) return new Response("{}"); return new Response(JSON.stringify(await status.fn())); }));
+    useLoad.setState({ q: null });
     visible = "visible";
     Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visible });
     useSync.setState({ status: "online" });
   });
-  afterEach(() => { vi.useRealTimers(); useSync.setState({ status: "disabled" }); });
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); useSync.setState({ status: "disabled" }); });
 
   it("shows the research pool, polls every 15 s, and pauses while hidden", async () => {
     render(<ServerLoad />);

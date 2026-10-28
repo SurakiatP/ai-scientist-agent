@@ -4,7 +4,7 @@ import { MAX_SESSIONS, MAX_TURNS, PERSONAL, useChatStore } from "./chat";
 import { gate } from "./config";
 import { useFilesStore } from "./files";
 import { emptyProgress } from "./progress";
-import { __queue, __resetSync, startSync, TURN_GAP_MS, useSync } from "./sync";
+import { __queue, __resetSync, recordServerTurn, startSync, TURN_GAP_MS, useSync } from "./sync";
 
 const run = vi.hoisted(() => ({ turn: null as string | null, att: null as string | null }));
 vi.mock("./run", () => ({ runningTurnId: () => run.turn, isAttached: (id: string) => id === run.att, attachRunning: vi.fn(), useRunState: () => ({ sessionId: null, turnId: null }), stopRun: vi.fn() }));
@@ -344,10 +344,26 @@ describe("server-owned runs and local caps", () => {
     await vi.waitFor(() => expect(calls.slice(n).some((c) => c.url.startsWith("/v1/store/snapshot"))).toBe(true), { timeout: 4000 });
     await vi.waitFor(() => expect(useChatStore.getState().sessions[0].turns[0].status).toBe("done"));
   });
+  it("a server-written run turn is never PUT; editing right after it truncates from the idx the server gave it", async () => {
+    await online();
+    const sid = useChatStore.getState().newSession();
+    useChatStore.getState().addTurn(sid, turn(U(900)));
+    await done(); // idx 0 on the server
+    const rid = U(901);
+    useChatStore.getState().addTurn(sid, turn(U(902), { runId: rid }));
+    recordServerTurn(sid, { id: U(902), idx: 7, version: 3 }); // the server put the run's turn at 7
+    await done();
+    expect(puts(new RegExp(`turns/${U(902)}`))).toEqual([]);
+    useChatStore.getState().truncateFrom(sid, U(902));
+    await done();
+    expect(calls.filter((c) => c.method === "DELETE").map((c) => c.url)).toEqual([`/v1/store/sessions/${sid}/turns/from/7`]);
+  });
   it("D1: the 51st turn in shared mode is kept and never mirrored as a delete", async () => {
     await online();
     const sid = useChatStore.getState().newSession();
-    for (let i = 0; i <= MAX_TURNS; i++) useChatStore.getState().addTurn(sid, turn(U(1000 + i)));
+    for (let i = 0; i < MAX_TURNS; i++) useChatStore.getState().addTurn(sid, turn(U(1000 + i)));
+    await done(); // all 50 are on the server with their positions: a dropped one would now be sent as DELETE from its idx
+    useChatStore.getState().addTurn(sid, turn(U(1000 + MAX_TURNS)));
     await done();
     expect(useChatStore.getState().sessions[0].turns).toHaveLength(MAX_TURNS + 1);
     expect(calls.filter((c) => c.method === "DELETE")).toEqual([]);

@@ -243,6 +243,8 @@ class RunService:
                 await asyncio.gather(run.timer, return_exceptions=True)
             if status in ("stopped", "interrupted"):  # attached streams learn how it ended
                 await self._emit(run, json.loads(Error(message=status, code=status).model_dump_json()))
+            elif out.get("_err") in ("cut_off", "failed"):  # no terminal event came from the pipeline: say so, replayably
+                await self._emit(run, json.loads(Error(message=out.get("error") or "", code=out["_err"]).model_dump_json()))
             out = dict(out)
             err = out.pop("_err", None)
             code = out.pop("_code", None)

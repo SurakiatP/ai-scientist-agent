@@ -5,9 +5,10 @@ import { useChatStore, type Turn } from "@/lib/chat";
 import { emptyProgress } from "@/lib/progress";
 import { MAX_QUESTION, strings } from "@/lib/strings";
 import { UserMessage } from "./UserMessage";
+import { useDraft, useStartErr } from "./Composer";
 
 const run = vi.hoisted(() => ({ turnId: null as string | null, startRun: vi.fn(async () => {}), startAnalysis: vi.fn(async () => {}) }));
-vi.mock("@/lib/run", () => ({
+vi.mock("@/lib/run", () => ({ useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true), 
   useRunState: () => ({ sessionId: null, turnId: run.turnId }),
   startRun: run.startRun, startAnalysis: run.startAnalysis,
   startError: () => null, useForeign: () => false,
@@ -67,6 +68,17 @@ describe("UserMessage actions", () => {
     setup([mkTurn("a")]);
     expect((btn(t.retryMsg) as HTMLButtonElement).disabled).toBe(true);
     expect((btn(t.editMsg) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe("UserMessage start failures", () => {
+  it("a retry the server refuses puts the question back in the composer with the reason", async () => {
+    run.startRun.mockRejectedValueOnce({ message: "", code: "http", status: 429, runCode: "queue_full" });
+    const id = setup([mkTurn("r")]);
+    useDraft.setState({ drafts: {} }); useStartErr.setState({ by: {} });
+    await act(async () => { fireEvent.click(btn(t.retryMsg)); });
+    expect(useDraft.getState().drafts[id]).toBe("คำถามแรก");
+    expect(useStartErr.getState().by[id]).toBe(t.startFailed); // startError is mocked to null here: the generic copy
   });
 });
 

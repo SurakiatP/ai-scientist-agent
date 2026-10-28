@@ -104,6 +104,8 @@ const toSession = (r: Row, local?: Session): Session => {
     const first = Number(rows[0].idx);
     turns.unshift(...local.turns.filter((t) => (idxOf.get(t.id) ?? Infinity) < first && !tombstones.has(t.id)));
   }
+  // a question just sent from this tab, shown before the server has its row: a snapshot must not wipe it
+  if (local) turns.push(...local.turns.filter((t) => isAttached(t.id) && !turns.some((x) => x.id === t.id) && !tombstones.has(t.id)));
   return { id, projectId: typeof r.project_id === "string" ? r.project_id : PERSONAL, title: str(r.title), createdAt: ms(r.created_at), updatedAt: ms(r.updated_at), turns };
 };
 const toProject = (r: Row): Project => ({ id: str(r.id), name: str(r.name), createdAt: ms(r.created_at) });
@@ -390,13 +392,30 @@ export async function startSync(): Promise<void> {
   void pump();
 }
 
-// Wait (bounded) until this session and everything queued for it has reached the server, so a run can point at it.
-export async function settleSession(sid: string): Promise<void> {
-  const mine = (o: Op) => o.sid === sid || (o.k === "session" && o.id === sid);
-  for (let i = 0; i < 100 && useSync.getState().status !== "disabled" && (queue.some(mine) || (inflight && mine(inflight))); i++) {
+// Wait (bounded) until the session itself is on the server, so a run can point at it. Queued turn writes do not matter:
+// the server allocates a run's turn itself. Never blocks when the server already knows the session; true = it is there.
+export async function settleSession(sid: string, signal?: AbortSignal): Promise<boolean> {
+  const pendingSession = () => queue.some((o) => o.k === "session" && o.id === sid) || (inflight?.k === "session" && inflight.id === sid) || !versions.has(vkey("session", sid));
+  for (let i = 0; i < 100 && !signal?.aborted && useSync.getState().status !== "disabled" && pendingSession(); i++) {
     void pump();
     await new Promise((r) => setTimeout(r, 50));
   }
+  return !pendingSession();
+}
+
+// A turn row the server wrote for a run: remember its position and version like a snapshot would, so a later edit
+// truncates from the right place and a plan review after it gets the next idx.
+export function recordServerTurn(sid: string, r: Row) {
+  const id = str(r.id), idx = Number(r.idx);
+  if (!id || !Number.isFinite(idx)) return;
+  idxOf.set(id, idx); maxIdx.set(sid, Math.max(maxIdx.get(sid) ?? -1, idx)); remember("turn", r);
+}
+
+// A 409 use_runs means the server has the shared database although the first health probe said otherwise: ask again.
+export async function reprobeSync(): Promise<void> {
+  if (useSync.getState().status !== "disabled") return;
+  started = false;
+  await startSync();
 }
 
 // Test seam: forget everything.

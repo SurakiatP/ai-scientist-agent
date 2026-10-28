@@ -27,6 +27,11 @@ export const useDraft = create<{ drafts: Record<string, string>; set: (sid: stri
   set: (sid, text) => set((d) => ({ drafts: { ...d.drafts, [sid]: text } })), // ponytail: empty strings linger until reload; negligible
 }));
 // The chosen mode is shared by every composer (first-message screen and thread), so Quick survives the first send. In memory only.
+// A start that failed outside the composer (retry or edit of an earlier question): the composer says why, with the text back.
+export const useStartErr = create<{ by: Record<string, string>; set: (sid: string, msg: string) => void }>((set) => ({
+  by: {},
+  set: (sid, msg) => set((d) => ({ by: { ...d.by, [sid]: msg } })),
+}));
 export const useMode = create<{ mode: AskMode; set: (m: AskMode) => void }>((set) => ({ mode: "deep", set: (mode) => set({ mode }) }));
 export const focusComposer = () => document.getElementById("composer")?.focus();
 
@@ -37,8 +42,10 @@ const formatSize = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n 
 export function Composer({ sessionId, large = false }: { sessionId: string; large?: boolean }) {
   const t = useT();
   const text = useDraft((s) => s.drafts[sessionId] ?? ""), set = useDraft((s) => s.set);
-  const setText = (v: string) => set(sessionId, v);
-  const [err, setErr] = useState("");
+  const startErr = useStartErr((s) => s.by[sessionId] ?? ""), clearStartErr = () => { if (startErr) useStartErr.getState().set(sessionId, ""); };
+  const setText = (v: string) => { clearStartErr(); set(sessionId, v); };
+  const [err, setErr0] = useState("");
+  const setErr = (v: string) => { clearStartErr(); setErr0(v); };
   const picked = useMode((s) => s.mode), setMode = useMode((s) => s.set);
   // "Answer research" needs this session's own finished answers; without them the pill shows (and sends) deep
   const hasMemory = useChatStore((s) => !!s.sessions.find((x) => x.id === sessionId)?.turns.some((x) => x.status === "done" && !!x.answer?.content.trim()));
@@ -120,7 +127,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
     e.preventDefault();
     send();
   };
-  const note = busy && !mine ? t.busyElsewhere : over ? t.tooLong : err || (file?.status === "error" ? file.error || t.uploadFailed : file?.status === "ready" ? t.analysisModeNote : "");
+  const note = busy && !mine ? t.busyElsewhere : over ? t.tooLong : err || startErr || (file?.status === "error" ? file.error || t.uploadFailed : file?.status === "ready" ? t.analysisModeNote : "");
   const counter = text.length >= MAX_QUESTION * 0.8;
   return (
     <Box sx={{ width: "100%" }}>
@@ -195,7 +202,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
                 );
               })}
             </Menu>
-            <IconButton aria-label={mine ? t.stop : t.ask} onClick={(e) => { if (!mine) send(); else if (e.detail < 2) stopRun(); }} /* a double-click on Send must not land on Stop */ disabled={!mine && !canSend}
+            <IconButton aria-label={mine ? t.stop : t.ask} onClick={(e) => { if (!mine) send(); else if (e.detail < 2) void stopRun().then((ok) => setErr(ok ? "" : t.stopFailed)); }} /* a double-click on Send must not land on Stop */ disabled={!mine && !canSend}
               sx={{ width: 44, height: 44, alignSelf: "center", flexShrink: 0, bgcolor: "primary.main", color: "primary.contrastText", transition: `background-color 160ms ${ease}`, "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 35%, transparent)", color: "primary.contrastText" } }}>
               <Box key={mine ? "stop" : "send"} component="span" sx={{ display: "inline-flex", ...(sw.anim ? enterPop : {}) }}>{mine ? <StopRoundedIcon /> : <SendOutlinedIcon />}</Box>
             </IconButton>

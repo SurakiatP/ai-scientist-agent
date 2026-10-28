@@ -9,7 +9,7 @@ import { strings } from "@/lib/strings";
 import { useTreeOpen } from "./ProjectTree";
 
 const run = vi.hoisted(() => ({ sessionId: null as string | null }));
-vi.mock("@/lib/run", () => ({ useRunState: () => ({ sessionId: run.sessionId, turnId: run.sessionId && "t" }), stopRun: vi.fn(), approvePlan: vi.fn(), cancelPlan: vi.fn() }));
+vi.mock("@/lib/run", () => ({ useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true),  useRunState: () => ({ sessionId: run.sessionId, turnId: run.sessionId && "t" }), stopRun: vi.fn(async () => true), approvePlan: vi.fn(), cancelPlan: vi.fn() }));
 
 const t = strings.th;
 const prog = { waiting: null, reasoning: "", searches: [], sources: {}, answered: [], writing: false, phase: "done" as const };

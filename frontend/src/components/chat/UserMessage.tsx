@@ -7,7 +7,8 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import { useChatStore, type Turn } from "@/lib/chat";
 import { usePrefs, useT } from "@/lib/prefs";
-import { canStart, startAnalysis, startRun, useRunState } from "@/lib/run";
+import { canStart, startAnalysis, startError, startRun, useRunState } from "@/lib/run";
+import { focusComposer, useDraft, useStartErr } from "./Composer";
 import { MAX_QUESTION } from "@/lib/strings";
 
 export const Time = ({ ts }: { ts: number }) => {
@@ -49,7 +50,13 @@ export function UserMessage({ sessionId, turn }: { sessionId: string; turn: Turn
   const laterCount = useChatStore((s) => { const ts = s.sessions.find((x) => x.id === sessionId)?.turns ?? []; return Math.max(0, ts.length - 1 - ts.findIndex((x) => x.id === turn.id)); });
   const name = question.trim().slice(0, 40);
   const copy = async () => { setCopied((await copyText(question)) ? "ok" : "fail"); setTimeout(() => setCopied(null), 2000); };
-  const retry = () => { ask(sessionId, turn, question).catch(() => {}); };
+  // A start that fails (queue full, offline...) is never silent: the question goes back into the composer with the reason.
+  const failed = (q: string) => (e: unknown) => {
+    if (!useDraft.getState().drafts[sessionId]) useDraft.getState().set(sessionId, q);
+    useStartErr.getState().set(sessionId, startError(e) ?? t.startFailed);
+    focusComposer();
+  };
+  const retry = () => { ask(sessionId, turn, question).catch(failed(question)); };
   const open = () => { setDraft(question); setConfirm(false); setErr(false); setEditing(true); };
   const close = () => { setEditing(false); setConfirm(false); requestAnimationFrame(() => editBtn.current?.focus()); };
   const over = draft.length > MAX_QUESTION;
@@ -61,7 +68,7 @@ export function UserMessage({ sessionId, turn }: { sessionId: string; turn: Turn
     if (laterCount > 0 && !confirm) { setConfirm(true); return; }
     useChatStore.getState().truncateFrom(sessionId, turn.id);
     setEditing(false); setConfirm(false);
-    ask(sessionId, turn, draft.trim()).catch(() => {});
+    ask(sessionId, turn, draft.trim()).catch(failed(draft.trim()));
   };
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") { e.preventDefault(); close(); return; }

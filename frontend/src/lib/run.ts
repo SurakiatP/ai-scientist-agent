@@ -3,10 +3,10 @@ import { refusalCode, useChatStore, type Session, type Turn, type TurnAnalysis }
 import { newId } from "./history";
 import { usePrefs } from "./prefs";
 import { emptyProgress, reduce, type Progress } from "./progress";
-import { ACTIVE, attachRun, cancelRun, getRun, submitRun, type RunBody, type RunView } from "./runs";
+import { ACTIVE, attachRun, cancelRun, getRun, refreshLoad, submitRun, type RunBody, type RunView } from "./runs";
 import { streamAnalyze, streamAsk, type AnalyzeEvent, type ApiError, type AskEvent, type AskMode, type HistoryTurn, type MemoryRef, type MemoryTurn, type Reference, type Search } from "./sse";
 import { strings } from "./strings";
-import { refreshNow, settleSession, toTurn, useSync } from "./sync";
+import { recordServerTurn, refreshNow, reprobeSync, settleSession, toTurn, useSync } from "./sync";
 
 type RunState = { sessionId: string | null; turnId: string | null };
 const idle: RunState = { sessionId: null, turnId: null };
@@ -14,8 +14,15 @@ let state = idle; // module-level: survives navigation, never persisted
 let ac: AbortController | null = null;
 let activeRun: string | null = null; // the server run behind this tab's lock, once it has one: Stop cancels it instead of aborting a fetch
 const attached = new Map<string, AbortController>(); // turn id -> the one event stream this tab follows for it
-const foreign = new Set<string>(); // turns whose run another browser submitted: shown live, never stoppable here
+const owners = new Map<string, boolean>(); // turn id -> true when this browser submitted its run (Stop allowed), false = someone else's
+const sending = new Set<string>(); // turns shown before the server has accepted them
+const runOf = new Map<string, string>(); // turn id -> run id, for Stop on a turn this tab does not hold the lock for
 const settledAt = new Map<string, number>(); // run id -> when we last saw it end (stops a stale snapshot from re-attaching in a loop)
+const SETTLED_MAX = 200;
+const markSettled = (runId: string) => { settledAt.set(runId, Date.now()); if (settledAt.size > SETTLED_MAX) settledAt.delete(settledAt.keys().next().value!); };
+const SUBMITTED = "scientist-runs-v1"; // run ids this tab submitted (sessionStorage): they stay attached after a session switch
+const submitted = (): string[] => { try { const v = JSON.parse(sessionStorage.getItem(SUBMITTED) ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string") : []; } catch { return []; } };
+const addSubmitted = (id: string) => { try { sessionStorage.setItem(SUBMITTED, JSON.stringify([...submitted(), id].slice(-20))); } catch {} };
 const shared = () => useSync.getState().status !== "disabled"; // the runs API exists only with the shared database
 let leaving = false; // page unloading: the aborted fetch must not overwrite the stored run, so a reload reads "interrupted"
 if (typeof window !== "undefined") {
@@ -31,15 +38,27 @@ const setState = (s: RunState) => { state = s; subs.forEach((f) => f()); };
 
 export const useRunState = () => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => state, () => idle);
 export const canStart = (): { ok: true } | { ok: false; reason: "busy" } => (state.turnId ? { ok: false, reason: "busy" } : { ok: true });
-export const stopRun = () => { if (activeRun) void cancelRun(activeRun).catch(() => {}); else ac?.abort(); }; // the stream then ends with the server's "stopped"
+// With a server run, Stop cancels it and the stream then ends with the server's "stopped". False = the cancel failed (say so).
+export async function stopRun(): Promise<boolean> {
+  if (!activeRun) { ac?.abort(); return true; }
+  try { await cancelRun(activeRun); refreshLoad(); return true; } catch { return false; }
+}
+export async function stopTurn(turnId: string): Promise<boolean> {
+  const id = runOf.get(turnId);
+  if (!id) return false;
+  try { await cancelRun(id); refreshLoad(); return true; } catch { return false; }
+}
 export const isAttached = (turnId: string) => attached.has(turnId); // sync.ts: a turn this tab follows keeps its live copy
-export const useForeign = (turnId: string) => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => foreign.has(turnId), () => false);
+const useOwner = (turnId: string, v: boolean) => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => owners.get(turnId) === v, () => false);
+export const useForeign = (turnId: string) => useOwner(turnId, false); // someone else started it: watched here
+export const useStoppable = (turnId: string) => useOwner(turnId, true); // this browser started it: Stop works from any tab
+export const useSending = (turnId: string) => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => sending.has(turnId), () => false);
 export const runningTurnId = () => state.turnId; // sync.ts: a turn running in THIS tab is never overwritten by a remote copy
 
 // The one place error events become user-facing text (stored in the current language).
 export function errorText(e: ApiError): string {
   const t = strings[usePrefs.getState().lang];
-  const m = e.runCode === "client_busy" ? t.runClientBusy : e.runCode === "queue_full" ? t.runQueueFull
+  const m = e.runCode === "use_runs" ? t.useRuns : e.runCode === "client_busy" ? t.runClientBusy : e.runCode === "queue_full" ? t.runQueueFull
     : e.code === "network" ? t.network : e.code === "malformed" ? t.malformed
     : e.code === "http" ? `${t.requestFailed}${e.message ? `: ${e.message}` : ""}` : e.message;
   return m.slice(0, 2048); // chat.ts read limit for turn.error
@@ -76,7 +95,9 @@ type Patch = Partial<Turn>;
 
 // How one event ends a run. The queue's cancel and restart come as error events with a code: they are not failures.
 const errorOutcome = (e: ApiError): Patch =>
-  e.code === "stopped" ? { status: "stopped" } : e.code === "interrupted" ? { status: "interrupted" } : { status: "error", error: errorText(e) };
+  e.code === "stopped" ? { status: "stopped" } : e.code === "interrupted" ? { status: "interrupted" }
+  : e.code === "cut_off" || e.code === "failed" ? { status: "error", error: e.message.slice(0, 2048) || cutOffText(), errCode: e.code }
+  : (e.runCode === "use_runs" && void reprobeSync().catch(() => {}), { status: "error", error: errorText(e) }); // the server has the shared database after all: look again so a retry takes the queue
 const askOutcome = (e: AskEvent): Patch | null =>
   e.type === "final_answer" ? { status: "done", answer: { content: e.content, references: e.references } }
   : e.type === "refused" ? { status: "refused", refused: e.reason, refusedCode: refusalCode(e.code) }
@@ -108,24 +129,29 @@ const analysisOutcome = (e: AnalyzeEvent, prev: Patch | null): Patch | null =>
   : e.type === "refused" ? { status: "refused", refused: e.reason, refusedCode: refusalCode(e.code) }
   : e.type === "error" ? errorOutcome(e) : prev;
 
+const lostStream = (e: { type: string; code?: string }) => e.type === "error" && (e.code === "network" || e.code === "malformed" || e.code === "http");
+const waitingFrom = (r: RunView): Progress | null => r.status === "queued" && typeof r.position === "number" ? { ...emptyProgress, waiting: r.position, eta: r.eta_seconds ?? null, phase: "waiting" } : null;
+
 // Follow one run's events into its local turn until the server ends it. A dropped stream resumes after the last event
-// seen; a run we cannot follow any more is read back from the shared store. Never cancels anything.
-async function follow(sessionId: string, base: Turn, runId: string, c: AbortController): Promise<void> {
+// seen (backing off only after a network/http failure); a stream that closes with no ending asks the server once; a run we
+// cannot follow any more is read back from the shared store. Never cancels anything.
+async function follow(sessionId: string, base: Turn, runId: string, c: AbortController, seed?: Progress | null): Promise<void> {
   const turnId = base.id;
   const patch = (p: Patch) => { if (leaving) return; try { useChatStore.getState().patchTurn(sessionId, turnId, p); } catch {} };
   const isAnalysis = base.kind === "analysis";
-  let progress: Progress = emptyProgress, seq = 0;
+  let progress: Progress = seed ?? emptyProgress, seq = 0, fails = 0;
   let analysis = base.analysis && analysisFrom(base.analysis.fileId, base.analysis.fileName);
   let outcome: Patch | null = null;
   try {
-    for (let tries = 0; !outcome && !c.signal.aborted && tries < 6; tries++) {
-      if (tries) await sleep(Math.min(tries, 5) * 1000, c.signal);
+    while (!outcome && !c.signal.aborted && fails <= 5) {
+      let got = false, lost = false;
       for await (const e of attachRun(runId, seq, c.signal)) {
-        if (e.type === "error" && (e.code === "network" || e.code === "malformed" || e.code === "http")) { if (e.status === 404) tries = 99; break; } // lost the stream, not the run
+        if (lostStream(e)) { lost = true; if ((e as ApiError).status === 404) fails = 99; break; } // lost the stream, not the run
+        got = true; fails = 0;
         if (e._seq !== undefined) seq = e._seq;
         if (isAnalysis) {
           if (analysis) analysis = reduceAnalysis(analysis, e as AnalyzeEvent);
-          progress = e.type === "waiting" ? reduce(progress, e) : progress.phase === "waiting" ? emptyProgress : progress;
+          progress = e.type === "waiting" ? reduce(progress, e as AskEvent) : progress.phase === "waiting" ? emptyProgress : progress;
           outcome = analysisOutcome(e as AnalyzeEvent, outcome);
           patch({ progress, ...(analysis ? { analysis } : {}) });
         } else {
@@ -135,21 +161,42 @@ async function follow(sessionId: string, base: Turn, runId: string, c: AbortCont
           patch(o?.answer ? { progress, answer: o.answer } : { progress });
         }
       }
+      if (outcome || c.signal.aborted) break;
+      if (lost) { if (++fails <= 5) await sleep(Math.min(fails, 5) * 1000, c.signal); continue; }
+      // a clean close with no ending event: ask the server how the run stands
+      let r: RunView | null = null;
+      try { r = await getRun(runId); } catch { if (++fails <= 5) await sleep(Math.min(fails, 5) * 1000, c.signal); continue; }
+      if (!ACTIVE.includes(r.status)) break; // it ended: the stored turn (refreshed below) is the result
+      if (!got) await sleep(1000, c.signal); // still going but silent: do not spin
     }
     if (outcome) patch({ ...(isAnalysis ? { progress, ...(analysis ? { analysis } : {}) } : { progress }), ...outcome });
   } finally {
-    attached.delete(turnId); foreign.delete(turnId); settledAt.set(runId, Date.now()); notify();
+    attached.delete(turnId); owners.delete(turnId); runOf.delete(turnId); sending.delete(turnId); markSettled(runId); notify(); refreshLoad();
   }
-  if (!outcome && !c.signal.aborted) await refreshNow(); // could not follow it to the end: the shared store knows the real state
+  if (!outcome && !c.signal.aborted) await refreshNow(); // the shared store knows the real state
 }
 
-/** Every running turn with a server run gets one event stream in this tab, whoever submitted it. Called after each snapshot. */
+/** Running turns with a server run get one event stream in this tab: those of the open session, and runs this tab submitted. */
 export function attachRunning(): void {
   if (!shared()) return;
+  const active = useChatStore.getState().activeId, mine = submitted();
   for (const s of useChatStore.getState().sessions) for (const t of s.turns) {
     if (t.status !== "running" || !t.runId || attached.has(t.id) || Date.now() - (settledAt.get(t.runId) ?? 0) < 10_000) continue;
+    if (s.id !== active && !mine.includes(t.runId)) continue;
     void reattach(s.id, t).catch(() => {});
   }
+}
+/** Streams of runs that are neither in the open session nor ours are dropped when the session changes. */
+function dropViewers(): void {
+  const active = useChatStore.getState().activeId, mine = submitted();
+  for (const s of useChatStore.getState().sessions) for (const t of s.turns) {
+    const c = attached.get(t.id);
+    if (c && s.id !== active && !(t.runId && mine.includes(t.runId)) && owners.get(t.id) !== true && !sending.has(t.id)) c.abort();
+  }
+}
+if (typeof window !== "undefined") {
+  let lastActive = useChatStore.getState().activeId;
+  useChatStore.subscribe((st) => { if (st.activeId !== lastActive) { lastActive = st.activeId; dropViewers(); attachRunning(); } });
 }
 async function reattach(sessionId: string, t: Turn): Promise<void> {
   const runId = t.runId!;
@@ -158,35 +205,57 @@ async function reattach(sessionId: string, t: Turn): Promise<void> {
   let run: RunView;
   try { run = await getRun(runId); } catch (e) {
     attached.delete(t.id);
-    if ((e as ApiError).status === 404) { settledAt.set(runId, Date.now()); try { useChatStore.getState().patchTurn(sessionId, t.id, { status: "interrupted" }); } catch {} } // no such run any more: nothing will finish this turn
+    if ((e as ApiError).status === 404) { markSettled(runId); try { useChatStore.getState().patchTurn(sessionId, t.id, { status: "interrupted" }); } catch {} } // no such run any more: nothing will finish this turn
     return; // unreachable: the next snapshot tries again
   }
-  if (!ACTIVE.includes(run.status)) { attached.delete(t.id); settledAt.set(runId, Date.now()); await refreshNow(); return; } // ended meanwhile: the stored turn is the result
-  const lock = run.mine && !state.turnId; // our own run found again after a reload: Stop works as before
-  if (!run.mine) foreign.add(t.id);
-  if (lock) { activeRun = runId; setState({ sessionId, turnId: t.id }); } else notify();
-  try { await follow(sessionId, t, runId, c); } finally { if (lock) { activeRun = null; setState(idle); } }
+  if (c.signal.aborted) { attached.delete(t.id); return; }
+  if (!ACTIVE.includes(run.status)) { attached.delete(t.id); markSettled(runId); await refreshNow(); return; } // ended meanwhile: the stored turn is the result
+  owners.set(t.id, run.mine); runOf.set(t.id, runId);
+  const seed = waitingFrom(run);
+  if (seed) try { useChatStore.getState().patchTurn(sessionId, t.id, { progress: seed }); } catch {}
+  notify();
+  await follow(sessionId, t, runId, c, seed ?? t.progress);
 }
 
-// Submit to the queue and follow the run. The server writes the turn; `existing` = the turn is already here (an approved plan).
-async function sharedRun(sessionId: string, body: RunBody, existing: boolean, c: AbortController): Promise<void> {
-  await settleSession(sessionId); // the session (and a reviewed turn) must be on the server before a run can point at it
+// Submit to the queue and follow the run. The question shows at once as a turn marked "sending"; the server writes the
+// real row. `existing` = the turn is already here (an approved plan). A failure puts everything back and throws.
+async function sharedRun(sessionId: string, body: RunBody, local: Turn, existing: boolean, c: AbortController): Promise<void> {
+  const turnId = body.turn_id, store = () => useChatStore.getState();
   const f = new AbortController();
-  attached.set(body.turn_id, f); // claimed first, so a snapshot arriving mid-submit cannot replace or double-attach the turn
-  let t: Turn | null, runId = "";
+  attached.set(turnId, f); // claimed first, so a snapshot arriving mid-submit cannot replace or double-attach the turn
+  sending.add(turnId);
+  const back = existing ? { status: local.status, plan: local.plan, progress: local.progress, runId: undefined } : null;
+  if (existing) store().patchTurn(sessionId, turnId, { status: "running", progress: emptyProgress, runId: newId() });
+  else store().addTurn(sessionId, { ...local, runId: newId() }); // placeholder run id: the server owns this turn, sync never writes it
+  notify();
+  const undo = () => {
+    attached.delete(turnId); sending.delete(turnId); notify();
+    try { if (back) store().patchTurn(sessionId, turnId, back); else store().truncateFrom(sessionId, turnId); } catch {}
+  };
+  let t: Turn, run: RunView;
   try {
-    const sub = await submitRun(body, c.signal);
-    t = toTurn(sub.turn);
-    if (!t) throw { message: "", code: "malformed" } satisfies ApiError;
-    if (body.kind === "analyze" && !t.analysis) t = { ...t, kind: "analysis", analysis: analysisFrom(body.file_id ?? "", body.file_name) };
-    activeRun = runId = sub.run.id;
-    if (existing) useChatStore.getState().patchTurn(sessionId, t.id, t);
-    else useChatStore.getState().addTurn(sessionId, t);
+    await settleSession(sessionId, c.signal); // bounded; when the session is still not there we submit anyway and the server answers 404
+    let sub;
+    try { sub = await submitRun(body, c.signal); } catch (e) {
+      if ((e as ApiError)?.status === 404 && !c.signal.aborted && !(await settleSession(sessionId, c.signal))) throw { message: strings[usePrefs.getState().lang].submitTimeout, code: "http" } satisfies ApiError;
+      throw e;
+    }
+    run = sub.run;
+    const row = toTurn(sub.turn);
+    if (!row) throw { message: "", code: "malformed" } satisfies ApiError;
+    recordServerTurn(sessionId, sub.turn);
+    t = body.kind === "analyze" && !row.analysis ? { ...row, kind: "analysis", analysis: analysisFrom(body.file_id ?? "", body.file_name) } : row;
+    const seed = waitingFrom(run);
+    t = seed ? { ...t, progress: seed } : t;
+    activeRun = run.id; runOf.set(turnId, run.id); owners.set(turnId, true); addSubmitted(run.id);
+    if (store().sessions.find((x) => x.id === sessionId)?.turns.some((x) => x.id === turnId)) store().patchTurn(sessionId, turnId, { ...t, createdAt: local.createdAt }); // M1: it is already shown: update, never add twice
+    else store().addTurn(sessionId, t);
   } catch (e) {
-    attached.delete(body.turn_id);
+    undo();
     throw e;
   }
-  await follow(sessionId, t, runId, f);
+  sending.delete(turnId); notify(); refreshLoad();
+  await follow(sessionId, t, run.id, f, t.progress);
 }
 
 export async function startRun(sessionId: string, question: string, opts: { mode?: AskMode } = {}): Promise<void> {
@@ -203,9 +272,10 @@ export async function startRun(sessionId: string, question: string, opts: { mode
     setState({ sessionId, turnId });
     try {
       if (!session.title) store().renameSession(sessionId, question); // the session reaches the server with a title, like the first turn would have
-      await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question, mode, ...(mode === "chat" ? { memory: memoryFrom(session) } : { history: historyFrom(session) }) }, false, c);
+      await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question, mode, ...(mode === "chat" ? { memory: memoryFrom(session) } : { history: historyFrom(session) }) },
+        { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, mode }, false, c);
     } catch (e) {
-      if (!c.signal.aborted) throw e; // Stop before the server answered: nothing to show
+      if (!c.signal.aborted) throw e; // Stop before the server answered: the question is gone again
     } finally {
       ac = null; activeRun = null;
       setState(idle);
@@ -258,7 +328,7 @@ export async function approvePlan(sessionId: string, turnId: string, plan: Searc
   setState({ sessionId, turnId });
   if (shared()) {
     try {
-      await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question: turn.question, mode, history: historyFrom(session), plan }, true, c);
+      await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question: turn.question, mode, history: historyFrom(session), plan }, turn, true, c);
     } catch (e) {
       if (!c.signal.aborted) throw e; // the turn stays awaiting its plan; the card says the start failed
     } finally {
@@ -310,7 +380,8 @@ export async function startAnalysis(sessionId: string, question: string, fileId:
     setState({ sessionId, turnId });
     try {
       if (!session.title) store().renameSession(sessionId, question);
-      await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "analyze", question, file_id: fileId, ...(fileName ? { file_name: fileName } : {}) }, false, c);
+      await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "analyze", question, file_id: fileId, ...(fileName ? { file_name: fileName } : {}) },
+        { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, kind: "analysis", analysis: analysisFrom(fileId, fileName) }, false, c);
     } catch (e) {
       if (!c.signal.aborted) throw e;
     } finally {

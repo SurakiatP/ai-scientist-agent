@@ -17,7 +17,7 @@ export type MemoryTurn = { question: string; answer: string; references: MemoryR
 export type AskOptions = { mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; planOnly?: boolean; memory?: MemoryTurn[] };
 
 export type StreamCode = "malformed" | "network" | "http";
-export type ApiError = { message: string; code?: StreamCode | "stopped" | "interrupted"; status?: number; runCode?: string }; // runCode: the run queue's own 429 reason (client_busy, queue_full, rate_limited)
+export type ApiError = { message: string; code?: StreamCode | "stopped" | "interrupted" | "cut_off" | "failed"; status?: number; runCode?: string }; // runCode: the run queue's own 429 reason (client_busy, queue_full, rate_limited)
 export type StreamError = ApiError & { type: "error" };
 
 export type AskEvent =
@@ -74,9 +74,12 @@ function parse(block: string): RawEvent | null {
 
 const clean = (m: string) => m.replace(/^Value error, /, "");
 
+let lastRunCode: string | undefined; // set by failureDetail: the run queue's own `code` of the failed response
 async function failureDetail(res: Response): Promise<string> {
+  lastRunCode = undefined;
   try {
     const body = await res.json();
+    if (typeof body?.code === "string") lastRunCode = body.code;
     if (typeof body?.detail === "string") return clean(body.detail);
     if (Array.isArray(body?.detail) && body.detail[0]?.msg) return clean(String(body.detail[0].msg));
   } catch {}
@@ -93,7 +96,8 @@ export async function* stream(url: string, init: RequestInit, signal: AbortSigna
     return;
   }
   if (!res.ok || !res.body) {
-    yield { type: "error", message: await failureDetail(res), code: "http", status: res.status };
+    const message = await failureDetail(res);
+    yield { type: "error", message, code: "http", status: res.status, ...(lastRunCode ? { runCode: lastRunCode } : {}) };
     return;
   }
   const reader = res.body.getReader();

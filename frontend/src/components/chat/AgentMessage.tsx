@@ -12,6 +12,7 @@ import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import { AnswerView } from "@/components/AnswerView";
 import { ReferenceList } from "@/components/ReferenceList";
 import { AnalysisArtifact } from "@/components/research/AnalysisArtifact";
+import { queueText } from "@/components/research/ProgressCard";
 import { PlanCard, type PlanSearch } from "@/components/research/PlanCard";
 import { ProgressCard } from "@/components/research/ProgressCard";
 import { AnswerSkeleton } from "@/components/research/AnswerSkeleton";
@@ -22,7 +23,7 @@ import { useInspector } from "@/lib/inspector";
 import { useT } from "@/lib/prefs";
 import { strings, type Strings } from "@/lib/strings";
 import { LogoMark } from "@/components/landing/Dropdown";
-import { approvePlan, cancelPlan, startAnalysis, startError, startRun, useRunState } from "@/lib/run";
+import { approvePlan, cancelPlan, startAnalysis, startError, startRun, useRunState, useSending } from "@/lib/run";
 import { focusComposer, useMode } from "./Composer";
 import { Starters } from "./EmptyChat";
 import { avatarSx, Time } from "./UserMessage";
@@ -40,6 +41,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const [wasRunning] = useState(turn.status === "running"); // only an answer that arrives live is revealed part by part; reloads render at once
   const copy = async () => { try { await navigator.clipboard.writeText(turn.answer?.content ?? ""); setCopied("ok"); } catch { setCopied("fail"); } setTimeout(() => setCopied(null), 2000); };
   const busy = !!useRunState().turnId;
+  const sendingChat = useSending(turn.id) && turn.mode === "chat";
   const { status } = turn;
   const analysis = turn.analysis;
   const [planErr, setPlanErr] = useState<string | null>(null); // approval can still fail (a run started elsewhere): say so, never idle silently
@@ -86,7 +88,14 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
           {planErr && <Typography role="status" sx={{ fontSize: "0.8125rem", color: "error.main" }}>{planErr}</Typography>}
         </Stack>
       ) : status === "running" && (
-        turn.mode === "chat" ? <AnswerSkeleton phase="writing" /> : ( // no search stages to show: the answer is written straight from memory
+        turn.mode === "chat" ? (
+          <>
+            {(turn.progress.phase === "waiting" || sendingChat) && ( // the queue line shows in every mode, not only beside the search stages
+              <Typography role="status" aria-live="polite" sx={{ mb: 1, fontSize: "0.9375rem", fontWeight: 600, color: "primary.main", fontVariantNumeric: "tabular-nums" }}>{sendingChat ? t.sending : queueText(turn.progress, t)}</Typography>
+            )}
+            <AnswerSkeleton phase="writing" />
+          </>
+        ) : ( // no search stages to show: the answer is written straight from memory
           <>
             <ProgressCard turn={turn} />
             {(turn.progress.phase === "searching" || turn.progress.phase === "writing") && <AnswerSkeleton phase={turn.progress.phase} />}

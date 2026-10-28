@@ -15,6 +15,12 @@ describe("client id", () => {
     expect(clientId()).toBe(a);
     expect(localStorage.getItem("scientist-client-v1")).toBe(a);
   });
+  it("works on plain http where crypto.randomUUID does not exist", () => {
+    localStorage.clear();
+    const orig = crypto.randomUUID;
+    Object.defineProperty(crypto, "randomUUID", { configurable: true, value: undefined });
+    try { expect(clientId()).toMatch(UUID); } finally { Object.defineProperty(crypto, "randomUUID", { configurable: true, value: orig }); }
+  });
   it("is regenerated when the stored value is not a uuid", () => {
     localStorage.setItem("scientist-client-v1", "nope");
     const a = clientId();
@@ -25,7 +31,7 @@ describe("client id", () => {
 
 describe("runs API", () => {
   it("submit sends X-Client-Id and returns run and turn", async () => {
-    const f = reply(202, { run: { id: RID, mine: true }, turn: { id: "t" } });
+    const f = reply(202, { run: { id: RID, status: "queued", mine: true }, turn: { id: "t" } });
     vi.stubGlobal("fetch", f);
     const r = await submitRun({ session_id: "s", turn_id: "t", kind: "ask", question: "q" });
     expect(r.run.id).toBe(RID);

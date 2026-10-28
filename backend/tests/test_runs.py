@@ -643,3 +643,22 @@ async def test_a_real_finished_run_teaches_the_eta(serve, fake_complete, monkeyp
         q = c.app.state.queue
         assert len(q._durations["research"]) == 1 and q.eta("research", 1) < 180
         await usage.drain()
+
+
+async def test_cut_off_and_failed_endings_emit_a_replayable_terminal_event(serve, fake_complete, monkeypatch):
+    from scientist.events import Complete
+    async with serve() as c:
+        svc = c.app.state.runs
+        sid, cid = await mk_session(c), u()
+
+        async def nothing(*a, **k):
+            yield Complete()
+
+        def boom(*a, **k):
+            raise RuntimeError("x")
+        for gen, code in ((lambda run: nothing(), "cut_off"), (boom, "failed")):
+            monkeypatch.setattr(svc, "_generator", gen)
+            rid = (await post(c, body(sid), cid)).json()["run"]["id"]
+            await until(c, rid, "error")
+            seen = [ev async for _, ev in svc.events(rid, 0, 0.05) if ev]
+            assert seen[-1]["type"] == "error" and seen[-1]["code"] == code

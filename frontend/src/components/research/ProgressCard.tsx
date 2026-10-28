@@ -1,12 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Box, Chip, Stack, Typography } from "@mui/material";
+import { Box, Button, Chip, Stack, Typography } from "@mui/material";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import type { Turn } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
-import { useForeign } from "@/lib/run";
+import { stopTurn, useForeign, useRunState, useSending, useStoppable } from "@/lib/run";
 import type { Progress } from "@/lib/progress";
 import { ease, enterRise, prefersReduced, stageCheckSx, stageDotSx, stageFillSx, stageRingSx, stageSettleSx } from "@/lib/motion";
 import { PlanCard, type RowState } from "./PlanCard";
@@ -103,6 +103,10 @@ export function ProgressCard({ turn }: { turn: Turn }) {
   const t = useT();
   const p = turn.progress, running = turn.status === "running";
   const other = useForeign(turn.id) && running; // someone else's run: watched here, stopped only where it was started
+  const sendingNow = useSending(turn.id) && running;
+  const lockedHere = useRunState().turnId === turn.id;
+  const stoppable = useStoppable(turn.id) && running && !lockedHere; // ours, found again in another tab: the composer has no Stop for it
+  const [stopErr, setStopErr] = useState(false);
   const [rows0] = useState(p.searches.length); // rows present on mount never animate
   const step = Math.min(4, stageIndex(p) + 1);
   const cur = p.searches.find((s) => !p.answered.includes(s.term))?.term; // what is being worked on right now
@@ -115,10 +119,16 @@ export function ProgressCard({ turn }: { turn: Turn }) {
           {/* the only live region: announces phase changes, not every paper or tick */}
           <Typography role="status" aria-live="polite" sx={{ display: "flex", alignItems: "center", gap: 1, fontWeight: 600, fontSize: "1rem", color: running ? "primary.main" : "text.primary" }}>
             {running && <SearchRoundedIcon aria-hidden sx={{ fontSize: 22 }} />}
-            {running ? (p.phase === "waiting" ? statusText(p, t) : `${statusText(p, t)} (${t.stepOfN.replace("{n}", String(step))})`) : t.progress}
+            {sendingNow ? t.sending : running ? (p.phase === "waiting" ? statusText(p, t) : `${statusText(p, t)} (${t.stepOfN.replace("{n}", String(step))})`) : t.progress}
           </Typography>
           {running && <Elapsed since={turn.createdAt} />}
         </Stack>
+        {stoppable && (
+          <Stack direction="row" spacing={1.5} sx={{ mt: -1, alignItems: "center" }}>
+            <Button size="small" variant="outlined" color="inherit" onClick={() => { setStopErr(false); void stopTurn(turn.id).then((ok) => setStopErr(!ok)); }} sx={{ minHeight: 44 }}>{t.stop}</Button>
+            {stopErr && <Typography role="status" sx={{ fontSize: "0.8125rem", color: "error.main" }}>{t.stopFailed}</Typography>}
+          </Stack>
+        )}
         {other && <Typography sx={{ mt: -1, fontSize: "0.8125rem", color: "text.secondary" }}>{t.otherDevice}</Typography>}
         {/* >= lg the right-hand ProgressPanel already carries the stage list */}
         <Box sx={{ display: { xs: "block", lg: "none" } }}><Stages p={p} running={running} /></Box>

@@ -4,12 +4,12 @@ import type { AskEvent } from "./sse";
 
 const UR = "dddddddd-0000-4000-8000-000000000001";
 type Ev = (AskEvent | { type: "analysis_step"; step: string }) & { _seq?: number };
-const api = vi.hoisted(() => ({ attaches: [] as number[], scripts: [] as (() => AsyncGenerator<unknown>)[], mine: true, runStatus: "running", submit: vi.fn(), cancel: vi.fn(async () => {}) }));
+const api = vi.hoisted(() => ({ attaches: [] as number[], scripts: [] as ((signal?: AbortSignal) => AsyncGenerator<unknown>)[], mine: true, runStatus: "running", position: undefined as number | undefined, gets: 0, submit: vi.fn(), cancel: vi.fn(async () => {}) }));
 vi.mock("./runs", async (orig) => ({
   ...(await orig<typeof import("./runs")>()),
   submitRun: api.submit, cancelRun: api.cancel,
-  getRun: async (id: string) => ({ id, status: api.runStatus, mine: api.mine }),
-  attachRun: (_id: string, after: number) => { api.attaches.push(after); return (api.scripts.shift() ?? (async function* () {}))(); },
+  getRun: async (id: string) => { api.gets++; return { id, status: api.runStatus, mine: api.mine, position: api.position, eta_seconds: api.position ? 240 : undefined }; },
+  attachRun: (_id: string, after: number, signal?: AbortSignal) => { api.attaches.push(after); return (api.scripts.shift() ?? (async function* () {}))(signal); },
 }));
 const direct = vi.hoisted(() => ({ asks: 0 }));
 vi.mock("./sse", async (orig) => ({ ...(await orig<typeof import("./sse")>()), streamAsk: async function* () { direct.asks++; yield { type: "complete" }; } }));
@@ -18,15 +18,17 @@ vi.mock("./sync", async (orig) => ({ ...(await orig<typeof import("./sync")>()),
 const gen = (evs: Ev[]) => async function* () { for (const e of evs) yield e; };
 const turnRow = (id: string, extra: object = {}) => ({ id, session_id: "s", idx: 0, question: "q", mode: "deep", status: "running", progress: null, created_at: "2026-01-01T00:00:00Z", updated_at: new Date().toISOString(), version: 1, run_id: UR, ...extra });
 async function setup(shared = true) {
-  localStorage.clear(); vi.resetModules();
+  localStorage.clear(); sessionStorage.clear(); vi.resetModules(); // sessionStorage: runs this tab submitted
   const sync = await import("./sync");
   sync.useSync.setState({ status: shared ? "online" : "disabled" });
   (await import("./prefs")).usePrefs.setState({ reviewPlan: false });
   const chat = (await import("./chat")).useChatStore;
   const run = await import("./run");
-  return { chat, run, sid: chat.getState().newSession() };
+  const sid = chat.getState().newSession();
+  sync.__versions().set(`session:${sid}`, 1); // the session is already on the server: a submit does not wait for it
+  return { chat, run, sid };
 }
-beforeEach(() => { api.attaches = []; api.scripts = []; api.mine = true; api.runStatus = "running"; direct.asks = 0; api.submit.mockReset(); api.cancel.mockClear(); });
+beforeEach(() => { api.attaches = []; api.scripts = []; api.mine = true; api.runStatus = "running"; api.position = undefined; api.gets = 0; direct.asks = 0; api.submit.mockReset(); api.cancel.mockClear(); });
 
 describe("shared mode runs", () => {
   it("startRun submits to the queue (not the old stream) and shows the events as they come", async () => {
@@ -117,7 +119,7 @@ describe("re-attach", () => {
     await vi.waitFor(() => expect(chat.getState().sessions[0].turns[0].status).toBe("done"));
     expect(api.attaches).toEqual([0]);
   });
-  it("Stop does nothing for a run another device started, and cancels one that is ours", async () => {
+  it("Stop does nothing for a run another device started; ours found again is stoppable from its card without taking the lock", async () => {
     let end!: () => void;
     const hang = async function* () { await new Promise<void>((r) => (end = r)); };
     const a = await loaded(false);
@@ -132,8 +134,9 @@ describe("re-attach", () => {
     const b = await loaded(true);
     api.attaches = []; api.scripts.push(hang);
     b.run.attachRunning();
-    await vi.waitFor(() => expect(b.run.canStart().ok).toBe(false));
-    b.run.stopRun();
+    await vi.waitFor(() => expect(api.attaches).toHaveLength(1));
+    expect(b.run.canStart()).toEqual({ ok: true }); // found again after a reload: watched, the tab stays free for a new question
+    expect(await b.run.stopTurn("t1")).toBe(true); // ...and Stop on its card still cancels it (the server allows the submitter)
     expect(api.cancel).toHaveBeenCalledWith(UR);
     end();
   });
@@ -146,5 +149,63 @@ describe("re-attach", () => {
     const ts = chat.getState().sessions[0].turns;
     expect(ts.find((t) => t.id === "t2")!.status).toBe("interrupted");
     expect(ts.find((t) => t.id === "t1")!.status).toBe("running");
+  });
+});
+
+describe("queue fixes", () => {
+  it("the question shows at once, marked sending, before the server has answered", async () => {
+    const { chat, run, sid } = await setup();
+    let accept!: (v: unknown) => void;
+    api.submit.mockImplementation((b: { turn_id: string }) => new Promise((r) => (accept = () => r({ run: { id: UR, status: "queued", mine: true }, turn: turnRow(b.turn_id) }))));
+    api.scripts.push(gen([{ type: "final_answer", content: "a", references: [], _seq: 1 }, { type: "complete", _seq: 2 }]));
+    const p = run.startRun(sid, "เร็ว");
+    await vi.waitFor(() => expect(api.submit).toHaveBeenCalled());
+    const shown = chat.getState().sessions[0].turns.at(-1)!;
+    expect(shown).toMatchObject({ question: "เร็ว", status: "running" });
+    accept(null);
+    await p;
+    const id = api.submit.mock.calls[0][0].turn_id;
+    expect(chat.getState().sessions[0].turns.filter((t) => t.id === id)).toHaveLength(1); // never added twice
+    expect(chat.getState().sessions[0].turns.at(-1)!.status).toBe("done");
+  });
+  it("a failed submit takes the shown question away again and throws (the composer restores it)", async () => {
+    const { chat, run, sid } = await setup();
+    api.submit.mockRejectedValue({ message: "", code: "network" });
+    await expect(run.startRun(sid, "หาย?")).rejects.toMatchObject({ code: "network" });
+    expect(chat.getState().sessions[0].turns).toHaveLength(0);
+    expect(run.canStart()).toEqual({ ok: true });
+  });
+  it("a queued run found again shows its position and wait from the run view", async () => {
+    const { chat, run, sid } = await setup();
+    api.position = 2; api.runStatus = "queued";
+    let end!: () => void;
+    api.scripts.push(async function* () { await new Promise<void>((r) => (end = r)); });
+    chat.getState().addTurn(sid, { id: "t1", question: "q", createdAt: 1, status: "running", progress: (await import("./progress")).emptyProgress, runId: UR });
+    run.attachRunning();
+    await vi.waitFor(() => expect(chat.getState().sessions[0].turns[0].progress).toMatchObject({ phase: "waiting", waiting: 2, eta: 240 }));
+    end();
+  });
+  it("a stream that closes cleanly with no ending asks the server once and stops following an ended run at once", async () => {
+    const { run, sid } = await setup();
+    api.submit.mockImplementation(async (b: { turn_id: string }) => ({ run: { id: UR, status: "running", mine: true }, turn: turnRow(b.turn_id) }));
+    api.scripts.push(gen([{ type: "strategy", reasoning: "r", searches: [], _seq: 1 } as never]));
+    api.runStatus = "error";
+    const t0 = Date.now();
+    await run.startRun(sid, "q");
+    expect(Date.now() - t0).toBeLessThan(900); // no backoff sleeps for a clean close
+    expect(api.attaches).toEqual([0]);
+    expect(api.gets).toBe(1);
+  });
+  it("opening another session drops streams of runs that are neither in it nor ours", async () => {
+    const { chat, run, sid } = await setup();
+    api.mine = false;
+    let aborted = false;
+    api.scripts.push(async function* (signal?: AbortSignal) { await new Promise<void>((r) => signal?.addEventListener("abort", () => { aborted = true; r(); })); });
+    chat.getState().addTurn(sid, { id: "t1", question: "q", createdAt: 1, status: "running", progress: (await import("./progress")).emptyProgress, runId: UR });
+    run.attachRunning();
+    await vi.waitFor(() => expect(run.isAttached("t1")).toBe(true));
+    chat.getState().newSession(); // the active session changes
+    await vi.waitFor(() => expect(aborted).toBe(true));
+    await vi.waitFor(() => expect(run.isAttached("t1")).toBe(false));
   });
 });
