@@ -42,6 +42,17 @@ describe("shell", () => {
     expect(useChatStore.getState().sessions).toHaveLength(2);
   });
 
+  it("New chat from another project starts in Personal and switches the header with it", () => {
+    const st = useChatStore.getState();
+    const pid = st.addProject("park test");
+    act(() => useChatStore.setState({ activeProjectId: pid }));
+    render(<AppShell>x</AppShell>);
+    fireEvent.click(within(sb()).getByRole("button", { name: t.newChat }));
+    const s2 = useChatStore.getState();
+    expect(s2.activeProjectId).toBe(PERSONAL);
+    expect(s2.sessions.find((x) => x.id === s2.activeId)?.projectId).toBe(PERSONAL);
+  });
+
   it("search filters session titles case-insensitively", () => {
     seed("Alpha CRISPR"); seed("Beta graphene");
     render(<AppShell>x</AppShell>);

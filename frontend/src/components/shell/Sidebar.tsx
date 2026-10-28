@@ -7,7 +7,6 @@ import ChevronRightRoundedIcon from "@mui/icons-material/ChevronRightRounded";
 import EditSquareIcon from "@mui/icons-material/EditSquare";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import FolderCopyOutlinedIcon from "@mui/icons-material/FolderCopyOutlined";
-import LanguageRoundedIcon from "@mui/icons-material/LanguageRounded";
 import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import ViewSidebarOutlinedIcon from "@mui/icons-material/ViewSidebarOutlined";
@@ -20,7 +19,7 @@ import { srOnly, UI } from "@/lib/config";
 import { useHydrated } from "@/lib/history";
 import { PERSONAL, useChatStore } from "@/lib/chat";
 import { useGoChat } from "@/lib/nav";
-import { usePrefs, useT } from "@/lib/prefs";
+import { useT } from "@/lib/prefs";
 import { ProjectTree } from "./ProjectTree";
 import { SessionList } from "./SessionList";
 
@@ -58,20 +57,16 @@ export function ServerLoad() {
 
 export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollapse?: () => void }) {
   const t = useT();
-  const lang = usePrefs((s) => s.lang), setLang = usePrefs((s) => s.setLang);
   const hydrated = useHydrated();
   const goChat = useGoChat();
   const path = usePathname(), onFiles = path === "/files", onTrash = path === "/trash";
   const shared = useSync((s) => s.status) !== "disabled" && hydrated;
-  const newSession = useChatStore((s) => s.newSession), setActive = useChatStore((s) => s.setActive);
-  const storeActive = useChatStore((s) => s.activeProjectId), storeSessions = useChatStore((s) => s.sessions);
-  const activeProjectId = hydrated ? storeActive : PERSONAL;
-  const sessions = hydrated ? storeSessions : [];
+  const newSession = useChatStore((s) => s.newSession);
   const [query, setQuery] = useState("");
 
   function newChat() {
-    const empty = sessions.find((s) => s.projectId === activeProjectId && !s.turns.length);
-    if (empty) setActive(empty.id); else newSession(activeProjectId);
+    // "New chat" always starts in Personal (switching the header and tree with it); the store reuses an existing blank chat there instead of piling up blanks.
+    newSession(PERSONAL);
     onPick?.();
     goChat();
     setTimeout(() => document.getElementById("composer")?.focus(), 0); // composer lands in T4
@@ -115,10 +110,6 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
         )}
         <Button color="inherit" startIcon={<SettingsOutlinedIcon />} endIcon={<ChevronRightRoundedIcon />} onClick={() => useSettingsOpen.getState().set(true)}
           sx={{ ...rowSx, "& .MuiButton-endIcon": { ml: "auto" } }}>{t.settings}</Button>
-        <Button color="inherit" startIcon={<LanguageRoundedIcon />} endIcon={<ChevronRightRoundedIcon />} onClick={() => setLang(lang === "en" ? "th" : "en")}
-          sx={{ ...rowSx, "& .MuiButton-endIcon": { ml: 0.5 } }}>
-          {t.language}<Box component="span" sx={{ ml: "auto", color: "text.secondary" }}>{t.langName}</Box>
-        </Button>
       </Stack>
     </Stack>
   );

@@ -1,9 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
+import { keyframes } from "@mui/material/styles";
 import { Alert, Box, Button, LinearProgress, Stack, Typography } from "@mui/material";
 import { clearOld, importOld, readOld, summarize, type ImportResult, type OldData } from "@/lib/importOld";
 import { useT } from "@/lib/prefs";
 import { refreshNow, useSync } from "@/lib/sync";
+
+const rise = keyframes`from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; }`;
 
 // "Earlier data in this browser": counts what the old browser-only version left in localStorage and imports it ONLY on the button.
 export function ImportOld({ open }: { open: boolean }) {
@@ -25,7 +28,7 @@ export function ImportOld({ open }: { open: boolean }) {
     setProg(null);
   };
   return (
-    <Box component="section" aria-labelledby="import-l" sx={{ px: 2, py: 1.5, border: 1, borderColor: "divider", borderRadius: 3, bgcolor: "surface.raised" }}>
+    <Box component="section" aria-labelledby="import-l" sx={{ px: 2, py: 1.5, border: 1, borderColor: "divider", borderRadius: 3, bgcolor: "surface.raised", animation: `${rise} 380ms cubic-bezier(.22,1,.36,1) both`, animationDelay: "280ms" }}>
       <Typography id="import-l" component="h3" sx={{ fontSize: "0.9375rem", fontWeight: 700 }}>{t.importTitle}</Typography>
       <Typography sx={{ mt: 0.25, fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.5 }}>{t.importNote}</Typography>
       <Stack spacing={1} sx={{ mt: 1.25 }}>
