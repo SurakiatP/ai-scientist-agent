@@ -10,6 +10,7 @@ import { stopTurn, useForeign, useRunState, useSending, useStoppable } from "@/l
 import type { Progress } from "@/lib/progress";
 import { ease, enterRise, prefersReduced, stageCheckSx, stageDotSx, stageFillSx, stageRingSx, stageSettleSx } from "@/lib/motion";
 import { PlanCard, type RowState } from "./PlanCard";
+import { ResearchScan } from "./ResearchScan";
 import type { Strings } from "@/lib/strings";
 
 // Backend has no separate "check" phase: stage 4 is only reached when the run is done.
@@ -108,6 +109,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
   const stoppable = useStoppable(turn.id) && running && !lockedHere; // ours, found again in another tab: the composer has no Stop for it
   const [stopErr, setStopErr] = useState(false);
   const [rows0] = useState(p.searches.length); // rows present on mount never animate
+  const scanning = running && p.phase === "searching"; // only while sources are being searched and read; never queued, planning or writing
   const step = Math.min(4, stageIndex(p) + 1);
   const cur = p.searches.find((s) => !p.answered.includes(s.term))?.term; // what is being worked on right now
   const rowState = (term: string): RowState =>
@@ -115,13 +117,16 @@ export function ProgressCard({ turn }: { turn: Turn }) {
   return (
     <Box sx={{ border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.raised", p: { xs: 1.5, sm: 2 } }}>
       <Stack spacing={2}>
-        <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1, flexWrap: "wrap" }}>
+        <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1.5 }}>
+          <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", gap: 1, flexWrap: "wrap", flex: 1, minWidth: 0 }}>
           {/* the only live region: announces phase changes, not every paper or tick */}
           <Typography role="status" aria-live="polite" sx={{ display: "flex", alignItems: "center", gap: 1, fontWeight: 600, fontSize: "1rem", color: running ? "primary.main" : "text.primary" }}>
             {running && <SearchRoundedIcon aria-hidden sx={{ fontSize: 22 }} />}
             {sendingNow ? t.sending : running ? (p.phase === "waiting" ? statusText(p, t) : `${statusText(p, t)} (${t.stepOfN.replace("{n}", String(step))})`) : t.progress}
           </Typography>
           {running && <Elapsed since={turn.createdAt} />}
+          </Stack>
+          {scanning && <ResearchScan size={{ xs: 56, sm: 72 }} />}
         </Stack>
         {stoppable && (
           <Stack direction="row" spacing={1.5} sx={{ mt: -1, alignItems: "center" }}>

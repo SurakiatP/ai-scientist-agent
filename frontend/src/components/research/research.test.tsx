@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import gsap from "gsap";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AnswerView } from "@/components/AnswerView";
 import { ReferenceList } from "@/components/ReferenceList";
 import { useChatStore, type Turn } from "@/lib/chat";
@@ -10,6 +11,7 @@ import { emptyProgress, type Progress } from "@/lib/progress";
 import type { Reference } from "@/lib/sse";
 import { strings } from "@/lib/strings";
 import { ProgressCard } from "./ProgressCard";
+import { ResearchScan } from "./ResearchScan";
 import { ProgressPanel } from "./ProgressPanel";
 import { SourceInspector } from "./SourceInspector";
 
@@ -194,5 +196,44 @@ describe("inspector guards", () => {
     render(<ReferenceList t={t} references={[ref("1", { doi: "10.1/x" }, "unverified"), ref("2", {}, "unverified")]} />);
     expect(screen.getByText(t.chkNotFound)).toBeInTheDocument();
     expect(screen.getByText(t.chkNoId)).toBeInTheDocument();
+  });
+});
+
+describe("ResearchScan (pixel-art loop in the progress card)", () => {
+  const scan = (c: HTMLElement) => c.querySelector("svg[viewBox='0 0 528 528']");
+  const media = (reduce: boolean) => vi.stubGlobal("matchMedia", (q: string) => ({ matches: reduce && q.includes("reduce"), media: q, addEventListener() {}, removeEventListener() {} }));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("shows only while sources are being searched, and never as text or a progress value", () => {
+    media(false);
+    const { container, rerender } = render(<ProgressCard turn={turn(busy)} />);
+    expect(scan(container)).not.toBeNull();
+    expect(scan(container)!.closest("[aria-hidden='true']")).not.toBeNull(); // decorative
+    for (const p of [{ phase: "waiting" as const, waiting: 2 }, { phase: "planning" as const }, { phase: "writing" as const }, { phase: "done" as const }]) {
+      rerender(<ProgressCard turn={turn(p)} />);
+      expect(scan(container)).toBeNull();
+    }
+    rerender(<ProgressCard turn={turn(busy, { status: "done" })} />);
+    expect(scan(container)).toBeNull(); // not running: never shown
+  });
+
+  it("runs on one GSAP timeline and kills it on unmount", () => {
+    media(false);
+    const spy = vi.spyOn(gsap, "timeline");
+    const { unmount } = render(<ResearchScan />);
+    expect(spy).toHaveBeenCalledTimes(1);
+    const kill = vi.spyOn(spy.mock.results[0].value as gsap.core.Timeline, "kill");
+    unmount();
+    expect(kill).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("draws a still (no timeline) under reduced motion", () => {
+    media(true);
+    const spy = vi.spyOn(gsap, "timeline");
+    const { container } = render(<ResearchScan />);
+    expect(spy).not.toHaveBeenCalled();
+    expect(scan(container)!.querySelector("[data-r='lens']")!.getAttribute("transform")).toBe("translate(161 256)"); // the opening pose
+    spy.mockRestore();
   });
 });
