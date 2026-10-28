@@ -4,7 +4,7 @@ import { MAX_SESSIONS, MAX_TURNS, PERSONAL, useChatStore } from "./chat";
 import { gate } from "./config";
 import { useFilesStore } from "./files";
 import { emptyProgress } from "./progress";
-import { __queue, __resetSync, recordServerTurn, startSync, TURN_GAP_MS, useSync } from "./sync";
+import { __queue, __resetSync, recordServerTurn, settleSession, startSync, TURN_GAP_MS, useSync } from "./sync";
 
 const run = vi.hoisted(() => ({ turn: null as string | null, att: null as string | null }));
 vi.mock("./run", () => ({ runningTurnId: () => run.turn, isAttached: (id: string) => id === run.att, attachRunning: vi.fn(), useRunState: () => ({ sessionId: null, turnId: null }), stopRun: vi.fn() }));
@@ -357,6 +357,26 @@ describe("server-owned runs and local caps", () => {
     useChatStore.getState().truncateFrom(sid, U(902));
     await done();
     expect(calls.filter((c) => c.method === "DELETE").map((c) => c.url)).toEqual([`/v1/store/sessions/${sid}/turns/from/7`]);
+  });
+  it("settleSession waits for a queued truncate of the session (an edit) before a run may be submitted", async () => {
+    await online();
+    const sid = useChatStore.getState().newSession();
+    useChatStore.getState().addTurn(sid, turn(U(910)));
+    useChatStore.getState().addTurn(sid, turn(U(911)));
+    await done();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    routes.push((c) => (c.method === "DELETE" ? undefined : undefined));
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (u: string, i?: RequestInit) => { if (i?.method === "DELETE") await gate; return realFetch(u, i); }));
+    useChatStore.getState().truncateFrom(sid, U(911));
+    let settled = false;
+    const p = settleSession(sid).then((ok) => { settled = ok; });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(settled).toBe(false); // the DELETE is still on its way
+    release();
+    await p;
+    expect(settled).toBe(true);
   });
   it("D1: the 51st turn in shared mode is kept and never mirrored as a delete", async () => {
     await online();

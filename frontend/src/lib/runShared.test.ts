@@ -170,8 +170,8 @@ describe("queue fixes", () => {
   });
   it("a failed submit takes the shown question away again and throws (the composer restores it)", async () => {
     const { chat, run, sid } = await setup();
-    api.submit.mockRejectedValue({ message: "", code: "network" });
-    await expect(run.startRun(sid, "หาย?")).rejects.toMatchObject({ code: "network" });
+    api.submit.mockRejectedValue({ message: "", code: "http", status: 503 }); // refused: the server has no run
+    await expect(run.startRun(sid, "หาย?")).rejects.toMatchObject({ status: 503 });
     expect(chat.getState().sessions[0].turns).toHaveLength(0);
     expect(run.canStart()).toEqual({ ok: true });
   });
@@ -207,5 +207,35 @@ describe("queue fixes", () => {
     chat.getState().newSession(); // the active session changes
     await vi.waitFor(() => expect(aborted).toBe(true));
     await vi.waitFor(() => expect(run.isAttached("t1")).toBe(false));
+  });
+});
+
+describe("queue fixes, round 2", () => {
+  it("a network loss after the POST went out keeps the turn (same id as the server's) instead of removing it", async () => {
+    const { chat, run, sid } = await setup();
+    api.submit.mockRejectedValue({ message: "", code: "network" });
+    await expect(run.startRun(sid, "อาจถึงแล้ว")).rejects.toMatchObject({ code: "network" });
+    const ts = chat.getState().sessions[0].turns;
+    expect(ts).toHaveLength(1);
+    expect(ts[0]).toMatchObject({ question: "อาจถึงแล้ว", status: "interrupted" });
+  });
+  it("a definite refusal (an http status) removes the shown question", async () => {
+    const { chat, run, sid } = await setup();
+    api.submit.mockRejectedValue({ message: "", code: "http", status: 429, runCode: "queue_full" });
+    await expect(run.startRun(sid, "ไม่รับ")).rejects.toMatchObject({ status: 429 });
+    expect(chat.getState().sessions[0].turns).toHaveLength(0);
+  });
+  it("a viewer stream dropped on session switch re-attaches at once when the session is opened again", async () => {
+    const { chat, run, sid } = await setup();
+    api.mine = false;
+    const hang = async function* (signal?: AbortSignal) { await new Promise<void>((r) => signal?.addEventListener("abort", () => r())); };
+    api.scripts.push(hang, hang);
+    chat.getState().addTurn(sid, { id: "t1", question: "q", createdAt: 1, status: "running", progress: (await import("./progress")).emptyProgress, runId: UR });
+    run.attachRunning();
+    await vi.waitFor(() => expect(api.attaches).toHaveLength(1));
+    chat.getState().newSession();
+    await vi.waitFor(() => expect(run.isAttached("t1")).toBe(false));
+    chat.getState().setActive(sid);
+    await vi.waitFor(() => expect(api.attaches).toHaveLength(2)); // not held back by a "recently ended" mark
   });
 });

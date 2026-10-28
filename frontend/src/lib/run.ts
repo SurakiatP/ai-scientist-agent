@@ -171,7 +171,9 @@ async function follow(sessionId: string, base: Turn, runId: string, c: AbortCont
     }
     if (outcome) patch({ ...(isAnalysis ? { progress, ...(analysis ? { analysis } : {}) } : { progress }), ...outcome });
   } finally {
-    attached.delete(turnId); owners.delete(turnId); runOf.delete(turnId); sending.delete(turnId); markSettled(runId); notify(); refreshLoad();
+    attached.delete(turnId); owners.delete(turnId); runOf.delete(turnId); sending.delete(turnId);
+    if (!c.signal.aborted) markSettled(runId); // a viewer stream dropped on session switch is not an ended run: switching back re-attaches at once
+    notify(); refreshLoad();
   }
   if (!outcome && !c.signal.aborted) await refreshNow(); // the shared store knows the real state
 }
@@ -228,14 +230,22 @@ async function sharedRun(sessionId: string, body: RunBody, local: Turn, existing
   if (existing) store().patchTurn(sessionId, turnId, { status: "running", progress: emptyProgress, runId: newId() });
   else store().addTurn(sessionId, { ...local, runId: newId() }); // placeholder run id: the server owns this turn, sync never writes it
   notify();
-  const undo = () => {
+  let posted = false; // the POST went out: from then on only a definite refusal (an http status) proves the server has no run
+  const undo = (e: unknown) => {
     attached.delete(turnId); sending.delete(turnId); notify();
+    const refused = typeof (e as ApiError)?.status === "number" || !posted;
+    if (!refused) { // stopped or cut off mid-request: the run may exist. Keep the turn (same id as the server's) and let the store decide.
+      try { store().patchTurn(sessionId, turnId, { status: "interrupted" }); } catch {}
+      void refreshNow();
+      return;
+    }
     try { if (back) store().patchTurn(sessionId, turnId, back); else store().truncateFrom(sessionId, turnId); } catch {}
   };
   let t: Turn, run: RunView;
   try {
     await settleSession(sessionId, c.signal); // bounded; when the session is still not there we submit anyway and the server answers 404
     let sub;
+    posted = true;
     try { sub = await submitRun(body, c.signal); } catch (e) {
       if ((e as ApiError)?.status === 404 && !c.signal.aborted && !(await settleSession(sessionId, c.signal))) throw { message: strings[usePrefs.getState().lang].submitTimeout, code: "http" } satisfies ApiError;
       throw e;
@@ -251,7 +261,7 @@ async function sharedRun(sessionId: string, body: RunBody, local: Turn, existing
     if (store().sessions.find((x) => x.id === sessionId)?.turns.some((x) => x.id === turnId)) store().patchTurn(sessionId, turnId, { ...t, createdAt: local.createdAt }); // M1: it is already shown: update, never add twice
     else store().addTurn(sessionId, t);
   } catch (e) {
-    undo();
+    undo(e);
     throw e;
   }
   sending.delete(turnId); notify(); refreshLoad();

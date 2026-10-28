@@ -107,6 +107,17 @@ describe("UserMessage edit", () => {
     expect(run.startRun).toHaveBeenCalledWith(sid, "ใหม่", { mode: "quick" });
     expect(useChatStore.getState().sessions[0].turns).toEqual([]); // old turn replaced by the new run's turn
   });
+  it("an edit the server refuses puts the whole conversation back and the new text in the composer", async () => {
+    run.startRun.mockRejectedValueOnce({ message: "", code: "http", status: 429, runCode: "client_busy" });
+    const sid = setup([mkTurn("a"), mkTurn("b", { question: "ต่อมา" })]);
+    useDraft.setState({ drafts: {} });
+    fireEvent.click(btn(t.editMsg));
+    edit("ใหม่");
+    fireEvent.click(screen.getByRole("button", { name: t.sendAgain }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: t.confirm })); });
+    expect(useChatStore.getState().sessions[0].turns.map((x) => x.question)).toEqual(["คำถามแรก", "ต่อมา"]);
+    expect(useDraft.getState().drafts[sid]).toBe("ใหม่");
+  });
   it("with later turns it asks first, then truncates and sends; cancel keeps everything", () => {
     const sid = setup([mkTurn("a"), mkTurn("b"), mkTurn("c")]);
     fireEvent.click(btn(t.editMsg));

@@ -6,6 +6,7 @@ import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import { useChatStore, type Turn } from "@/lib/chat";
+import { newId } from "@/lib/history";
 import { usePrefs, useT } from "@/lib/prefs";
 import { canStart, startAnalysis, startError, startRun, useRunState } from "@/lib/run";
 import { focusComposer, useDraft, useStartErr } from "./Composer";
@@ -66,9 +67,16 @@ export function UserMessage({ sessionId, turn }: { sessionId: string; turn: Turn
     if (!canStart().ok) { setErr(true); return; }
     // later turns answered the old question: ask before dropping them
     if (laterCount > 0 && !confirm) { setConfirm(true); return; }
+    const all = useChatStore.getState().sessions.find((x) => x.id === sessionId)?.turns ?? [];
+    const removed = all.slice(all.findIndex((x) => x.id === turn.id)); // this question and every later turn
     useChatStore.getState().truncateFrom(sessionId, turn.id);
     setEditing(false); setConfirm(false);
-    ask(sessionId, turn, draft.trim()).catch(failed(draft.trim()));
+    const q = draft.trim();
+    ask(sessionId, turn, q).catch((e: unknown) => {
+      // the edit never started: put the conversation back (new ids: the old ones are gone on the server) and say why
+      for (const x of removed) useChatStore.getState().addTurn(sessionId, { ...x, id: newId(), runId: undefined, status: x.status === "running" || x.status === "awaiting_plan" ? "interrupted" : x.status });
+      failed(q)(e);
+    });
   };
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") { e.preventDefault(); close(); return; }

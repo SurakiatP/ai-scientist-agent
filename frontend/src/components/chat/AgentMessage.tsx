@@ -23,7 +23,7 @@ import { useInspector } from "@/lib/inspector";
 import { useT } from "@/lib/prefs";
 import { strings, type Strings } from "@/lib/strings";
 import { LogoMark } from "@/components/landing/Dropdown";
-import { approvePlan, cancelPlan, startAnalysis, startError, startRun, useRunState, useSending } from "@/lib/run";
+import { approvePlan, cancelPlan, startAnalysis, startError, startRun, stopTurn, useRunState, useSending, useStoppable } from "@/lib/run";
 import { focusComposer, useMode } from "./Composer";
 import { Starters } from "./EmptyChat";
 import { avatarSx, Time } from "./UserMessage";
@@ -40,8 +40,11 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const [copied, setCopied] = useState<"ok" | "fail" | null>(null);
   const [wasRunning] = useState(turn.status === "running"); // only an answer that arrives live is revealed part by part; reloads render at once
   const copy = async () => { try { await navigator.clipboard.writeText(turn.answer?.content ?? ""); setCopied("ok"); } catch { setCopied("fail"); } setTimeout(() => setCopied(null), 2000); };
-  const busy = !!useRunState().turnId;
+  const lockedTurn = useRunState().turnId;
+  const busy = !!lockedTurn;
   const sendingChat = useSending(turn.id) && turn.mode === "chat";
+  const chatStop = useStoppable(turn.id) && turn.mode === "chat" && turn.status === "running" && lockedTurn !== turn.id; // ours, found again: no composer Stop here
+  const [stopErr, setStopErr] = useState(false);
   const { status } = turn;
   const analysis = turn.analysis;
   const [planErr, setPlanErr] = useState<string | null>(null); // approval can still fail (a run started elsewhere): say so, never idle silently
@@ -92,6 +95,12 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
           <>
             {(turn.progress.phase === "waiting" || sendingChat) && ( // the queue line shows in every mode, not only beside the search stages
               <Typography role="status" aria-live="polite" sx={{ mb: 1, fontSize: "0.9375rem", fontWeight: 600, color: "primary.main", fontVariantNumeric: "tabular-nums" }}>{sendingChat ? t.sending : queueText(turn.progress, t)}</Typography>
+            )}
+            {chatStop && (
+              <Stack direction="row" spacing={1.5} sx={{ mb: 1, alignItems: "center" }}>
+                <Button size="small" variant="outlined" color="inherit" onClick={() => { setStopErr(false); void stopTurn(turn.id).then((ok) => setStopErr(!ok)); }} sx={{ minHeight: 44 }}>{t.stop}</Button>
+                {stopErr && <Typography role="status" sx={{ fontSize: "0.8125rem", color: "error.main" }}>{t.stopFailed}</Typography>}
+              </Stack>
             )}
             <AnswerSkeleton phase="writing" />
           </>

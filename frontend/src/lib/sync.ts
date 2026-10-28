@@ -392,10 +392,12 @@ export async function startSync(): Promise<void> {
   void pump();
 }
 
-// Wait (bounded) until the session itself is on the server, so a run can point at it. Queued turn writes do not matter:
-// the server allocates a run's turn itself. Never blocks when the server already knows the session; true = it is there.
+// Wait (bounded) until the session itself is on the server and any truncate (an edited question) for it has been applied,
+// so a run can point at it. Turn puts do not matter: the server allocates a run's turn itself. A truncate does: the server
+// gives the new turn max+1, which a later truncate from an older idx would delete. true = ready.
 export async function settleSession(sid: string, signal?: AbortSignal): Promise<boolean> {
-  const pendingSession = () => queue.some((o) => o.k === "session" && o.id === sid) || (inflight?.k === "session" && inflight.id === sid) || !versions.has(vkey("session", sid));
+  const truncate = (o: Op | null) => !!o && o.k === "turn" && o.a === "del" && o.sid === sid;
+  const pendingSession = () => queue.some((o) => (o.k === "session" && o.id === sid) || truncate(o)) || (inflight?.k === "session" && inflight.id === sid) || truncate(inflight) || !versions.has(vkey("session", sid));
   for (let i = 0; i < 100 && !signal?.aborted && useSync.getState().status !== "disabled" && pendingSession(); i++) {
     void pump();
     await new Promise((r) => setTimeout(r, 50));

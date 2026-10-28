@@ -117,7 +117,8 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
     const restore = (e: unknown) => {
       if (!useDraft.getState().drafts[sessionId]) set(sessionId, q); // restore unless the user already typed again
       if (attached) setFile((cur) => cur ?? attached);
-      setErr(e instanceof Error && e.message === "busy" ? t.busyElsewhere : startError(e) ?? t.startFailed);
+      // through the store: the first message of an empty chat remounts this composer, and local state would be lost
+      useStartErr.getState().set(sessionId, e instanceof Error && e.message === "busy" ? t.busyElsewhere : startError(e) ?? t.startFailed);
     };
     if (attached?.status === "ready" && attached.fileId) startAnalysis(sessionId, q, attached.fileId, attached.name).catch(restore);
     else startRun(sessionId, q, { mode }).catch(restore);

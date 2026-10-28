@@ -85,13 +85,15 @@ export async function* attachRun(runId: string, after: number, signal: AbortSign
 // --- server load line: one module-level poller shared by every watcher ------------------------------------------------
 export const LOAD_POLL_MS = 15_000;
 export const useLoad = create<{ q: QueueStatus | null }>(() => ({ q: null }));
-let watchers = 0, timer: ReturnType<typeof setTimeout> | undefined, inflight = false;
+let watchers = 0, timer: ReturnType<typeof setTimeout> | undefined, inflight = false, again = false;
 const visible = () => typeof document === "undefined" || document.visibilityState === "visible";
 async function tick(): Promise<void> {
   clearTimeout(timer);
-  if (watchers && visible() && !inflight) {
+  if (inflight) { again = true; return; } // the poll in flight may predate the change: poll once more when it lands
+  if (watchers && visible()) {
     inflight = true;
     try { const q = await queueStatus(); if (q?.research) useLoad.setState({ q }); } catch { useLoad.setState({ q: null }); } finally { inflight = false; }
+    if (again) { again = false; return void tick(); }
   }
   if (watchers) timer = setTimeout(tick, LOAD_POLL_MS);
 }
