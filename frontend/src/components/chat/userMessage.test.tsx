@@ -5,11 +5,13 @@ import { useChatStore, type Turn } from "@/lib/chat";
 import { emptyProgress } from "@/lib/progress";
 import { MAX_QUESTION, strings } from "@/lib/strings";
 import { UserMessage } from "./UserMessage";
+import { useDraft, useStartErr } from "./Composer";
 
 const run = vi.hoisted(() => ({ turnId: null as string | null, startRun: vi.fn(async () => {}), startAnalysis: vi.fn(async () => {}) }));
-vi.mock("@/lib/run", () => ({
+vi.mock("@/lib/run", () => ({ useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true), 
   useRunState: () => ({ sessionId: null, turnId: run.turnId }),
   startRun: run.startRun, startAnalysis: run.startAnalysis,
+  startError: () => null, useForeign: () => false,
   canStart: () => (run.turnId ? { ok: false, reason: "busy" } : { ok: true }),
 }));
 
@@ -69,6 +71,17 @@ describe("UserMessage actions", () => {
   });
 });
 
+describe("UserMessage start failures", () => {
+  it("a retry the server refuses puts the question back in the composer with the reason", async () => {
+    run.startRun.mockRejectedValueOnce({ message: "", code: "http", status: 429, runCode: "queue_full" });
+    const id = setup([mkTurn("r")]);
+    useDraft.setState({ drafts: {} }); useStartErr.setState({ by: {} });
+    await act(async () => { fireEvent.click(btn(t.retryMsg)); });
+    expect(useDraft.getState().drafts[id]).toBe("คำถามแรก");
+    expect(useStartErr.getState().by[id]).toBe(t.startFailed); // startError is mocked to null here: the generic copy
+  });
+});
+
 describe("UserMessage edit", () => {
   it("send is disabled until the text really changes; over-limit blocks", () => {
     setup([mkTurn("a")]);
@@ -93,6 +106,17 @@ describe("UserMessage edit", () => {
     fireEvent.keyDown(box(), { key: "Enter" });
     expect(run.startRun).toHaveBeenCalledWith(sid, "ใหม่", { mode: "quick" });
     expect(useChatStore.getState().sessions[0].turns).toEqual([]); // old turn replaced by the new run's turn
+  });
+  it("an edit the server refuses puts the whole conversation back and the new text in the composer", async () => {
+    run.startRun.mockRejectedValueOnce({ message: "", code: "http", status: 429, runCode: "client_busy" });
+    const sid = setup([mkTurn("a"), mkTurn("b", { question: "ต่อมา" })]);
+    useDraft.setState({ drafts: {} });
+    fireEvent.click(btn(t.editMsg));
+    edit("ใหม่");
+    fireEvent.click(screen.getByRole("button", { name: t.sendAgain }));
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: t.confirm })); });
+    expect(useChatStore.getState().sessions[0].turns.map((x) => x.question)).toEqual(["คำถามแรก", "ต่อมา"]);
+    expect(useDraft.getState().drafts[sid]).toBe("ใหม่");
   });
   it("with later turns it asks first, then truncates and sends; cancel keeps everything", () => {
     const sid = setup([mkTurn("a"), mkTurn("b"), mkTurn("c")]);

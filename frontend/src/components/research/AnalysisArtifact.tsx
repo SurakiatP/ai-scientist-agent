@@ -9,6 +9,7 @@ import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import { ARTIFACT_URL, type Turn, type TurnAnalysis } from "@/lib/chat";
 import { API_BASE } from "@/lib/config";
 import { useT } from "@/lib/prefs";
+import { queueText } from "./ProgressCard";
 import type { AnalysisArtifact as AnalysisArtifactItem, AnalysisStep } from "@/lib/sse";
 import type { Strings } from "@/lib/strings";
 
@@ -84,7 +85,7 @@ function Steps({ a, turn, t }: { a: TurnAnalysis; turn: Turn; t: Strings }) {
   return (
     <Box>
       <Typography component="h4" sx={{ m: 0, mb: 1, fontSize: "0.8125rem", fontWeight: 700, color: "text.secondary" }}>{t.analysisSteps}</Typography>
-      {!a.steps.length ? <Empty>{t.analysisNoSteps}</Empty> : (
+      {!a.steps.length ? <Empty>{turn.status === "running" && turn.progress.phase === "waiting" ? queueText(turn.progress, t) : t.analysisNoSteps}</Empty> : (
         <Box component="ol" aria-label={t.analysisSteps} sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 1 }}>
           {a.steps.map((step, i) => {
             const last = i === a.steps.length - 1;

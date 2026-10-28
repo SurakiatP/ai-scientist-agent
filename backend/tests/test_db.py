@@ -97,7 +97,7 @@ def _tables(pg, dbname):
 def test_migration_up_down_up(newdb):
     cfg = _alembic()
     command.upgrade(cfg, "head")
-    assert _tables(newdb, newdb["name"]) == {"app_meta", "alembic_version", "projects", "sessions", "turns", "files", "usage_events", "turn_tombstones"}
+    assert _tables(newdb, newdb["name"]) == {"app_meta", "alembic_version", "projects", "sessions", "turns", "files", "usage_events", "turn_tombstones", "runs", "run_events"}
     with psycopg.connect(host="127.0.0.1", port=newdb["port"], user="app", password=newdb["password"], dbname=newdb["name"]) as c:
         assert c.execute("select value from app_meta where key='schema'").fetchone() == ("1",)
     command.downgrade(cfg, "base")
@@ -113,7 +113,7 @@ async def test_ping_and_schema_state_ok_and_behind(newdb):
         assert await d.schema_state() == "behind"  # empty database: migrations never ran
         command.upgrade(_alembic(), "head")
         assert await d.schema_state() == "ok"
-        assert dbmod.code_head() == "0003"
+        assert dbmod.code_head() == "0004"
     finally:
         await d.close()
 

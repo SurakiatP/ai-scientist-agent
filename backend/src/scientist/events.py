@@ -1,7 +1,7 @@
 import re
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_serializer
 
 # http(s) only, a real host (optional userinfo@ before it), no whitespace: the frontend renders url as a link.
 # infra/hermes/native_bridge.py keeps an identical copy (a test checks they match).
@@ -109,6 +109,14 @@ class Refused(BaseModel):
 class Waiting(BaseModel):
     type: Literal["waiting"] = "waiting"
     position: int
+    eta_seconds: int | None = None  # set by the run queue only; the old gate leaves it out of the JSON
+
+    @model_serializer(mode="wrap")
+    def _no_null_eta(self, handler):
+        d = handler(self)
+        if d.get("eta_seconds") is None:
+            d.pop("eta_seconds", None)
+        return d
 
 
 class Strategy(BaseModel):
@@ -143,6 +151,14 @@ class Complete(BaseModel):
 class Error(BaseModel):
     type: Literal["error"] = "error"
     message: str
+    code: str | None = None  # set by the run service for its own endings ("stopped", "interrupted")
+
+    @model_serializer(mode="wrap")
+    def _no_null_code(self, handler):
+        d = handler(self)
+        if d.get("code") is None:
+            d.pop("code", None)
+        return d
 
 
 class AnalysisStep(BaseModel):

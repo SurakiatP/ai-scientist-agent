@@ -4,7 +4,7 @@ import { capSessions, isProject, isSession, isTurn, MAX_SESSIONS, PERSONAL, pers
 import { isFileEntry, useFilesStore, type FileEntry } from "./files";
 import { safeStorage } from "./history";
 import { emptyProgress } from "./progress";
-import { runningTurnId } from "./run";
+import { attachRunning, isAttached, runningTurnId } from "./run";
 
 // Shared-data sync. When /v1/health says db "ok", Postgres is the source of truth and the zustand stores are only a UI
 // cache: every store change is diffed into a small op queue (key + id only, bodies are built from the cache at send
@@ -69,16 +69,19 @@ function enqueue(op: Op) {
 }
 
 // --- row <-> cache --------------------------------------------------------------------------------------------------
-const toTurn = (r: Row): Turn | null => {
+export const toTurn = (r: Row): Turn | null => {
   const prog = (r.progress && typeof r.progress === "object" && !Array.isArray(r.progress) ? { ...(r.progress as Row) } : {}) as Row;
   const code = prog._code; delete prog._code;
+  const err = prog._err; delete prog._err;
+  const runId = typeof r.run_id === "string" && isUuid(r.run_id) ? r.run_id : undefined;
   const analysis = r.mode === "analysis";
   let status = str(r.status) as Turn["status"];
-  if (status === "running" && Date.now() - ms(r.updated_at) > STALE_RUNNING_MS) status = "interrupted"; // its tab died mid-run
+  if (status === "running" && !runId && Date.now() - ms(r.updated_at) > STALE_RUNNING_MS) status = "interrupted"; // its tab died mid-run (a server run says so itself)
   const t = {
     id: str(r.id), question: str(r.question), createdAt: ms(r.created_at), status, progress: { ...emptyProgress, ...prog } as Turn["progress"],
     ...(r.mode === "deep" || r.mode === "quick" || r.mode === "chat" ? { mode: r.mode } : {}),
     ...(analysis ? { kind: "analysis" as const } : {}),
+    ...(runId ? { runId } : {}), ...(err === "cut_off" || err === "failed" || err === "interrupted" || err === "stopped" ? { errCode: err } : {}),
     ...(r.plan ? { plan: r.plan } : {}), ...(r.answer ? { answer: r.answer } : {}), ...(r.analysis ? { analysis: r.analysis } : {}),
     ...(r.refused ? { refused: str(r.refused) } : {}), ...(typeof code === "string" ? { refusedCode: code as RefusalCode } : {}), ...(r.error ? { error: str(r.error) } : {}),
   } as Turn;
@@ -95,12 +98,14 @@ const toSession = (r: Row, local?: Session): Session => {
   rows.forEach((x) => { idxOf.set(str(x.id), Number(x.idx)); maxIdx.set(id, Math.max(maxIdx.get(id) ?? -1, Number(x.idx))); versions.set(vkey("turn", str(x.id)), Number(x.version)); });
   const turns = rows.map((x) => {
     const mine = local?.turns.find((t) => t.id === x.id);
-    return mine && (runningTurnId() === mine.id || queue.some((o) => o.k === "turn" && o.id === mine.id)) ? mine : toTurn(x);
+    return mine && (isAttached(mine.id) || runningTurnId() === mine.id || queue.some((o) => o.k === "turn" && o.id === mine.id)) ? mine : toTurn(x);
   }).filter((t): t is Turn => !!t);
   if (r.has_more_turns === true && local && rows.length) { // the server sent only the newest turns: keep the older ones we already hold
     const first = Number(rows[0].idx);
     turns.unshift(...local.turns.filter((t) => (idxOf.get(t.id) ?? Infinity) < first && !tombstones.has(t.id)));
   }
+  // a question just sent from this tab, shown before the server has its row: a snapshot must not wipe it
+  if (local) turns.push(...local.turns.filter((t) => isAttached(t.id) && !turns.some((x) => x.id === t.id) && !tombstones.has(t.id)));
   return { id, projectId: typeof r.project_id === "string" ? r.project_id : PERSONAL, title: str(r.title), createdAt: ms(r.created_at), updatedAt: ms(r.updated_at), turns };
 };
 const toProject = (r: Row): Project => ({ id: str(r.id), name: str(r.name), createdAt: ms(r.created_at) });
@@ -138,6 +143,7 @@ function merge(snap: Row, first: boolean) {
     useFilesStore.setState({ files: [...fileRows, ...pf.filter((f) => pendingFor("file", f.id) && !fileRows.some((x) => x.id === f.id))] });
   });
   set({ hasMore: sessions.length >= limit, rev: useSync.getState().rev + 1 });
+  attachRunning(); // runs the server is still working on: follow them, whoever started them
   const after = next.find((s) => s.id === cur.activeId);
   if (!first && before && after && JSON.stringify(before) !== JSON.stringify(after) && runningTurnId() === null) notify("remote");
 }
@@ -165,7 +171,7 @@ function build(o: Op): unknown | null {
   if (o.k === "session") { const s = st.sessions.find((x) => x.id === o.id); return s && { title: s.title || null, project_id: s.projectId === PERSONAL ? null : s.projectId, ...(v ? { version: v } : {}) }; }
   if (o.k === "file") { const f = useFilesStore.getState().files.find((x) => x.id === o.id); return f && { name: f.name, size: f.size, kind: f.kind, project_id: f.projectId === PERSONAL ? null : f.projectId, ...(v ? { version: v } : {}) }; }
   const t = st.sessions.find((x) => x.id === o.sid)?.turns.find((x) => x.id === o.id);
-  if (!t) return null;
+  if (!t || t.runId) return null; // a run's turn is written by the server only
   if (!idxOf.has(t.id)) { const n = (maxIdx.get(o.sid!) ?? -1) + 1; idxOf.set(t.id, n); maxIdx.set(o.sid!, n); }
   return turnBody(t, idxOf.get(t.id)!);
 }
@@ -316,7 +322,7 @@ function mirrorChat(s: ReturnType<typeof useChatStore.getState>, p: ReturnType<t
       maxIdx.set(x.id, kept.length ? Math.max(...kept) : -1);
       if (first && at.length) enqueue({ k: "turn", id: first.id, sid: x.id, idx: Math.min(...at), a: "del" });
     }
-    for (const t of x.turns) if (ot.get(t.id) !== t) { if (!queue.some((q) => q.k === "session" && q.id === x.id) && !versions.has(vkey("session", x.id))) enqueue({ k: "session", id: x.id, a: "put" }); enqueue({ k: "turn", id: t.id, sid: x.id, a: "put" }); }
+    for (const t of x.turns) if (ot.get(t.id) !== t && !t.runId) { if (!queue.some((q) => q.k === "session" && q.id === x.id) && !versions.has(vkey("session", x.id))) enqueue({ k: "session", id: x.id, a: "put" }); enqueue({ k: "turn", id: t.id, sid: x.id, a: "put" }); }
   }
   for (const x of p.sessions) if (!sIds.has(x.id) && (x.title || x.turns.length)) removed.push({ k: "session", id: x.id, a: "del" });
   removed.forEach(enqueue);
@@ -344,7 +350,7 @@ function flush() {
   if (run) {
     const s = useChatStore.getState().sessions.find((x) => x.turns.some((t) => t.id === run));
     const t = s?.turns.find((x) => x.id === run);
-    if (s && t) void call("PUT", `/v1/store/sessions/${s.id}/turns/${t.id}`, turnBody({ ...t, status: "interrupted" }, idxOf.get(t.id) ?? (maxIdx.get(s.id) ?? 0)), true).catch(() => {});
+    if (s && t && !t.runId) void call("PUT", `/v1/store/sessions/${s.id}/turns/${t.id}`, turnBody({ ...t, status: "interrupted" }, idxOf.get(t.id) ?? (maxIdx.get(s.id) ?? 0)), true).catch(() => {});
   }
   for (const o of queue.slice(0, 20)) void send(o, true);
 }
@@ -384,6 +390,34 @@ export async function startSync(): Promise<void> {
   on(window, "pagehide", flush);
   on(document, "visibilitychange", () => { if (document.visibilityState === "visible") snapSoon(); });
   void pump();
+}
+
+// Wait (bounded) until the session itself is on the server and any truncate (an edited question) for it has been applied,
+// so a run can point at it. Turn puts do not matter: the server allocates a run's turn itself. A truncate does: the server
+// gives the new turn max+1, which a later truncate from an older idx would delete. true = ready.
+export async function settleSession(sid: string, signal?: AbortSignal): Promise<boolean> {
+  const truncate = (o: Op | null) => !!o && o.k === "turn" && o.a === "del" && o.sid === sid;
+  const pendingSession = () => queue.some((o) => (o.k === "session" && o.id === sid) || truncate(o)) || (inflight?.k === "session" && inflight.id === sid) || truncate(inflight) || !versions.has(vkey("session", sid));
+  for (let i = 0; i < 100 && !signal?.aborted && useSync.getState().status !== "disabled" && pendingSession(); i++) {
+    void pump();
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return !pendingSession();
+}
+
+// A turn row the server wrote for a run: remember its position and version like a snapshot would, so a later edit
+// truncates from the right place and a plan review after it gets the next idx.
+export function recordServerTurn(sid: string, r: Row) {
+  const id = str(r.id), idx = Number(r.idx);
+  if (!id || !Number.isFinite(idx)) return;
+  idxOf.set(id, idx); maxIdx.set(sid, Math.max(maxIdx.get(sid) ?? -1, idx)); remember("turn", r);
+}
+
+// A 409 use_runs means the server has the shared database although the first health probe said otherwise: ask again.
+export async function reprobeSync(): Promise<void> {
+  if (useSync.getState().status !== "disabled") return;
+  started = false;
+  await startSync();
 }
 
 // Test seam: forget everything.

@@ -11,7 +11,7 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import LightbulbOutlinedIcon from "@mui/icons-material/LightbulbOutlined";
 import type { Turn } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
-import { stageIndex, stagesDone } from "./ProgressCard";
+import { queueText, stageIndex, stagesDone } from "./ProgressCard";
 
 const card = { border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.raised", p: 2 };
 const NO_PREF = "@media (prefers-reduced-motion: no-preference)";
@@ -104,7 +104,7 @@ export function ProgressPanel({ turn, sessionId }: { turn: Turn; sessionId?: str
         <Box component="ol" sx={{ m: 0, p: 0, listStyle: "none" }}>
           {steps.map(([title, desc], i) => {
             const state = done || i < idx ? "done" : i === idx && !waiting ? "active" : "pending";
-            const sub = state === "pending" ? (i === 0 && waiting ? `${t.waiting} ${p.waiting ?? ""}`.trim() : t.stepPending) : desc;
+            const sub = state === "pending" ? (i === 0 && waiting ? queueText(p, t) : t.stepPending) : desc;
             return (
               <Box component="li" key={i} data-step={i} data-state={state} aria-current={state === "active" ? "step" : undefined}
                 sx={{ display: "flex", gap: 1.5, position: "relative", pb: i < 3 ? 2 : 0, minHeight: 44,

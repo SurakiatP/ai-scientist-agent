@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { DEFER_HYDRATION } from "./config";
+import { DEFER_HYDRATION, gate } from "./config";
 import { dataStorage, isItem, newId, safeStorage, storageFull, useHistoryStore } from "./history";
 import type { Progress } from "./progress";
 import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, Reference, Search } from "./sse";
@@ -28,7 +28,11 @@ export type Turn = {
   answer?: { content: string; references: Reference[] };
   analysis?: TurnAnalysis;
   refused?: string; refusedCode?: RefusalCode; error?: string;
+  runId?: string; // the server-side run that owns this turn: the server writes it, this browser only shows it
+  errCode?: ErrCode; // why the server ended the run in error; localised at render time
 };
+export const ERR_CODES = ["cut_off", "failed", "interrupted", "stopped"] as const;
+export type ErrCode = (typeof ERR_CODES)[number];
 export type Session = { id: string; projectId: string; title: string; createdAt: number; updatedAt: number; turns: Turn[] };
 export type Project = { id: string; name: string; createdAt: number }; // id "personal" is built in; name "" = localized default
 
@@ -174,6 +178,8 @@ export const isTurn = (v: unknown): v is Turn => {
   if (t.refused !== undefined && !isStr(t.refused, 20_000)) return false;
   if (t.refusedCode !== undefined && refusalCode(t.refusedCode) === undefined) return false;
   if (t.error !== undefined && !isStr(t.error, 2048)) return false;
+  if (t.runId !== undefined && !(isStr(t.runId, 36) && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t.runId))) return false;
+  if (t.errCode !== undefined && !(ERR_CODES as readonly unknown[]).includes(t.errCode)) return false;
   if (t.analysis !== undefined && !isAnalysis(t.analysis)) return false;
   return t.answer === undefined || (!!t.answer && isItem({ id: "x", question: "", createdAt: 0, answer: t.answer.content, references: t.answer.references }));
 };
@@ -188,7 +194,8 @@ export const isProject = (v: unknown): v is Project => {
 };
 
 // Newest activity first; the oldest sessions past the cap are dropped.
-export const capSessions = (s: Session[]) => [...s].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SESSIONS);
+// With the shared database (gate.writes false) the store is a cache and the server pages: a local cap there would be mirrored as a delete.
+export const capSessions = (s: Session[]) => { const r = [...s].sort((a, b) => b.updatedAt - a.updatedAt); return gate.writes ? r.slice(0, MAX_SESSIONS) : r; };
 const title = (q: string) => q.trim().slice(0, 60);
 
 type State = {
@@ -254,7 +261,7 @@ export const useChatStore = create<State>()(
       addTurn: (sessionId, turn) =>
         set((s) => mapSession(s, sessionId, (x) => ({
           ...x, title: x.title || title(turn.question), updatedAt: Date.now(),
-          turns: [...x.turns, { ...turn, ...clampPatch(turn) }].slice(-MAX_TURNS), // oldest turn dropped past the cap
+          turns: gate.writes ? [...x.turns, { ...turn, ...clampPatch(turn) }].slice(-MAX_TURNS) : [...x.turns, { ...turn, ...clampPatch(turn) }], // browser-only: oldest turn dropped past the cap
         }))),
       truncateFrom: (sessionId, turnId) =>
         set((s) => mapSession(s, sessionId, (x) => {

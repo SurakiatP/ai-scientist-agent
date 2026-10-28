@@ -9,8 +9,8 @@ import { usePrefs } from "@/lib/prefs";
 import { emptyProgress } from "@/lib/progress";
 import { strings } from "@/lib/strings";
 
-const run = vi.hoisted(() => ({ sessionId: null as string | null, stopRun: vi.fn() }));
-vi.mock("@/lib/run", () => ({ useRunState: () => ({ sessionId: run.sessionId, turnId: run.sessionId && "t" }), stopRun: run.stopRun, startRun: vi.fn(), approvePlan: vi.fn(), cancelPlan: vi.fn(), canStart: () => ({ ok: true }) }));
+const run = vi.hoisted(() => ({ sessionId: null as string | null, stopRun: vi.fn(async () => true) }));
+vi.mock("@/lib/run", () => ({ useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true),  useRunState: () => ({ sessionId: run.sessionId, turnId: run.sessionId && "t" }), stopRun: run.stopRun, startRun: vi.fn(), approvePlan: vi.fn(), cancelPlan: vi.fn(), canStart: () => ({ ok: true }) }));
 const cs = vi.hoisted(() => ({ mode: "system" as string, setMode: vi.fn() }));
 vi.mock("@mui/material", async (orig) => ({ ...(await orig<typeof import("@mui/material")>()), useColorScheme: () => cs }));
 

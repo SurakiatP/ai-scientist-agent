@@ -7,7 +7,7 @@ from typing import Literal
 
 import anyio
 from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, field_validator
 
@@ -126,6 +126,8 @@ async def _sse(events: AsyncIterator[Event], ping: float) -> AsyncIterator[str]:
 @router.post("/v1/async/ask")
 async def ask_route(body: AskRequest, request: Request) -> StreamingResponse:
     st = request.app.state
+    if st.db is not None and not body.plan_only:  # runs belong to the server; plan review stays here (it is short)
+        return JSONResponse({"detail": "use POST /v1/runs", "code": "use_runs"}, status_code=409)
     if (body.plan_only or body.mode == "chat") and st.gate.free == 0 and len(st.gate.queue) >= st.settings.analyze_max_queue:  # same cap as analyze
         raise HTTPException(429, "too many requests queued; try again shortly")
     events = ask(body.question, st.runner, settings=st.settings, client=st.client, gate=st.gate, mode=body.mode,

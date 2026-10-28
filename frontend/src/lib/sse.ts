@@ -17,12 +17,12 @@ export type MemoryTurn = { question: string; answer: string; references: MemoryR
 export type AskOptions = { mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; planOnly?: boolean; memory?: MemoryTurn[] };
 
 export type StreamCode = "malformed" | "network" | "http";
-export type ApiError = { message: string; code?: StreamCode; status?: number };
+export type ApiError = { message: string; code?: StreamCode | "stopped" | "interrupted" | "cut_off" | "failed"; status?: number; runCode?: string; uncertain?: boolean }; // uncertain: the request went out but no answer came back (the run may exist) // runCode: the run queue's own 429 reason (client_busy, queue_full, rate_limited)
 export type StreamError = ApiError & { type: "error" };
 
 export type AskEvent =
   | { type: "refused"; reason: string; code?: string }
-  | { type: "waiting"; position: number }
+  | { type: "waiting"; position: number; eta_seconds?: number }
   | { type: "strategy"; reasoning: string; searches: Search[] }
   | { type: "sources"; term: string; papers: Paper[] }
   | { type: "answer"; term: string; content: string }
@@ -46,7 +46,7 @@ export type AnalysisResult = {
 };
 
 export type AnalyzeEvent =
-  | { type: "waiting"; position: number }
+  | { type: "waiting"; position: number; eta_seconds?: number }
   | { type: "refused"; reason: string; code?: string }
   | { type: "analysis_step"; step: AnalysisStep }
   | { type: "analysis_script"; code: string }
@@ -54,7 +54,7 @@ export type AnalyzeEvent =
   | { type: "complete" }
   | StreamError;
 
-type RawEvent = { type: string; [key: string]: unknown };
+export type RawEvent = { type: string; _seq?: number; [key: string]: unknown }; // _seq: the SSE `id:` of a run event, when the server sent one
 
 function parse(block: string): RawEvent | null {
   const data = block
@@ -63,18 +63,23 @@ function parse(block: string): RawEvent | null {
     .map((l) => l.slice(5).replace(/^ /, ""))
     .join("\n");
   if (!data) return null; // comment (": ping") or blank block
+  const id = block.split("\n").find((l) => l.startsWith("id:"));
+  const seq = id ? Number(id.slice(3)) : NaN;
   try {
     const ev: unknown = JSON.parse(data);
-    if (ev && typeof ev === "object" && typeof (ev as { type?: unknown }).type === "string") return ev as RawEvent;
+    if (ev && typeof ev === "object" && typeof (ev as { type?: unknown }).type === "string") return Number.isInteger(seq) && seq >= 0 ? { ...(ev as RawEvent), _seq: seq } : (ev as RawEvent);
   } catch {}
   return { type: "error", message: "", code: "malformed" };
 }
 
 const clean = (m: string) => m.replace(/^Value error, /, "");
 
+let lastRunCode: string | undefined; // set by failureDetail: the run queue's own `code` of the failed response
 async function failureDetail(res: Response): Promise<string> {
+  lastRunCode = undefined;
   try {
     const body = await res.json();
+    if (typeof body?.code === "string") lastRunCode = body.code;
     if (typeof body?.detail === "string") return clean(body.detail);
     if (Array.isArray(body?.detail) && body.detail[0]?.msg) return clean(String(body.detail[0].msg));
   } catch {}
@@ -82,7 +87,7 @@ async function failureDetail(res: Response): Promise<string> {
 }
 
 // One reader for both streams: identical malformed / network / HTTP handling and abort semantics.
-async function* stream(url: string, init: RequestInit, signal: AbortSignal): AsyncGenerator<RawEvent> {
+export async function* stream(url: string, init: RequestInit, signal: AbortSignal): AsyncGenerator<RawEvent> {
   let res: Response;
   try {
     res = await fetch(url, init);
@@ -91,7 +96,8 @@ async function* stream(url: string, init: RequestInit, signal: AbortSignal): Asy
     return;
   }
   if (!res.ok || !res.body) {
-    yield { type: "error", message: await failureDetail(res), code: "http", status: res.status };
+    const message = await failureDetail(res);
+    yield { type: "error", message, code: "http", status: res.status, ...(lastRunCode ? { runCode: lastRunCode } : {}) };
     return;
   }
   const reader = res.body.getReader();

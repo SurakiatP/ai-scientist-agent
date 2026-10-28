@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PERSONAL, useChatStore } from "./chat";
+import { MAX_SESSIONS, MAX_TURNS, PERSONAL, useChatStore } from "./chat";
 import { gate } from "./config";
 import { useFilesStore } from "./files";
 import { emptyProgress } from "./progress";
-import { __queue, __resetSync, startSync, TURN_GAP_MS, useSync } from "./sync";
+import { __queue, __resetSync, recordServerTurn, settleSession, startSync, TURN_GAP_MS, useSync } from "./sync";
 
-const run = vi.hoisted(() => ({ turn: null as string | null }));
-vi.mock("./run", () => ({ runningTurnId: () => run.turn, useRunState: () => ({ sessionId: null, turnId: null }), stopRun: vi.fn() }));
+const run = vi.hoisted(() => ({ turn: null as string | null, att: null as string | null }));
+vi.mock("./run", () => ({ runningTurnId: () => run.turn, isAttached: (id: string) => id === run.att, attachRunning: vi.fn(), useRunState: () => ({ sessionId: null, turnId: null }), stopRun: vi.fn() }));
 
 const U = (n: number) => `cccccccc-0000-4000-8000-${String(n).padStart(12, "0")}`;
 type Call = { method: string; url: string; body?: Record<string, unknown> };
@@ -39,7 +39,7 @@ beforeEach(() => {
   }));
   sessionStorage.clear(); localStorage.clear();
   useChatStore.getState().clearAll(); useFilesStore.setState({ files: [] });
-  __resetSync(); gate.writes = true; run.turn = null;
+  __resetSync(); gate.writes = true; run.turn = null; run.att = null;
 });
 afterEach(() => { __resetSync(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
@@ -302,5 +302,103 @@ describe("final review fixes", () => {
     await vi.waitFor(() => expect(calls.filter((c) => c.url.startsWith("/v1/store/snapshot")).length).toBeGreaterThan(1), { timeout: 4000 });
     await new Promise((r) => setTimeout(r, 100));
     expect(useChatStore.getState().sessions[0].turns.map((t) => t.id)).toEqual([U(3), U(4)]);
+  });
+});
+
+describe("server-owned runs and local caps", () => {
+  const R = "dddddddd-0000-4000-8000-000000000001";
+  const serverTurn = (extra: object = {}) => row(U(3), { idx: 0, question: "q", status: "running", run_id: R, progress: null, updated_at: new Date().toISOString(), ...extra });
+  it("maps run_id to runId and progress._err to errCode, and never turns a live run stale", async () => {
+    snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "S", turns: [
+      serverTurn({ updated_at: "2020-01-01T00:00:00Z" }),
+      row(U(4), { idx: 1, question: "q2", status: "error", run_id: R, error: "x", progress: { _err: "cut_off" } }),
+    ] })] };
+    await online();
+    const [a, b] = useChatStore.getState().sessions[0].turns;
+    expect(a).toMatchObject({ runId: R, status: "running" }); // an old updated_at on a server run is not a dead tab
+    expect(b).toMatchObject({ status: "error", errCode: "cut_off" });
+  });
+  it("never writes a turn that has a runId, nor its progress patches", async () => {
+    await online();
+    const sid = useChatStore.getState().newSession();
+    useChatStore.getState().addTurn(sid, { ...turn(U(3)), runId: R, status: "running" });
+    useChatStore.getState().patchTurn(sid, U(3), { status: "done" });
+    await done();
+    expect(puts(/\/turns\//)).toHaveLength(0);
+    expect(puts(/\/sessions\/[^/]+$/)).toHaveLength(1);
+  });
+  it("a remote copy of a server-owned turn replaces ours unless this tab follows the run", async () => {
+    snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "S", turns: [serverTurn()] })] };
+    await online();
+    useChatStore.getState().patchTurn(U(2), U(3), { progress: { ...emptyProgress, reasoning: "live" } });
+    const remote = () => { snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "S", version: 2, turns: [serverTurn({ version: 9, status: "done" })] })] }; FakeES.all[0].emit({ type: "changed", entity: "turn", id: U(3), version: 9 }); };
+    run.att = U(3);
+    remote();
+    await vi.waitFor(() => expect(calls.filter((c) => c.url.startsWith("/v1/store/snapshot")).length).toBeGreaterThan(1), { timeout: 4000 });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(useChatStore.getState().sessions[0].turns[0]).toMatchObject({ status: "running", progress: { reasoning: "live" } });
+    run.att = null;
+    const n = calls.length;
+    remote();
+    FakeES.all[0].emit({ type: "changed", entity: "turn", id: U(3), version: 10 });
+    await vi.waitFor(() => expect(calls.slice(n).some((c) => c.url.startsWith("/v1/store/snapshot"))).toBe(true), { timeout: 4000 });
+    await vi.waitFor(() => expect(useChatStore.getState().sessions[0].turns[0].status).toBe("done"));
+  });
+  it("a server-written run turn is never PUT; editing right after it truncates from the idx the server gave it", async () => {
+    await online();
+    const sid = useChatStore.getState().newSession();
+    useChatStore.getState().addTurn(sid, turn(U(900)));
+    await done(); // idx 0 on the server
+    const rid = U(901);
+    useChatStore.getState().addTurn(sid, turn(U(902), { runId: rid }));
+    recordServerTurn(sid, { id: U(902), idx: 7, version: 3 }); // the server put the run's turn at 7
+    await done();
+    expect(puts(new RegExp(`turns/${U(902)}`))).toEqual([]);
+    useChatStore.getState().truncateFrom(sid, U(902));
+    await done();
+    expect(calls.filter((c) => c.method === "DELETE").map((c) => c.url)).toEqual([`/v1/store/sessions/${sid}/turns/from/7`]);
+  });
+  it("settleSession waits for a queued truncate of the session (an edit) before a run may be submitted", async () => {
+    await online();
+    const sid = useChatStore.getState().newSession();
+    useChatStore.getState().addTurn(sid, turn(U(910)));
+    useChatStore.getState().addTurn(sid, turn(U(911)));
+    await done();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    routes.push((c) => (c.method === "DELETE" ? undefined : undefined));
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (u: string, i?: RequestInit) => { if (i?.method === "DELETE") await gate; return realFetch(u, i); }));
+    useChatStore.getState().truncateFrom(sid, U(911));
+    let settled = false;
+    const p = settleSession(sid).then((ok) => { settled = ok; });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(settled).toBe(false); // the DELETE is still on its way
+    release();
+    await p;
+    expect(settled).toBe(true);
+  });
+  it("D1: the 51st turn in shared mode is kept and never mirrored as a delete", async () => {
+    await online();
+    const sid = useChatStore.getState().newSession();
+    for (let i = 0; i < MAX_TURNS; i++) useChatStore.getState().addTurn(sid, turn(U(1000 + i)));
+    await done(); // all 50 are on the server with their positions: a dropped one would now be sent as DELETE from its idx
+    useChatStore.getState().addTurn(sid, turn(U(1000 + MAX_TURNS)));
+    await done();
+    expect(useChatStore.getState().sessions[0].turns).toHaveLength(MAX_TURNS + 1);
+    expect(calls.filter((c) => c.method === "DELETE")).toEqual([]);
+  });
+  it("D2: the 201st session in shared mode evicts nothing, with no delete and no undo toast", async () => {
+    await online();
+    for (let i = 0; i < MAX_SESSIONS; i++) {
+      useChatStore.setState((s) => ({ sessions: [...s.sessions, { id: U(2000 + i), projectId: PERSONAL, title: "t", createdAt: i, updatedAt: i, turns: [] }] }));
+    }
+    await done();
+    useChatStore.getState().newSession();
+    useChatStore.getState().renameSession(useChatStore.getState().activeId!, "newest");
+    await done();
+    expect(useChatStore.getState().sessions).toHaveLength(MAX_SESSIONS + 1);
+    expect(calls.filter((c) => c.method === "DELETE")).toEqual([]);
+    expect(useSync.getState().undo).toBeNull();
   });
 });

@@ -35,7 +35,8 @@ def note(prompt_tokens: int, completion_tokens: int, cost: float | None) -> None
             a.cost = (a.cost or 0) + cost
 
 
-async def track(events: AsyncIterator[Event], *, mode: str, db) -> AsyncIterator[Event]:
+async def track(events: AsyncIterator[Event], *, mode: str, db, session_id: str | None = None,
+                turn_id: str | None = None) -> AsyncIterator[Event]:
     """Pass events through unchanged while timing phases and counting model calls; writes the row at the end."""
     acc, phases, ok = Acc(), defaultdict(float), False
     last, current = time.monotonic(), None  # current: a phase an AnalysisStep announced and is still running
@@ -61,7 +62,7 @@ async def track(events: AsyncIterator[Event], *, mode: str, db) -> AsyncIterator
             yield e
     finally:
         # background task: a slow or down database must not hold the stream open; also runs after a client disconnect
-        t = asyncio.create_task(record(db, mode=mode, phases=phases, acc=acc, ok=ok))
+        t = asyncio.create_task(record(db, mode=mode, phases=phases, acc=acc, ok=ok, session_id=session_id, turn_id=turn_id))
         PENDING.add(t)
         t.add_done_callback(PENDING.discard)
         with anyio.CancelScope(shield=True):
@@ -69,11 +70,12 @@ async def track(events: AsyncIterator[Event], *, mode: str, db) -> AsyncIterator
                 await it.aclose()
 
 
-async def record(db, *, mode: str, phases: dict, acc: Acc, ok: bool) -> None:
+async def record(db, *, mode: str, phases: dict, acc: Acc, ok: bool, session_id: str | None = None,
+                 turn_id: str | None = None) -> None:
     try:
         async with db.session() as s, s.begin():
             await asyncio.wait_for(s.execute(sa.insert(m.usage_events).values(
-                mode=mode, phase_seconds={k: round(v, 3) for k, v in phases.items()}, llm_calls=acc.calls,
+                session_id=session_id, turn_id=turn_id, mode=mode, phase_seconds={k: round(v, 3) for k, v in phases.items()}, llm_calls=acc.calls,
                 prompt_tokens=acc.prompt if acc.calls else None, completion_tokens=acc.completion if acc.calls else None,
                 cost_usd=acc.cost, papers_found=acc.papers or None, ok=ok)), 5)
     except Exception as e:

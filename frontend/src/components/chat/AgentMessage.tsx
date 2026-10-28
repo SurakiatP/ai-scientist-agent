@@ -12,6 +12,7 @@ import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import { AnswerView } from "@/components/AnswerView";
 import { ReferenceList } from "@/components/ReferenceList";
 import { AnalysisArtifact } from "@/components/research/AnalysisArtifact";
+import { queueText } from "@/components/research/ProgressCard";
 import { PlanCard, type PlanSearch } from "@/components/research/PlanCard";
 import { ProgressCard } from "@/components/research/ProgressCard";
 import { AnswerSkeleton } from "@/components/research/AnswerSkeleton";
@@ -22,7 +23,7 @@ import { useInspector } from "@/lib/inspector";
 import { useT } from "@/lib/prefs";
 import { strings, type Strings } from "@/lib/strings";
 import { LogoMark } from "@/components/landing/Dropdown";
-import { approvePlan, cancelPlan, startAnalysis, startRun, useRunState } from "@/lib/run";
+import { approvePlan, cancelPlan, startAnalysis, startError, startRun, stopTurn, useRunState, useSending, useStoppable } from "@/lib/run";
 import { focusComposer, useMode } from "./Composer";
 import { Starters } from "./EmptyChat";
 import { avatarSx, Time } from "./UserMessage";
@@ -39,18 +40,26 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const [copied, setCopied] = useState<"ok" | "fail" | null>(null);
   const [wasRunning] = useState(turn.status === "running"); // only an answer that arrives live is revealed part by part; reloads render at once
   const copy = async () => { try { await navigator.clipboard.writeText(turn.answer?.content ?? ""); setCopied("ok"); } catch { setCopied("fail"); } setTimeout(() => setCopied(null), 2000); };
-  const busy = !!useRunState().turnId;
+  const lockedTurn = useRunState().turnId;
+  const busy = !!lockedTurn;
+  const sendingChat = useSending(turn.id) && turn.mode === "chat";
+  const chatStop = useStoppable(turn.id) && turn.mode === "chat" && turn.status === "running" && lockedTurn !== turn.id; // ours, found again: no composer Stop here
+  const [stopErr, setStopErr] = useState(false);
   const { status } = turn;
   const analysis = turn.analysis;
-  const [planErr, setPlanErr] = useState(false); // approval can still fail (a run started elsewhere): say so, never idle silently
+  const [planErr, setPlanErr] = useState<string | null>(null); // approval can still fail (a run started elsewhere): say so, never idle silently
+  const [retryErr, setRetryErr] = useState<string | null>(null); // a full queue answers the retry too: say why nothing started
   const retry = () => {
-    if (analysis) startAnalysis(sessionId, turn.question, analysis.fileId, analysis.fileName).catch(() => {});
-    else startRun(sessionId, turn.question, { mode: turn.mode }).catch(() => {});
+    setRetryErr(null);
+    const fail = (e: unknown) => setRetryErr(startError(e));
+    if (analysis) startAnalysis(sessionId, turn.question, analysis.fileId, analysis.fileName).catch(fail);
+    else startRun(sessionId, turn.question, { mode: turn.mode }).catch(fail);
   };
   const scope = { sessionId, turnId: turn.id };
   // the backend reason is English-only; Thai UI shows the localized scope message instead
   const coded = status === "refused" && turn.refusedCode ? REFUSAL_TEXT[turn.refusedCode] : undefined;
-  const text = status === "refused" ? (coded ? t[coded] : t === strings.th ? t.refused : turn.refused) : status === "error" ? turn.error : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
+  const errText = turn.errCode === "cut_off" ? t.cutOff : turn.errCode === "failed" ? t.runFailed : turn.errCode === "interrupted" ? t.interrupted : turn.errCode === "stopped" ? t.stoppedHelp : undefined; // the server's neutral English `error` is the fallback
+  const text = status === "refused" ? (coded ? t[coded] : t === strings.th ? t.refused : turn.refused) : status === "error" ? errText ?? turn.error : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
   const refs = turn.answer?.references ?? [];
   const [tab, setTab] = useState<"answer" | "sources">("answer");
   const openInspector = useInspector((x) => x.open);
@@ -75,14 +84,27 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
         <Stack spacing={1.5}>
           <PlanCard
             searches={turn.plan} editable
-            onApprove={(plan: PlanSearch[]) => { setPlanErr(false); approvePlan(sessionId, turn.id, plan).catch(() => setPlanErr(true)); }}
-            onCancel={() => { setPlanErr(false); try { cancelPlan(sessionId, turn.id); } catch {} }}
+            onApprove={(plan: PlanSearch[]) => { setPlanErr(null); approvePlan(sessionId, turn.id, plan).catch((e) => setPlanErr(startError(e) ?? t.startFailed)); }}
+            onCancel={() => { setPlanErr(null); try { cancelPlan(sessionId, turn.id); } catch {} }}
           />
           <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{t.awaitPlanNote}</Typography>
-          {planErr && <Typography role="status" sx={{ fontSize: "0.8125rem", color: "error.main" }}>{t.startFailed}</Typography>}
+          {planErr && <Typography role="status" sx={{ fontSize: "0.8125rem", color: "error.main" }}>{planErr}</Typography>}
         </Stack>
       ) : status === "running" && (
-        turn.mode === "chat" ? <AnswerSkeleton phase="writing" /> : ( // no search stages to show: the answer is written straight from memory
+        turn.mode === "chat" ? (
+          <>
+            {(turn.progress.phase === "waiting" || sendingChat) && ( // the queue line shows in every mode, not only beside the search stages
+              <Typography role="status" aria-live="polite" sx={{ mb: 1, fontSize: "0.9375rem", fontWeight: 600, color: "primary.main", fontVariantNumeric: "tabular-nums" }}>{sendingChat ? t.sending : queueText(turn.progress, t)}</Typography>
+            )}
+            {chatStop && (
+              <Stack direction="row" spacing={1.5} sx={{ mb: 1, alignItems: "center" }}>
+                <Button size="small" variant="outlined" color="inherit" onClick={() => { setStopErr(false); void stopTurn(turn.id).then((ok) => setStopErr(!ok)); }} sx={{ minHeight: 44 }}>{t.stop}</Button>
+                {stopErr && <Typography role="status" sx={{ fontSize: "0.8125rem", color: "error.main" }}>{t.stopFailed}</Typography>}
+              </Stack>
+            )}
+            <AnswerSkeleton phase="writing" />
+          </>
+        ) : ( // no search stages to show: the answer is written straight from memory
           <>
             <ProgressCard turn={turn} />
             {(turn.progress.phase === "searching" || turn.progress.phase === "writing") && <AnswerSkeleton phase={turn.progress.phase} />}
@@ -139,6 +161,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
         <Stack direction="row" spacing={1.5} useFlexGap sx={{ mt: 1.5, alignItems: "center", flexWrap: "wrap" }}>
           <Button variant="outlined" startIcon={<ReplayRoundedIcon />} onClick={retry} disabled={busy}>{t.retry}</Button>
           {busy && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>{t.retryBusy}</Typography>}
+          {retryErr && <Typography role="status" sx={{ fontSize: "0.8125rem", color: "error.main" }}>{retryErr}</Typography>}
         </Stack>
       )}
     </Box>

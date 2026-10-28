@@ -13,14 +13,15 @@ import { Composer, useDraft, useMode } from "./Composer";
 import { EmptyChat } from "./EmptyChat";
 import { Thread } from "./Thread";
 
-const run = vi.hoisted(() => ({ sessionId: null as string | null, turnId: null as string | null, startRun: vi.fn(async () => {}), startAnalysis: vi.fn(async () => {}), approvePlan: vi.fn(async () => {}), cancelPlan: vi.fn(), stopRun: vi.fn() }));
-vi.mock("@/lib/run", () => ({
+const run = vi.hoisted(() => ({ sessionId: null as string | null, turnId: null as string | null, startRun: vi.fn(async () => {}), startAnalysis: vi.fn(async () => {}), approvePlan: vi.fn(async () => {}), cancelPlan: vi.fn(), stopRun: vi.fn(async () => true) }));
+vi.mock("@/lib/run", () => ({ useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true), 
   useRunState: () => ({ sessionId: run.sessionId, turnId: run.turnId }),
   startRun: run.startRun,
   startAnalysis: run.startAnalysis,
   approvePlan: run.approvePlan,
   cancelPlan: run.cancelPlan,
   stopRun: run.stopRun,
+  startError: () => null, useForeign: () => false,
   canStart: () => (run.turnId ? { ok: false, reason: "busy" } : { ok: true }),
 }));
 const upload = vi.hoisted(() => ({ fn: vi.fn() }));

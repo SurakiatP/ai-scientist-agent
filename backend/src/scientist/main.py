@@ -9,6 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from scientist import store as store_mod, usage
 from scientist.config import get_settings
 from scientist.gate import RunGate
+from scientist.runqueue import RunQueue
+from scientist.runs import RunService
+from scientist.routes_runs import router as runs_router
 from scientist.object_store import ObjectStore, create_store
 from scientist.sandbox import sweep_sandboxes
 from scientist.hermes import BranchRunner, HermesRuntime, sweep_containers
@@ -47,9 +50,16 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                 except Exception:
                     log.exception("object store unavailable")
             purger = asyncio.create_task(_purge_hourly(app)) if app.state.data else None
+            if app.state.runs:
+                try:
+                    await app.state.runs.startup()
+                except Exception:
+                    log.exception("could not mark unfinished runs as interrupted")
             try:
                 yield
             finally:
+                if app.state.runs:
+                    await app.state.runs.shutdown()  # before the runtime closes: runs kill their own bridges
                 if purger:
                     purger.cancel()
                     with suppress(asyncio.CancelledError):
@@ -68,6 +78,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
             try:
                 await app.state.data.purge()
                 await app.state.data.purge_usage()
+                await app.state.data.purge_runs()
             except Exception:
                 log.exception("trash purge failed")
 
@@ -83,6 +94,8 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
   # None = database disabled; the engine connects lazily, so a down DB cannot break boot
     app.state.settings, app.state.gate = settings, RunGate(settings.max_concurrent_runs)
     app.state.analyze_gate = RunGate(settings.sandbox_max_concurrent)
+    app.state.queue = RunQueue(settings)
+    app.state.runs = RunService(app.state, app.state.data, app.state.queue) if app.state.data else None
     app.state.preview_gate = RunGate(settings.preview_max_concurrent)
     app.state.translate_gate = RunGate(2)
     app.state.previews = PreviewStore(settings.preview_max_entries, settings.preview_ttl_seconds)
@@ -95,6 +108,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     app.include_router(reports_router)
     app.include_router(preview_router)
     app.include_router(store_router)
+    app.include_router(runs_router)
 
     @app.get("/v1/health")
     async def health():
