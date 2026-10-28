@@ -216,7 +216,7 @@ async function reattach(sessionId: string, t: Turn): Promise<void> {
   const seed = waitingFrom(run);
   if (seed) try { useChatStore.getState().patchTurn(sessionId, t.id, { progress: seed }); } catch {}
   notify();
-  await follow(sessionId, t, runId, c, seed ?? t.progress);
+  await follow(sessionId, t, runId, c, seed ?? emptyProgress); // the replay starts at event 0: reducing it onto the stored progress would count twice
 }
 
 // Submit to the queue and follow the run. The question shows at once as a turn marked "sending"; the server writes the
@@ -243,11 +243,12 @@ async function sharedRun(sessionId: string, body: RunBody, local: Turn, existing
   };
   let t: Turn, run: RunView;
   try {
-    await settleSession(sessionId, c.signal); // bounded; when the session is still not there we submit anyway and the server answers 404
+    // bounded; still not ready (sync offline or blocked) = do not post: a run submitted before a pending truncate would be deleted by it
+    if (!(await settleSession(sessionId, c.signal)) && !c.signal.aborted) throw { message: strings[usePrefs.getState().lang].submitTimeout, code: "http", status: 409 } satisfies ApiError;
     let sub;
     posted = true;
     try { sub = await submitRun(body, c.signal); } catch (e) {
-      if ((e as ApiError)?.status === 404 && !c.signal.aborted && !(await settleSession(sessionId, c.signal))) throw { message: strings[usePrefs.getState().lang].submitTimeout, code: "http" } satisfies ApiError;
+      if ((e as ApiError)?.status === 404 && !c.signal.aborted && !(await settleSession(sessionId, c.signal))) throw { message: strings[usePrefs.getState().lang].submitTimeout, code: "http", status: 404 } satisfies ApiError;
       throw e;
     }
     run = sub.run;
@@ -262,7 +263,8 @@ async function sharedRun(sessionId: string, body: RunBody, local: Turn, existing
     else store().addTurn(sessionId, t);
   } catch (e) {
     undo(e);
-    throw e;
+    const uncertain = posted && typeof (e as ApiError)?.status !== "number";
+    throw uncertain && e && typeof e === "object" ? { ...(e as ApiError), uncertain: true } : e;
   }
   sending.delete(turnId); notify(); refreshLoad();
   await follow(sessionId, t, run.id, f, t.progress);

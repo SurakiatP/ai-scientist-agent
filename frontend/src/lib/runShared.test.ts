@@ -17,6 +17,7 @@ vi.mock("./sync", async (orig) => ({ ...(await orig<typeof import("./sync")>()),
 
 const gen = (evs: Ev[]) => async function* () { for (const e of evs) yield e; };
 const turnRow = (id: string, extra: object = {}) => ({ id, session_id: "s", idx: 0, question: "q", mode: "deep", status: "running", progress: null, created_at: "2026-01-01T00:00:00Z", updated_at: new Date().toISOString(), version: 1, run_id: UR, ...extra });
+async function setupWithSync() { const r = await setup(); return { ...r, sync: await import("./sync") }; }
 async function setup(shared = true) {
   localStorage.clear(); sessionStorage.clear(); vi.resetModules(); // sessionStorage: runs this tab submitted
   const sync = await import("./sync");
@@ -214,7 +215,7 @@ describe("queue fixes, round 2", () => {
   it("a network loss after the POST went out keeps the turn (same id as the server's) instead of removing it", async () => {
     const { chat, run, sid } = await setup();
     api.submit.mockRejectedValue({ message: "", code: "network" });
-    await expect(run.startRun(sid, "อาจถึงแล้ว")).rejects.toMatchObject({ code: "network" });
+    await expect(run.startRun(sid, "อาจถึงแล้ว")).rejects.toMatchObject({ code: "network", uncertain: true });
     const ts = chat.getState().sessions[0].turns;
     expect(ts).toHaveLength(1);
     expect(ts[0]).toMatchObject({ question: "อาจถึงแล้ว", status: "interrupted" });
@@ -238,4 +239,30 @@ describe("queue fixes, round 2", () => {
     chat.getState().setActive(sid);
     await vi.waitFor(() => expect(api.attaches).toHaveLength(2)); // not held back by a "recently ended" mark
   });
+});
+
+describe("queue fixes, round 3", () => {
+  it("re-attaching replays from the start onto empty progress, so counts are not doubled", async () => {
+    const { chat, run, sid } = await setup();
+    const { emptyProgress } = await import("./progress");
+    const paper = { title: "p", authors: [], url: "https://x.org/p" };
+    chat.getState().addTurn(sid, { id: "t1", question: "q", createdAt: 1, status: "running", runId: UR,
+      progress: { ...emptyProgress, phase: "searching", searches: [{ term: "a", instructions: "" }], sources: { a: 1 } } }); // what the store already shows
+    api.scripts.push(gen([
+      { type: "strategy", reasoning: "r", searches: [{ term: "a", instructions: "" }], _seq: 1 } as never,
+      { type: "sources", term: "a", papers: [paper], _seq: 2 } as never,
+      { type: "final_answer", content: "x", references: [], _seq: 3 },
+      { type: "complete", _seq: 4 },
+    ]));
+    run.attachRunning();
+    await vi.waitFor(() => expect(chat.getState().sessions[0].turns[0].status).toBe("done"));
+    expect(chat.getState().sessions[0].turns[0].progress.sources).toEqual({ a: 1 });
+  });
+  it("does not post while the session is still not on the server", async () => {
+    const { run, sid, sync } = await setupWithSync();
+    sync.__versions().delete(`session:${sid}`);
+    sync.useSync.setState({ status: "online" });
+    await expect(run.startRun(sid, "q")).rejects.toMatchObject({ status: 409 });
+    expect(api.submit).not.toHaveBeenCalled();
+  }, 10_000);
 });

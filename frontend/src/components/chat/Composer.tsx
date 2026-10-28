@@ -115,6 +115,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
     setText("");
     setFile(null);
     const restore = (e: unknown) => {
+      if ((e as { uncertain?: boolean })?.uncertain) { useStartErr.getState().set(sessionId, t.sendUncertain); return; } // it may be running: no draft to resend twice
       if (!useDraft.getState().drafts[sessionId]) set(sessionId, q); // restore unless the user already typed again
       if (attached) setFile((cur) => cur ?? attached);
       // through the store: the first message of an empty chat remounts this composer, and local state would be lost

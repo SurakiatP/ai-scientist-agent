@@ -73,6 +73,7 @@ export function UserMessage({ sessionId, turn }: { sessionId: string; turn: Turn
     setEditing(false); setConfirm(false);
     const q = draft.trim();
     ask(sessionId, turn, q).catch((e: unknown) => {
+      if ((e as { uncertain?: boolean })?.uncertain) { useStartErr.getState().set(sessionId, t.sendUncertain); return; } // the edit may be running at the freed position
       // the edit never started: put the conversation back (new ids: the old ones are gone on the server) and say why
       for (const x of removed) useChatStore.getState().addTurn(sessionId, { ...x, id: newId(), runId: undefined, status: x.status === "running" || x.status === "awaiting_plan" ? "interrupted" : x.status });
       failed(q)(e);

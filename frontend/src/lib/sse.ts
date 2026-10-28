@@ -17,7 +17,7 @@ export type MemoryTurn = { question: string; answer: string; references: MemoryR
 export type AskOptions = { mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; planOnly?: boolean; memory?: MemoryTurn[] };
 
 export type StreamCode = "malformed" | "network" | "http";
-export type ApiError = { message: string; code?: StreamCode | "stopped" | "interrupted" | "cut_off" | "failed"; status?: number; runCode?: string }; // runCode: the run queue's own 429 reason (client_busy, queue_full, rate_limited)
+export type ApiError = { message: string; code?: StreamCode | "stopped" | "interrupted" | "cut_off" | "failed"; status?: number; runCode?: string; uncertain?: boolean }; // uncertain: the request went out but no answer came back (the run may exist) // runCode: the run queue's own 429 reason (client_busy, queue_full, rate_limited)
 export type StreamError = ApiError & { type: "error" };
 
 export type AskEvent =
