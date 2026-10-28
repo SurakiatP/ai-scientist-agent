@@ -7,6 +7,8 @@ from scientist.runqueue import Rejected, RunQueue
 
 
 def queue(**kw):
+    kw.setdefault("max_running_per_client", 1)  # the fairness tests below are about a tight per-client cap; the defaults are tested separately
+    kw.setdefault("max_queued_per_client", 2)
     s = Settings(openrouter_api_key="k", model="m", fallback_model="f", hermes_source_path=".", hermes_revision="x", **kw)
     return RunQueue(s)
 
@@ -169,3 +171,15 @@ async def test_eta_ignores_short_and_non_done_runs():
         if counts:
             q.record(w.t)
     assert q.eta("research", 1) == 180
+
+
+async def test_default_limits_let_one_browser_run_several_sessions_side_by_side():
+    s = Settings(openrouter_api_key="k", model="m", fallback_model="f", hermes_source_path=".", hermes_revision="x")
+    assert (s.max_running_per_client, s.max_queued_per_client) == (3, 1)
+    q = RunQueue(s)
+    ws = [Waiter(q, "A") for _ in range(4)]
+    await settle()
+    assert [w.running for w in ws] == [True, True, True, False]  # three at once; the fourth waits for one of them
+    ws[0].t.release()
+    await settle()
+    assert ws[3].running

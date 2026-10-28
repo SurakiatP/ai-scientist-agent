@@ -85,8 +85,8 @@ class Settings(BaseSettings):
     preview_ttl_seconds: int = 600
     preview_max_entries: int = 20
     # server-side run queue (needs the database); per browser "client id", used only for fairness
-    max_running_per_client: int = Field(1, ge=1)
-    max_queued_per_client: int = Field(2, ge=0)
+    max_running_per_client: int = Field(3, ge=1)  # one browser may run several sessions at once; the pool limit still caps the server
+    max_queued_per_client: int = Field(1, ge=0)  # each submitted run keeps one event stream open: 3 + 1 + the store stream stays under the 6 connections per host of plain HTTP/1.1
     run_queue_max: int = Field(20, ge=0)  # runs allowed to wait across all clients; more get 429 queue_full
     run_retention_days: int = Field(7, ge=1)
     contact_email: str = ""  # sent as mailto in the citation-check User-Agent (Crossref/NCBI polite pool)

@@ -67,7 +67,7 @@ These would count as failure even if the code works:
   - `eta_seconds = ceil(position / pool limit) × avg duration`.
   - The average is the mean of the last 20 finished runs of the same pool, measured in process. With no history it falls back to 180 s for research and 60 s for analysis.
 - **Caps, checked at submit time (HTTP 429 with JSON `{"detail": "...", "code": ...}`):**
-  - `code: "client_busy"` when the client already has `MAX_QUEUED_PER_CLIENT` (default 2) runs queued plus `MAX_RUNNING_PER_CLIENT` running.
+  - `code: "client_busy"` when the client already has `MAX_QUEUED_PER_CLIENT` (default 1) runs queued plus `MAX_RUNNING_PER_CLIENT` (default 3) running.
   - `code: "queue_full"` when `RUN_QUEUE_MAX` (default 20) runs are already queued across all clients.
 - **Status.** `RunQueue.status()` returns `{research: {running, limit, queued}, analysis: {...}}`.
 
@@ -131,7 +131,7 @@ All routes below require the database. Without a database they return 503 `runs 
   - Strings go in both `th` and `en`.
 
 ### Config (`.env.example`, `config.py`)
-`MAX_RUNNING_PER_CLIENT=1`, `MAX_QUEUED_PER_CLIENT=2`, `RUN_QUEUE_MAX=20`, `RUN_RETENTION_DAYS=7`. Existing: `MAX_CONCURRENT_RUNS`, `SANDBOX_MAX_CONCURRENT`.
+`MAX_RUNNING_PER_CLIENT=3`, `MAX_QUEUED_PER_CLIENT=1`, `RUN_QUEUE_MAX=20`, `RUN_RETENTION_DAYS=7`. Existing: `MAX_CONCURRENT_RUNS`, `SANDBOX_MAX_CONCURRENT`.
 
 ## Tests that must exist
 - **Fairness.**
@@ -156,7 +156,7 @@ All routes below require the database. Without a database they return 503 `runs 
 - **Live check.** Run two client ids against the dev server with `MAX_CONCURRENT_RUNS=1` in chat mode (cheap): the second waits with position 1, closing the first client's stream does not stop its run, and the turn appears on another tab.
 
 ## Rulings made by the controller (cheap to change)
-- Per-client limits are 1 running and 2 queued.
+- Per-client limits are 3 running and 1 queued (raised running from 1 so one browser can run several sessions side by side; each run keeps one event stream open, so 3 + 1 + the store stream stays under 6 connections per host on HTTP/1.1; the pool limit still caps the server).
 - The global queue holds 20.
 - The ETA comes from an in-process average, so it resets on restart.
 - Pools are separate, but the per-client running limit counts across both pools.

@@ -342,7 +342,7 @@ async def test_client_busy_and_queue_full_are_429_with_codes(serve, fake_complet
 
 async def test_client_busy(serve, fake_complete):
     fake_complete["strategy"] = strategy("slow")
-    async with serve(MAX_CONCURRENT_RUNS=4) as c:
+    async with serve(MAX_CONCURRENT_RUNS=4, MAX_RUNNING_PER_CLIENT=1, MAX_QUEUED_PER_CLIENT=2) as c:
         sid, a = await mk_session(c), u()
         rids = [(await post(c, body(sid), a)).json()["run"]["id"] for _ in range(3)]  # 1 running + 2 queued
         r = await post(c, body(sid), a)
@@ -662,3 +662,14 @@ async def test_cut_off_and_failed_endings_emit_a_replayable_terminal_event(serve
             await until(c, rid, "error")
             seen = [ev async for _, ev in svc.events(rid, 0, 0.05) if ev]
             assert seen[-1]["type"] == "error" and seen[-1]["code"] == code
+
+
+async def test_default_caps_allow_three_running_and_one_queued_per_browser(serve, fake_complete):
+    fake_complete["strategy"] = strategy("slow")
+    async with serve(MAX_CONCURRENT_RUNS=4) as c:
+        sid, a = await mk_session(c), u()
+        rids = [(await post(c, body(sid), a)).json()["run"]["id"] for _ in range(4)]  # 3 running + 1 queued
+        r = await post(c, body(sid), a)
+        assert r.status_code == 429 and r.json()["code"] == "client_busy"
+        for rid in rids:
+            await c.post(f"/v1/runs/{rid}/cancel", headers={"x-client-id": a})
