@@ -40,7 +40,7 @@ describe("shared mode runs", () => {
     expect(direct.asks).toBe(0);
     expect(api.submit.mock.calls[0][0]).toMatchObject({ session_id: sid, kind: "ask", question: "q", mode: "deep" });
     expect(chat.getState().sessions[0].turns.at(-1)).toMatchObject({ status: "done", runId: UR, answer: { content: "ans" } });
-    expect(run.canStart()).toEqual({ ok: true });
+    expect(run.canStart(sid)).toEqual({ ok: true });
   });
   it("browser-only mode still uses the old stream", async () => {
     const { run, sid } = await setup(false);
@@ -54,7 +54,7 @@ describe("shared mode runs", () => {
     const err = await run.startRun(sid, "q").catch((e) => e);
     expect(run.startError(err)).toBe((await import("./strings")).strings.th.runClientBusy);
     expect(chat.getState().sessions[0].turns).toHaveLength(0);
-    expect(run.canStart()).toEqual({ ok: true });
+    expect(run.canStart(sid)).toEqual({ ok: true });
   });
   it("stopped and interrupted error codes become statuses, not errors", async () => {
     for (const code of ["stopped", "interrupted"] as const) {
@@ -74,7 +74,7 @@ describe("shared mode runs", () => {
     api.scripts.push(async function* () { yield { type: "waiting", position: 1, _seq: 0 }; await new Promise<void>((r) => (end = r)); yield { type: "error", message: "stopped", code: "stopped", _seq: 1 }; });
     const p = run.startRun(sid, "q");
     await vi.waitFor(() => expect(chat.getState().sessions[0].turns.at(-1)?.progress.phase).toBe("waiting"));
-    run.stopRun();
+    run.stopRun(sid);
     expect(api.cancel).toHaveBeenCalledWith(UR);
     end();
     await p;
@@ -123,20 +123,20 @@ describe("re-attach", () => {
   it("Stop does nothing for a run another device started; ours found again is stoppable from its card without taking the lock", async () => {
     let end!: () => void;
     const hang = async function* () { await new Promise<void>((r) => (end = r)); };
-    const a = await loaded(false);
+    const a = await loaded(false); const sid = a.sid;
     api.scripts.push(hang);
     a.run.attachRunning();
     await vi.waitFor(() => expect(a.run.isAttached("t1")).toBe(true));
     await vi.waitFor(() => expect(api.attaches).toHaveLength(1));
-    a.run.stopRun();
+    a.run.stopRun(sid);
     expect(api.cancel).not.toHaveBeenCalled();
-    expect(a.run.canStart()).toEqual({ ok: true }); // viewing someone else's run does not take this tab's lock
+    expect(a.run.canStart(sid)).toEqual({ ok: true }); // viewing someone else's run does not take this tab's lock
     end();
     const b = await loaded(true);
     api.attaches = []; api.scripts.push(hang);
     b.run.attachRunning();
     await vi.waitFor(() => expect(api.attaches).toHaveLength(1));
-    expect(b.run.canStart()).toEqual({ ok: true }); // found again after a reload: watched, the tab stays free for a new question
+    expect(b.run.canStart(sid)).toEqual({ ok: true }); // found again after a reload: watched, the tab stays free for a new question
     expect(await b.run.stopTurn("t1")).toBe(true); // ...and Stop on its card still cancels it (the server allows the submitter)
     expect(api.cancel).toHaveBeenCalledWith(UR);
     end();
@@ -174,7 +174,7 @@ describe("queue fixes", () => {
     api.submit.mockRejectedValue({ message: "", code: "http", status: 503 }); // refused: the server has no run
     await expect(run.startRun(sid, "หาย?")).rejects.toMatchObject({ status: 503 });
     expect(chat.getState().sessions[0].turns).toHaveLength(0);
-    expect(run.canStart()).toEqual({ ok: true });
+    expect(run.canStart(sid)).toEqual({ ok: true });
   });
   it("a queued run found again shows its position and wait from the run view", async () => {
     const { chat, run, sid } = await setup();

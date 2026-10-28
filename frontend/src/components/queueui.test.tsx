@@ -12,7 +12,7 @@ import { useSync } from "@/lib/sync";
 import { useLoad } from "@/lib/runs";
 
 const status = vi.hoisted(() => ({ fn: vi.fn() }));
-vi.mock("@/lib/run", () => ({ useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true),  useRunState: () => ({ sessionId: null, turnId: null }), useForeign: (id: string) => id === "other", startRun: vi.fn(), startAnalysis: vi.fn(), startError: () => null, approvePlan: vi.fn(), cancelPlan: vi.fn(), stopRun: vi.fn(async () => true), canStart: () => ({ ok: true }) }));
+vi.mock("@/lib/run", () => ({ useTurnLocked: () => false, stopAllRuns: vi.fn(), useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true),  useRunState: () => ({ sessionId: null, turnId: null }), useForeign: (id: string) => id === "other", startRun: vi.fn(), startAnalysis: vi.fn(), startError: () => null, approvePlan: vi.fn(), cancelPlan: vi.fn(), stopRun: vi.fn(async () => true), canStart: () => ({ ok: true }) }));
 
 const waiting = (n: number, eta?: number): Turn => ({ id: "t", question: "q", createdAt: Date.now(), status: "running", progress: { ...emptyProgress, phase: "waiting", waiting: n, ...(eta !== undefined ? { eta } : {}) } });
 afterEach(cleanup);

@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { refusalCode, useChatStore, type Session, type Turn, type TurnAnalysis } from "./chat";
 import { newId } from "./history";
 import { usePrefs } from "./prefs";
@@ -9,10 +9,9 @@ import { strings } from "./strings";
 import { recordServerTurn, refreshNow, reprobeSync, settleSession, toTurn, useSync } from "./sync";
 
 type RunState = { sessionId: string | null; turnId: string | null };
-const idle: RunState = { sessionId: null, turnId: null };
-let state = idle; // module-level: survives navigation, never persisted
-let ac: AbortController | null = null;
-let activeRun: string | null = null; // the server run behind this tab's lock, once it has one: Stop cancels it instead of aborting a fetch
+// One live run per session in this tab (module-level: survives navigation, never persisted). Different sessions run side by side.
+type Lock = { turnId: string; ac: AbortController; activeRun: string | null }; // activeRun: the server run behind it, once it has one: Stop cancels it instead of aborting a fetch
+const locks = new Map<string, Lock>();
 const attached = new Map<string, AbortController>(); // turn id -> the one event stream this tab follows for it
 const owners = new Map<string, boolean>(); // turn id -> true when this browser submitted its run (Stop allowed), false = someone else's
 const sending = new Set<string>(); // turns shown before the server has accepted them
@@ -29,31 +28,44 @@ if (typeof window !== "undefined") {
   window.addEventListener("pagehide", () => { leaving = true; });
   window.addEventListener("pageshow", (e) => {
     leaving = false;
-    if (!e.persisted || state.turnId) return; // bfcache restore with no live run: any turn still stored as running is dead
-    for (const s of useChatStore.getState().sessions) for (const t of s.turns) if (t.status === "running" && !t.runId) useChatStore.getState().patchTurn(s.id, t.id, { status: "interrupted" }); // a server run outlives the page
+    if (!e.persisted) return; // bfcache restore with no live run: any turn still stored as running is dead
+    for (const s of useChatStore.getState().sessions) for (const t of s.turns) if (t.status === "running" && !t.runId && !isRunningHere(t.id)) useChatStore.getState().patchTurn(s.id, t.id, { status: "interrupted" }); // a server run outlives the page
   });
 }
 const subs = new Set<() => void>();
-const setState = (s: RunState) => { state = s; subs.forEach((f) => f()); };
+const notifySubs = () => subs.forEach((f) => f());
+const subscribe = (f: () => void) => { subs.add(f); return () => subs.delete(f); };
+const take = (sessionId: string, turnId: string, c: AbortController) => { locks.set(sessionId, { turnId, ac: c, activeRun: null }); notifySubs(); };
+const release = (sessionId: string) => { locks.delete(sessionId); notifySubs(); };
 
-export const useRunState = () => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => state, () => idle);
-export const canStart = (): { ok: true } | { ok: false; reason: "busy" } => (state.turnId ? { ok: false, reason: "busy" } : { ok: true });
-// With a server run, Stop cancels it and the stream then ends with the server's "stopped". False = the cancel failed (say so).
-export async function stopRun(): Promise<boolean> {
-  if (!activeRun) { ac?.abort(); return true; }
-  try { await cancelRun(activeRun); refreshLoad(); return true; } catch { return false; }
+/** This session's live run in this tab (turnId null when none). */
+export function useRunState(sessionId: string | null): RunState {
+  const turnId = useSyncExternalStore(subscribe, () => (sessionId ? locks.get(sessionId)?.turnId ?? null : null), () => null);
+  return useMemo(() => ({ sessionId, turnId }), [sessionId, turnId]);
 }
+/** True while this tab holds the live run of this turn. */
+export const useTurnLocked = (turnId: string) => useSyncExternalStore(subscribe, () => [...locks.values()].some((l) => l.turnId === turnId), () => false);
+export const canStart = (sessionId: string): { ok: true } | { ok: false; reason: "busy" } => (locks.has(sessionId) ? { ok: false, reason: "busy" } : { ok: true });
+// With a server run, Stop cancels it and the stream then ends with the server's "stopped". False = the cancel failed (say so).
+export async function stopRun(sessionId: string): Promise<boolean> {
+  const l = locks.get(sessionId);
+  if (!l) return true;
+  if (!l.activeRun) { l.ac.abort(); return true; }
+  try { await cancelRun(l.activeRun); refreshLoad(); return true; } catch { return false; }
+}
+export const stopAllRuns = () => { for (const id of [...locks.keys()]) void stopRun(id); };
 export async function stopTurn(turnId: string): Promise<boolean> {
   const id = runOf.get(turnId);
   if (!id) return false;
   try { await cancelRun(id); refreshLoad(); return true; } catch { return false; }
 }
 export const isAttached = (turnId: string) => attached.has(turnId); // sync.ts: a turn this tab follows keeps its live copy
-const useOwner = (turnId: string, v: boolean) => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => owners.get(turnId) === v, () => false);
+const useOwner = (turnId: string, v: boolean) => useSyncExternalStore(subscribe, () => owners.get(turnId) === v, () => false);
 export const useForeign = (turnId: string) => useOwner(turnId, false); // someone else started it: watched here
 export const useStoppable = (turnId: string) => useOwner(turnId, true); // this browser started it: Stop works from any tab
-export const useSending = (turnId: string) => useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => sending.has(turnId), () => false);
-export const runningTurnId = () => state.turnId; // sync.ts: a turn running in THIS tab is never overwritten by a remote copy
+export const useSending = (turnId: string) => useSyncExternalStore(subscribe, () => sending.has(turnId), () => false);
+export const runningTurnIds = (): string[] => [...locks.values()].map((l) => l.turnId); // sync.ts: a turn running in THIS tab is never overwritten by a remote copy
+export const isRunningHere = (turnId: string) => runningTurnIds().includes(turnId);
 
 // The one place error events become user-facing text (stored in the current language).
 export function errorText(e: ApiError): string {
@@ -123,7 +135,7 @@ async function runAsk(question: string, c: AbortController, opts: { mode: AskMod
 
 // --- server-owned runs (shared mode) ----------------------------------------------------------------------------------
 const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((r) => { const id = setTimeout(r, ms); signal.addEventListener("abort", () => { clearTimeout(id); r(); }, { once: true }); });
-const notify = () => subs.forEach((f) => f());
+const notify = notifySubs;
 const analysisOutcome = (e: AnalyzeEvent, prev: Patch | null): Patch | null =>
   e.type === "analysis_result" || e.type === "complete" ? prev ?? { status: "done" }
   : e.type === "refused" ? { status: "refused", refused: e.reason, refusedCode: refusalCode(e.code) }
@@ -258,7 +270,8 @@ async function sharedRun(sessionId: string, body: RunBody, local: Turn, existing
     t = body.kind === "analyze" && !row.analysis ? { ...row, kind: "analysis", analysis: analysisFrom(body.file_id ?? "", body.file_name) } : row;
     const seed = waitingFrom(run);
     t = seed ? { ...t, progress: seed } : t;
-    activeRun = run.id; runOf.set(turnId, run.id); owners.set(turnId, true); addSubmitted(run.id);
+    const lk = locks.get(sessionId); if (lk?.turnId === turnId) lk.activeRun = run.id;
+    runOf.set(turnId, run.id); owners.set(turnId, true); addSubmitted(run.id);
     if (store().sessions.find((x) => x.id === sessionId)?.turns.some((x) => x.id === turnId)) store().patchTurn(sessionId, turnId, { ...t, createdAt: local.createdAt }); // M1: it is already shown: update, never add twice
     else store().addTurn(sessionId, t);
   } catch (e) {
@@ -271,17 +284,17 @@ async function sharedRun(sessionId: string, body: RunBody, local: Turn, existing
 }
 
 export async function startRun(sessionId: string, question: string, opts: { mode?: AskMode } = {}): Promise<void> {
-  if (!canStart().ok) throw new Error("busy");
+  if (!canStart(sessionId).ok) throw new Error("busy");
   const session = useChatStore.getState().sessions.find((x) => x.id === sessionId);
   if (!session) throw new Error("no such session"); // before any state or stream
   const mode: AskMode = opts.mode === "quick" || opts.mode === "chat" ? opts.mode : "deep";
   // Deep Research can pause for plan review first; Quick and Answer-research never pause.
   const review = mode === "deep" && usePrefs.getState().reviewPlan;
   const turnId = newId();
-  const c = (ac = new AbortController());
+  const c = new AbortController();
   const store = () => useChatStore.getState();
   if (!review && shared()) { // the server queues, runs and records it; this tab only shows it
-    setState({ sessionId, turnId });
+    take(sessionId, turnId, c);
     try {
       if (!session.title) store().renameSession(sessionId, question); // the session reaches the server with a title, like the first turn would have
       await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question, mode, ...(mode === "chat" ? { memory: memoryFrom(session) } : { history: historyFrom(session) }) },
@@ -289,13 +302,12 @@ export async function startRun(sessionId: string, question: string, opts: { mode
     } catch (e) {
       if (!c.signal.aborted) throw e; // Stop before the server answered: the question is gone again
     } finally {
-      ac = null; activeRun = null;
-      setState(idle);
+      release(sessionId);
     }
     return;
   }
   store().addTurn(sessionId, { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, mode });
-  setState({ sessionId, turnId });
+  take(sessionId, turnId, c);
   const patch = (p: Parameters<ReturnType<typeof store>["patchTurn"]>[2]) => { if (leaving) return; try { store().patchTurn(sessionId, turnId, p); } catch {} }; // storage must never abort a run
   try {
     if (review) {
@@ -321,31 +333,29 @@ export async function startRun(sessionId: string, question: string, opts: { mode
       await runAsk(question, c, mode === "chat" ? { mode, history: [], memory: memoryFrom(session) } : { mode, history: historyFrom(session) }, patch);
     }
   } finally {
-    ac = null;
-    setState(idle);
+    release(sessionId);
   }
 }
 
 // The reviewed plan runs the real stream on the same turn: from the board straight into the search run.
 export async function approvePlan(sessionId: string, turnId: string, plan: Search[]): Promise<void> {
   if (!plan.some((x) => x.term.trim() !== "")) throw new Error("empty plan"); // nothing to run: also keeps the turn reloadable
-  if (!canStart().ok) throw new Error("busy");
+  if (!canStart(sessionId).ok) throw new Error("busy");
   const session = useChatStore.getState().sessions.find((x) => x.id === sessionId);
   const turn = session?.turns.find((t) => t.id === turnId);
   if (!session || !turn) throw new Error("no such turn"); // before any state or stream
   if (turn.status !== "awaiting_plan") throw new Error("not awaiting");
   const mode: AskMode = turn.mode === "quick" ? "quick" : "deep"; // a plan is only ever reviewed in deep mode
-  const c = (ac = new AbortController());
+  const c = new AbortController();
   const store = () => useChatStore.getState();
-  setState({ sessionId, turnId });
+  take(sessionId, turnId, c);
   if (shared()) {
     try {
       await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question: turn.question, mode, history: historyFrom(session), plan }, turn, true, c);
     } catch (e) {
       if (!c.signal.aborted) throw e; // the turn stays awaiting its plan; the card says the start failed
     } finally {
-      ac = null; activeRun = null;
-      setState(idle);
+      release(sessionId);
     }
     return;
   }
@@ -354,8 +364,7 @@ export async function approvePlan(sessionId: string, turnId: string, plan: Searc
     store().patchTurn(sessionId, turnId, { status: "running", progress: emptyProgress, plan });
     await runAsk(turn.question, c, { mode, history: historyFrom(session), plan }, patch);
   } finally {
-    ac = null;
-    setState(idle);
+    release(sessionId);
   }
 }
 
@@ -379,17 +388,17 @@ function reduceAnalysis(a: TurnAnalysis, e: AnalyzeEvent): TurnAnalysis {
   }
 }
 
-// Same single-run controller as startRun: one active turn, Stop aborts it, a reload reads the stored turn as interrupted.
+// Same per-session controller as startRun: one active turn per session, Stop aborts it, a reload reads the stored turn as interrupted.
 export async function startAnalysis(sessionId: string, question: string, fileId: string, fileName?: string): Promise<void> {
-  if (!canStart().ok) throw new Error("busy");
+  if (!canStart(sessionId).ok) throw new Error("busy");
   const session = useChatStore.getState().sessions.find((x) => x.id === sessionId);
   if (!session) throw new Error("no such session"); // before any state or stream
   if (!fileId) throw new Error("no file"); // before any state or stream
   const turnId = newId();
-  const c = (ac = new AbortController());
+  const c = new AbortController();
   const store = () => useChatStore.getState();
   if (shared()) {
-    setState({ sessionId, turnId });
+    take(sessionId, turnId, c);
     try {
       if (!session.title) store().renameSession(sessionId, question);
       await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "analyze", question, file_id: fileId, ...(fileName ? { file_name: fileName } : {}) },
@@ -397,14 +406,13 @@ export async function startAnalysis(sessionId: string, question: string, fileId:
     } catch (e) {
       if (!c.signal.aborted) throw e;
     } finally {
-      ac = null; activeRun = null;
-      setState(idle);
+      release(sessionId);
     }
     return;
   }
   let analysis = analysisFrom(fileId, fileName);
   store().addTurn(sessionId, { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, kind: "analysis", analysis });
-  setState({ sessionId, turnId });
+  take(sessionId, turnId, c);
   const patch = (p: Parameters<ReturnType<typeof store>["patchTurn"]>[2]) => { if (leaving) return; try { store().patchTurn(sessionId, turnId, p); } catch {} };
   let outcome: Parameters<typeof patch>[0] | null = null;
   try {
@@ -419,7 +427,6 @@ export async function startAnalysis(sessionId: string, question: string, fileId:
   } catch {
     patch({ analysis, status: c.signal.aborted ? "stopped" : "error", ...(c.signal.aborted ? {} : { error: cutOffText() }) });
   } finally {
-    ac = null;
-    setState(idle);
+    release(sessionId);
   }
 }

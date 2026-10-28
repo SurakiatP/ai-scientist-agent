@@ -7,7 +7,7 @@ import { emptyProgress } from "./progress";
 import { __queue, __resetSync, recordServerTurn, settleSession, startSync, TURN_GAP_MS, useSync } from "./sync";
 
 const run = vi.hoisted(() => ({ turn: null as string | null, att: null as string | null }));
-vi.mock("./run", () => ({ runningTurnId: () => run.turn, isAttached: (id: string) => id === run.att, attachRunning: vi.fn(), useRunState: () => ({ sessionId: null, turnId: null }), stopRun: vi.fn() }));
+vi.mock("./run", () => ({ runningTurnIds: () => (run.turn ? [run.turn] : []), isRunningHere: (id: string) => id === run.turn, isAttached: (id: string) => id === run.att, attachRunning: vi.fn(), useRunState: () => ({ sessionId: null, turnId: null }), stopRun: vi.fn() }));
 
 const U = (n: number) => `cccccccc-0000-4000-8000-${String(n).padStart(12, "0")}`;
 type Call = { method: string; url: string; body?: Record<string, unknown> };

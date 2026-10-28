@@ -36,7 +36,7 @@ describe("run controller", () => {
     script = gen(evs);
     await run.startRun(sid, "q");
     expect(last(chat)).toMatchObject({ status: "done", answer: { content: "ans", references: [ref] } });
-    expect(run.canStart()).toEqual({ ok: true });
+    expect(run.canStart(sid)).toEqual({ ok: true });
   });
   it("history has the last three answered turns, skipping unfinished ones", async () => {
     const { chat, run, sid } = await setup();
@@ -112,7 +112,7 @@ describe("run controller", () => {
     script = async function* (signal) { yield { type: "waiting", position: 1 }; await new Promise((r) => (signal.aborted ? r(0) : signal.addEventListener("abort", r))); };
     const p = run.startRun(sid, "q");
     await Promise.resolve();
-    run.stopRun();
+    run.stopRun(sid);
     await p;
     expect(last(chat).status).toBe("stopped");
   });
@@ -122,7 +122,7 @@ describe("run controller", () => {
     const p = run.startRun(sid, "q");
     await Promise.resolve();
     window.dispatchEvent(new Event("pagehide"));
-    run.stopRun();
+    run.stopRun(sid);
     await p;
     try {
       expect(last(chat).status).toBe("running");
@@ -136,7 +136,7 @@ describe("run controller", () => {
     let release!: () => void;
     script = async function* () { await new Promise<void>((r) => (release = r)); yield { type: "complete" }; };
     const p = run.startRun(sid, "q1");
-    expect(run.canStart()).toEqual({ ok: false, reason: "busy" });
+    expect(run.canStart(sid)).toEqual({ ok: false, reason: "busy" });
     await expect(run.startRun(sid, "q2")).rejects.toThrow("busy");
     expect(chat.getState().sessions[0].turns).toHaveLength(1);
     release();
@@ -148,7 +148,7 @@ describe("run controller", () => {
     script = spy;
     await expect(run.startRun("nope", "q")).rejects.toThrow();
     expect(spy).not.toHaveBeenCalled();
-    expect(run.canStart()).toEqual({ ok: true });
+    expect(run.canStart("nope")).toEqual({ ok: true });
   });
   it("throwing storage does not abort a run", async () => {
     const { chat, run, sid } = await setup();
@@ -157,12 +157,12 @@ describe("run controller", () => {
     chat.setState({ patchTurn: () => { throw new Error("quota"); } });
     await expect(run.startRun(sid, "q")).resolves.toBeUndefined();
     chat.setState({ patchTurn: orig });
-    expect(run.canStart()).toEqual({ ok: true });
+    expect(run.canStart(sid)).toEqual({ ok: true });
   });
   it("useRunState follows the run", async () => {
     const { run, sid } = await setup();
     const { renderHook, act } = await import("@testing-library/react");
-    const { result } = renderHook(() => run.useRunState());
+    const { result } = renderHook(() => run.useRunState(sid));
     expect(result.current.turnId).toBeNull();
     let release!: () => void;
     script = async function* () { await new Promise<void>((r) => (release = r)); yield { type: "complete" }; };
@@ -207,7 +207,7 @@ describe("analysis controller", () => {
       },
     });
     expect(last(chat).answer).toBeUndefined();
-    expect(run.canStart()).toEqual({ ok: true });
+    expect(run.canStart(sid)).toEqual({ ok: true });
   });
 
   it("deduplicates repeated steps and keeps a repaired step", async () => {
@@ -267,7 +267,7 @@ describe("analysis controller", () => {
     let release!: () => void;
     analyzeScript = async function* () { await new Promise<void>((r) => (release = r)); yield { type: "complete" }; };
     const p = run.startAnalysis(sid, "q1", "f".repeat(32));
-    expect(run.canStart()).toEqual({ ok: false, reason: "busy" });
+    expect(run.canStart(sid)).toEqual({ ok: false, reason: "busy" });
     await expect(run.startRun(sid, "q2")).rejects.toThrow("busy");
     expect(chat.getState().sessions[0].turns).toHaveLength(1);
     release();
@@ -279,7 +279,7 @@ describe("analysis controller", () => {
     analyzeScript = async function* (signal) { yield { type: "analysis_step", step: "running" }; await new Promise((r) => (signal.aborted ? r(0) : signal.addEventListener("abort", r))); };
     const p = run.startAnalysis(sid, "q", "f".repeat(32));
     await Promise.resolve();
-    run.stopRun();
+    run.stopRun(sid);
     await p;
     expect(last(chat)).toMatchObject({ status: "stopped", analysis: { steps: ["running"] } });
   });
@@ -291,7 +291,7 @@ describe("analysis controller", () => {
     await expect(run.startAnalysis("nope", "q", "f".repeat(32))).rejects.toThrow();
     await expect(run.startAnalysis(sid, "q", "")).rejects.toThrow();
     expect(spy).not.toHaveBeenCalled();
-    expect(run.canStart()).toEqual({ ok: true });
+    expect(run.canStart(sid)).toEqual({ ok: true });
   });
 
   it("page unload leaves the stored analysis running for a reload to read as interrupted", async () => {
@@ -300,7 +300,7 @@ describe("analysis controller", () => {
     const p = run.startAnalysis(sid, "q", "f".repeat(32));
     await vi.waitFor(() => expect(last(chat).analysis?.steps).toEqual(["running"]));
     window.dispatchEvent(new Event("pagehide"));
-    run.stopRun();
+    run.stopRun(sid);
     await p;
     try {
       expect(last(chat).status).toBe("running");
@@ -324,7 +324,7 @@ describe("plan review flow", () => {
     expect(asks).toHaveLength(1); // exactly the plan fetch: no search stream yet
     expect(asks[0].opts).toEqual({ mode: "deep", history: [], planOnly: true });
     expect(turnOf(chat, sid)).toMatchObject({ status: "awaiting_plan", plan: proposed, mode: "deep" });
-    expect(run.canStart()).toEqual({ ok: true }); // the lock was released while waiting
+    expect(run.canStart(sid)).toEqual({ ok: true }); // the lock was released while waiting
   });
 
   it("holds the single-run lock only while the plan streams, not while waiting", async () => {
@@ -333,11 +333,11 @@ describe("plan review flow", () => {
     script = async function* () { await new Promise<void>((r) => (release = r)); yield strategy; yield { type: "complete" }; };
     const p = run.startRun(sid, "q");
     await Promise.resolve();
-    expect(run.canStart()).toEqual({ ok: false, reason: "busy" }); // the fetch itself is the run
+    expect(run.canStart(sid)).toEqual({ ok: false, reason: "busy" }); // the fetch itself is the run
     release();
     await p;
     expect(turnOf(chat, sid).status).toBe("awaiting_plan");
-    expect(run.canStart()).toEqual({ ok: true });
+    expect(run.canStart(sid)).toEqual({ ok: true });
     // another session can run while the first waits for review
     const sid2 = chat.getState().newSession();
     script = gen([{ type: "final_answer", content: "x", references: [] }, { type: "complete" }]);
@@ -355,7 +355,7 @@ describe("plan review flow", () => {
     expect(asks).toHaveLength(2);
     expect(asks[1].opts).toEqual({ mode: "deep", history: [], plan: edited });
     expect(turnOf(chat, sid)).toMatchObject({ status: "done", answer: { content: "ans" }, plan: edited });
-    expect(run.canStart()).toEqual({ ok: true });
+    expect(run.canStart(sid)).toEqual({ ok: true });
   });
 
   it("a throwing patchTurn in approve still releases the single-run lock", async () => {
@@ -367,7 +367,7 @@ describe("plan review flow", () => {
     chat.setState({ patchTurn: () => { throw new Error("quota"); } });
     await expect(run.approvePlan(sid, tid, edited)).rejects.toThrow("quota");
     chat.setState({ patchTurn: orig });
-    expect(run.canStart()).toEqual({ ok: true });
+    expect(run.canStart(sid)).toEqual({ ok: true });
   });
 
   it("approve streams the last three answered turns as history", async () => {
@@ -383,21 +383,39 @@ describe("plan review flow", () => {
     ]);
   });
 
-  it("approve is refused while another run holds the lock, and the turn stays waiting", async () => {
+  it("approve is refused while the same session has a live run, and the turn stays waiting", async () => {
     const { chat, run, sid } = await setup(true);
     script = gen(planEvs);
     await run.startRun(sid, "q");
     const tid = turnOf(chat, sid).id;
-    const sid2 = chat.getState().newSession();
     let release!: () => void;
     script = async function* () { await new Promise<void>((r) => (release = r)); };
-    const p = run.startRun(sid2, "q2"); // plan fetch pending elsewhere
+    const p = run.startRun(sid, "q2"); // a plan fetch pending in this same session
     await Promise.resolve();
-    expect(turnOf(chat, sid).status).toBe("awaiting_plan");
+    expect(chat.getState().sessions.find((x) => x.id === sid)!.turns.find((x) => x.id === tid)!.status).toBe("awaiting_plan");
     await expect(run.approvePlan(sid, tid, edited)).rejects.toThrow("busy");
-    expect(asks).toHaveLength(2); // only the two plan fetches; no search stream started
+    expect(asks).toHaveLength(2); // only two plan fetches; no search stream started
     release();
     await p;
+  });
+
+  it("a run in another session never blocks this one: sessions run side by side", async () => {
+    const { chat, run, sid } = await setup(false);
+    chat.getState().renameSession(sid, "first"); // a titled chat: newSession() would otherwise hand back the same blank one
+    const sid2 = chat.getState().newSession();
+    expect(sid2).not.toBe(sid);
+    let release!: () => void;
+    script = async function* () { await new Promise<void>((r) => (release = r)); yield { type: "complete" as const }; };
+    const first = run.startRun(sid2, "q-other");
+    await Promise.resolve();
+    expect(run.canStart(sid2)).toEqual({ ok: false, reason: "busy" });
+    expect(run.canStart(sid)).toEqual({ ok: true });
+    script = gen([{ type: "complete" }]);
+    await run.startRun(sid, "q-here"); // starts and ends while the other is still running
+    expect(run.canStart(sid2)).toEqual({ ok: false, reason: "busy" });
+    release();
+    await first;
+    expect(run.canStart(sid2)).toEqual({ ok: true });
   });
 
   it("approve rejects a missing, non-waiting or already-approved turn without streaming", async () => {
@@ -472,7 +490,7 @@ describe("plan review flow", () => {
     script = gen([{ type: "error", message: "", code: "network" }]); // the next question fails the same way
     await run.startRun(sid, "q2");
     expect(turnOf(chat, sid)).toMatchObject({ status: "error", error: "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้" });
-    expect(run.canStart()).toEqual({ ok: true });
+    expect(run.canStart(sid)).toEqual({ ok: true });
   });
 
   describe("answer research (chat) mode", () => {

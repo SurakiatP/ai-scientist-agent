@@ -39,7 +39,7 @@ const btn = { width: 44, height: 44, color: "text.secondary" };
 export function UserMessage({ sessionId, turn }: { sessionId: string; turn: Turn }) {
   const t = useT();
   const question = turn.question;
-  const busy = !!useRunState().turnId;
+  const busy = !!useRunState(sessionId).turnId;
   const [copied, setCopied] = useState<"ok" | "fail" | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(question);
@@ -64,7 +64,7 @@ export function UserMessage({ sessionId, turn }: { sessionId: string; turn: Turn
   const changed = draft.trim() !== question.trim() && draft.trim().length > 0;
   const canSend = changed && !over && !busy;
   const go = () => {
-    if (!canStart().ok) { setErr(true); return; }
+    if (!canStart(sessionId).ok) { setErr(true); return; }
     // later turns answered the old question: ask before dropping them
     if (laterCount > 0 && !confirm) { setConfirm(true); return; }
     const all = useChatStore.getState().sessions.find((x) => x.id === sessionId)?.turns ?? [];

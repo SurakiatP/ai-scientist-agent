@@ -6,7 +6,7 @@ import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import type { Turn } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
-import { stopTurn, useForeign, useRunState, useSending, useStoppable } from "@/lib/run";
+import { stopTurn, useForeign, useSending, useStoppable, useTurnLocked } from "@/lib/run";
 import type { Progress } from "@/lib/progress";
 import { ease, enterRise, prefersReduced, stageCheckSx, stageDotSx, stageFillSx, stageRingSx, stageSettleSx } from "@/lib/motion";
 import { PlanCard, type RowState } from "./PlanCard";
@@ -105,7 +105,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
   const p = turn.progress, running = turn.status === "running";
   const other = useForeign(turn.id) && running; // someone else's run: watched here, stopped only where it was started
   const sendingNow = useSending(turn.id) && running;
-  const lockedHere = useRunState().turnId === turn.id;
+  const lockedHere = useTurnLocked(turn.id);
   const stoppable = useStoppable(turn.id) && running && !lockedHere; // ours, found again in another tab: the composer has no Stop for it
   const [stopErr, setStopErr] = useState(false);
   const [rows0] = useState(p.searches.length); // rows present on mount never animate

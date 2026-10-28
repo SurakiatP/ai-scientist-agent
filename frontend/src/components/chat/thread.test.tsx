@@ -6,7 +6,7 @@ import { emptyProgress } from "@/lib/progress";
 import { EmptyChat } from "./EmptyChat";
 import { Thread } from "./Thread";
 
-vi.mock("@/lib/run", () => ({ useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true),  useRunState: () => ({ sessionId: null, turnId: null }), startRun: vi.fn(), stopRun: vi.fn(async () => true), approvePlan: vi.fn(), cancelPlan: vi.fn(), canStart: () => ({ ok: true }), startError: () => null, useForeign: () => false }));
+vi.mock("@/lib/run", () => ({ useTurnLocked: () => false, stopAllRuns: vi.fn(), useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true),  useRunState: () => ({ sessionId: null, turnId: null }), startRun: vi.fn(), stopRun: vi.fn(async () => true), approvePlan: vi.fn(), cancelPlan: vi.fn(), canStart: () => ({ ok: true }), startError: () => null, useForeign: () => false }));
 
 let n = 0;
 const turn = (): Turn => ({ id: `t${n++}`, question: "Q", createdAt: 1, status: "done", progress: emptyProgress });

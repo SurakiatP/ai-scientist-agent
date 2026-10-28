@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "./AppShell";
 import { useChatStore, PERSONAL } from "@/lib/chat";
+import { useUnread } from "@/lib/unread";
 import { usePrefs } from "@/lib/prefs";
 import { strings } from "@/lib/strings";
 import { useSettingsOpen } from "./Sidebar";
@@ -11,7 +12,7 @@ import { hydrateRoot } from "react-dom/client";
 import { MAX_PROJECTS } from "@/lib/chat";
 
 const run = vi.hoisted(() => ({ sessionId: null as string | null }));
-vi.mock("@/lib/run", () => ({ useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true),  useRunState: () => ({ sessionId: run.sessionId, turnId: run.sessionId && "t" }), stopRun: vi.fn(async () => true), approvePlan: vi.fn(), cancelPlan: vi.fn() }));
+vi.mock("@/lib/run", () => ({ useTurnLocked: () => false, stopAllRuns: vi.fn(), useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true),  useRunState: () => ({ sessionId: run.sessionId, turnId: run.sessionId && "t" }), stopRun: vi.fn(async () => true), approvePlan: vi.fn(), cancelPlan: vi.fn() }));
 
 const t = strings.th;
 const prog = { waiting: null, reasoning: "", searches: [], sources: {}, answered: [], writing: false, phase: "done" as const };
@@ -25,6 +26,7 @@ const sb = () => screen.getAllByRole("navigation")[0];
 
 beforeEach(() => {
   localStorage.clear();
+  useUnread.setState({ unread: {} });
   useChatStore.getState().clearAll();
   usePrefs.setState({ lang: "th", sidebarCollapsed: false });
   useSettingsOpen.getState().set(false);
@@ -71,12 +73,37 @@ describe("shell", () => {
     expect(useChatStore.getState().sessions).toHaveLength(1);
   });
 
-  it("running session row has an accessible running label", () => {
+  it("a session with a running turn shows a spinner with its running time; an idle one shows time ago", () => {
     const id = seed("busy");
     seed("idle");
-    run.sessionId = id;
+    act(() => useChatStore.getState().patchTurn(id, "t" + id, { status: "running", createdAt: Date.now() - 65_000 }));
     render(<AppShell>x</AppShell>);
-    expect(within(sb()).getAllByLabelText(t.running)).toHaveLength(1);
+    const lab = within(sb()).getAllByRole("img", { name: new RegExp(`^${t.sessRunning}`) });
+    expect(lab).toHaveLength(1);
+    expect(lab[0]).toHaveAccessibleName(new RegExp(`1 ${t.unitM}`)); // 65 s = 1 min 5 s
+    expect(lab[0].querySelector("[role='progressbar']")).not.toBeNull();
+  });
+
+  it("a session that finished while another was open is a dot with how long ago, and opening it clears the dot", () => {
+    const a = seed("first"), b = seed("second");
+    act(() => useChatStore.getState().setActive(a));
+    render(<AppShell>x</AppShell>);
+    act(() => useChatStore.getState().patchTurn(b, "t" + b, { status: "running" }));
+    act(() => useChatStore.getState().patchTurn(b, "t" + b, { status: "done" }));
+    const dot = within(sb()).getByRole("img", { name: new RegExp(`^${t.sessDone}`) });
+    expect(dot).toHaveAccessibleName(new RegExp(`${t.sessAgo} 0 ${t.unitS}`));
+    expect(dot.querySelector("[role='progressbar']")).toBeNull();
+    fireEvent.click(within(sb()).getByText("second"));
+    expect(within(sb()).queryByRole("img", { name: new RegExp(`^${t.sessDone}`) })).toBeNull();
+  });
+
+  it("a finished run in the open session is not unread", () => {
+    const a = seed("first");
+    act(() => useChatStore.getState().setActive(a));
+    render(<AppShell>x</AppShell>);
+    act(() => useChatStore.getState().patchTurn(a, "t" + a, { status: "running" }));
+    act(() => useChatStore.getState().patchTurn(a, "t" + a, { status: "done" }));
+    expect(within(sb()).queryByRole("img", { name: new RegExp(`^${t.sessDone}`) })).toBeNull();
   });
 
   it("empty store shows a real empty state, no sample rows", () => {

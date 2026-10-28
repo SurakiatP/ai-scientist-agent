@@ -14,8 +14,8 @@ import { EmptyChat } from "./EmptyChat";
 import { Thread } from "./Thread";
 
 const run = vi.hoisted(() => ({ sessionId: null as string | null, turnId: null as string | null, startRun: vi.fn(async () => {}), startAnalysis: vi.fn(async () => {}), approvePlan: vi.fn(async () => {}), cancelPlan: vi.fn(), stopRun: vi.fn(async () => true) }));
-vi.mock("@/lib/run", () => ({ useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true), 
-  useRunState: () => ({ sessionId: run.sessionId, turnId: run.turnId }),
+vi.mock("@/lib/run", () => ({ useTurnLocked: () => false, stopAllRuns: vi.fn(), useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true), 
+  useRunState: (sid: string) => ({ sessionId: sid, turnId: run.sessionId === sid ? run.turnId : null }), // per session: another session's run never blocks this one
   startRun: run.startRun,
   startAnalysis: run.startAnalysis,
   approvePlan: run.approvePlan,
@@ -154,13 +154,13 @@ describe("Composer", () => {
     expect(sendBtn()).toBeEnabled();
   });
 
-  it("busy elsewhere disables send with a reason; busy here shows Stop", () => {
+  it("a run in another session does not block this one; a run here shows Stop", () => {
     const id = mk();
     run.sessionId = "other"; run.turnId = "x";
     const { unmount } = render(<Composer sessionId={id} />);
     type("q");
-    expect(sendBtn()).toBeDisabled();
-    expect(screen.getByText(t.busyElsewhere)).toBeInTheDocument();
+    expect(sendBtn()).toBeEnabled();
+    expect(screen.queryByText(t.busyElsewhere)).toBeNull();
     unmount();
     run.sessionId = id;
     render(<Composer sessionId={id} />);

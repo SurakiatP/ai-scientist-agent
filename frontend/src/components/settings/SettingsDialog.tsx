@@ -11,7 +11,8 @@ import { API_BASE } from "@/lib/config";
 import { useChatStore } from "@/lib/chat";
 import { useHistoryStore, useHydrated, useStorageFull } from "@/lib/history";
 import { usePrefs, useT } from "@/lib/prefs";
-import { stopRun } from "@/lib/run";
+import { stopAllRuns } from "@/lib/run";
+import { useUnread } from "@/lib/unread";
 import { useSettingsOpen } from "@/components/shell/Sidebar";
 import { useSync } from "@/lib/sync";
 import { ImportOld } from "./ImportOld";
@@ -107,8 +108,9 @@ export function SettingsDialog() {
                   <Typography sx={{ fontSize: "0.875rem" }}>{shared ? t.deleteAllSharedConfirm : t.deleteAllConfirm}</Typography>
                   <Stack direction="row" spacing={1}>
                     <Button color="error" variant="contained" autoFocus sx={{ minHeight: 44 }} onClick={() => {
-                      stopRun(); // a live run would otherwise keep writing into a store that no longer has its chat
+                      stopAllRuns(); // a live run would otherwise keep writing into a store that no longer has its chat
                       useChatStore.getState().clearAll();
+                      useUnread.setState({ unread: {} }); // and the unread marks that pointed at those chats
                       useHistoryStore.getState().clear(); // old /ask history is browser data too
                       setConfirm(false);
                     }}>{t.confirm}</Button>

@@ -1,4 +1,5 @@
 "use client";
+import "@/lib/unread"; // starts the watcher that marks finished-but-unread sessions
 import { useState, type ReactNode } from "react";
 import { Box, Drawer, IconButton, Stack, useMediaQuery, useTheme } from "@mui/material";
 import MenuRoundedIcon from "@mui/icons-material/MenuRounded";

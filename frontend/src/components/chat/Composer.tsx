@@ -57,7 +57,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
     fetch(`${API_BASE}/v1/health`, { signal: ac.signal }).then((r) => r.json()).then((h) => { if (h?.analysis === "disabled" || h?.files === "unavailable") setAttachOff(true); }).catch(() => {}); // unreachable: fail open
     return () => ac.abort();
   }, []);
-  const run = useRunState();
+  const run = useRunState(sessionId);
   const full = useStorageFull();
   const [composing, setComposing] = useState(false);
   const [modeAnchor, setModeAnchor] = useState<HTMLElement | null>(null);
@@ -65,7 +65,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const picker = useRef<HTMLInputElement>(null);
   const upload = useRef<AbortController | null>(null);
   useEffect(() => () => upload.current?.abort(), []);
-  const busy = !!run.turnId, mine = busy && run.sessionId === sessionId;
+  const mine = !!run.turnId, busy = mine; // this session has a live run here; other sessions run on their own
   // icon pops only on a send<->stop change in this session, never on mount or session switch
   const [sw, setSw] = useState({ sid: sessionId, mine, anim: false });
   if (sw.sid !== sessionId || sw.mine !== mine) setSw({ sid: sessionId, mine, anim: sw.sid === sessionId });
@@ -109,7 +109,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const send = () => {
     if (!canSend) return;
     const q = text.trim();
-    if (!canStart().ok) { setErr(t.busyElsewhere); return; } // text stays; never dropped silently
+    if (!canStart(sessionId).ok) { setErr(t.busyElsewhere); return; } // text stays; never dropped silently
     setErr("");
     const attached = file;
     setText("");
@@ -129,7 +129,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
     e.preventDefault();
     send();
   };
-  const note = busy && !mine ? t.busyElsewhere : over ? t.tooLong : err || startErr || (file?.status === "error" ? file.error || t.uploadFailed : file?.status === "ready" ? t.analysisModeNote : "");
+  const note = over ? t.tooLong : err || startErr || (file?.status === "error" ? file.error || t.uploadFailed : file?.status === "ready" ? t.analysisModeNote : "");
   const counter = text.length >= MAX_QUESTION * 0.8;
   return (
     <Box sx={{ width: "100%" }}>
@@ -204,7 +204,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
                 );
               })}
             </Menu>
-            <IconButton aria-label={mine ? t.stop : t.ask} onClick={(e) => { if (!mine) send(); else if (e.detail < 2) void stopRun().then((ok) => setErr(ok ? "" : t.stopFailed)); }} /* a double-click on Send must not land on Stop */ disabled={!mine && !canSend}
+            <IconButton aria-label={mine ? t.stop : t.ask} onClick={(e) => { if (!mine) send(); else if (e.detail < 2) void stopRun(sessionId).then((ok) => setErr(ok ? "" : t.stopFailed)); }} /* a double-click on Send must not land on Stop */ disabled={!mine && !canSend}
               sx={{ width: 44, height: 44, alignSelf: "center", flexShrink: 0, bgcolor: "primary.main", color: "primary.contrastText", transition: `background-color 160ms ${ease}`, "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 35%, transparent)", color: "primary.contrastText" } }}>
               <Box key={mine ? "stop" : "send"} component="span" sx={{ display: "inline-flex", ...(sw.anim ? enterPop : {}) }}>{mine ? <StopRoundedIcon /> : <SendOutlinedIcon />}</Box>
             </IconButton>

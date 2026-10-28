@@ -13,7 +13,7 @@ import { strings } from "@/lib/strings";
 import { useSync } from "@/lib/sync";
 import { SyncChip } from "./SyncUI";
 
-vi.mock("@/lib/run", () => ({ useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true),  useRunState: () => ({ sessionId: null, turnId: null }), stopRun: vi.fn(async () => true), runningTurnId: () => null, approvePlan: vi.fn(), cancelPlan: vi.fn() }));
+vi.mock("@/lib/run", () => ({ useTurnLocked: () => false, stopAllRuns: vi.fn(), useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true),  useRunState: () => ({ sessionId: null, turnId: null }), stopRun: vi.fn(async () => true), runningTurnId: () => null, approvePlan: vi.fn(), cancelPlan: vi.fn() }));
 const t = strings.th;
 const U = (n: number) => `dddddddd-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });

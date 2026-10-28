@@ -8,7 +8,7 @@ import { UserMessage } from "./UserMessage";
 import { useDraft, useStartErr } from "./Composer";
 
 const run = vi.hoisted(() => ({ turnId: null as string | null, startRun: vi.fn(async () => {}), startAnalysis: vi.fn(async () => {}) }));
-vi.mock("@/lib/run", () => ({ useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true), 
+vi.mock("@/lib/run", () => ({ useTurnLocked: () => false, stopAllRuns: vi.fn(), useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true), 
   useRunState: () => ({ sessionId: null, turnId: run.turnId }),
   startRun: run.startRun, startAnalysis: run.startAnalysis,
   startError: () => null, useForeign: () => false,

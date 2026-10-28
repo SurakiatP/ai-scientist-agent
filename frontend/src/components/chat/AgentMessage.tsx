@@ -40,7 +40,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const [copied, setCopied] = useState<"ok" | "fail" | null>(null);
   const [wasRunning] = useState(turn.status === "running"); // only an answer that arrives live is revealed part by part; reloads render at once
   const copy = async () => { try { await navigator.clipboard.writeText(turn.answer?.content ?? ""); setCopied("ok"); } catch { setCopied("fail"); } setTimeout(() => setCopied(null), 2000); };
-  const lockedTurn = useRunState().turnId;
+  const lockedTurn = useRunState(sessionId).turnId;
   const busy = !!lockedTurn;
   const sendingChat = useSending(turn.id) && turn.mode === "chat";
   const chatStop = useStoppable(turn.id) && turn.mode === "chat" && turn.status === "running" && lockedTurn !== turn.id; // ours, found again: no composer Stop here

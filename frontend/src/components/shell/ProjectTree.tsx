@@ -14,7 +14,8 @@ import { useHydrated } from "@/lib/history";
 import { canAnimate, ease } from "@/lib/motion";
 import { usePrefs, useT } from "@/lib/prefs";
 import { useGoChat } from "@/lib/nav";
-import { stopRun, useRunState } from "@/lib/run";
+import { stopRun } from "@/lib/run";
+import { SessionStatus } from "./SessionStatus";
 import { ago, focusKebab, InlineConfirm, InlineRename, KebabMenu, SessionMenu } from "./SessionMenu";
 import { projectName, selectProject } from "./ProjectSwitcher";
 
@@ -73,7 +74,6 @@ export function ProjectTree({ query, onPick }: { query: string; onPick?: () => v
   const storeProjects = useChatStore((s) => s.projects), storeActive = useChatStore((s) => s.activeProjectId), storeSessions = useChatStore((s) => s.sessions);
   const activeId = useChatStore((s) => s.activeId), setActive = useChatStore((s) => s.setActive), newSession = useChatStore((s) => s.newSession), addProject = useChatStore((s) => s.addProject);
   const store = useChatStore.getState();
-  const { sessionId: runningId } = useRunState();
   const projects = hydrated ? storeProjects : storeProjects.slice(0, 1);
   const activeProjectId = hydrated ? storeActive : PERSONAL;
   const sessions = hydrated ? storeSessions.filter((s) => s.turns.length || s.title) : [];
@@ -175,15 +175,17 @@ export function ProjectTree({ query, onPick }: { query: string; onPick?: () => v
                     <Box key={s.id} component="li" sx={{ listStyle: "none" }}>
                       {sedit.mode === "rename"
                         ? <InlineRename value={s.title} label={t.newName} onCancel={() => sdone(s.id)} onSave={(v) => { store.renameSession(s.id, v); sdone(s.id); }} />
-                        : <InlineConfirm text={t.deleteChatConfirm} note={t.deleteChatMemoryNote} onCancel={() => sdone(s.id)} onConfirm={() => { if (runningId === s.id) stopRun(); store.deleteSession(s.id); sdone(s.id); }} />}
+                        : <InlineConfirm text={t.deleteChatConfirm} note={t.deleteChatMemoryNote} onCancel={() => sdone(s.id)} onConfirm={() => { void stopRun(s.id); store.deleteSession(s.id); sdone(s.id); }} />}
                     </Box>
                   ) : (
                     <Box key={s.id} component="li" sx={{ display: "flex", alignItems: "center", position: "relative", listStyle: "none", ...reveal }}>
                       <ListItemButton selected={s.id === activeId} aria-current={s.id === activeId ? "true" : undefined} onClick={() => { setActive(s.id); onPick?.(); goChat(); }}
                         sx={{ ...coarse(36), borderRadius: 1.2, gap: 1, minWidth: 0, px: 1 }}>
                         <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: "0.8125rem" }}>{s.title || t.untitled}</Typography>
-                        {s.id === runningId && <Box role="img" aria-label={t.running} sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "primary.main", flexShrink: 0 }} />}
-                        <Typography className="when" component="span" sx={{ fontSize: "0.75rem", color: "text.secondary", flexShrink: 0, minWidth: 28, textAlign: "right" }}>{ago(s.updatedAt, lang)}</Typography>
+                        <SessionStatus s={s} />
+            <Box className="when" component="span" sx={{ display: "inline-flex", flexShrink: 0, minWidth: 28, justifyContent: "flex-end" }}>
+              <SessionStatus s={s} onlyIdle><Typography component="span" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{ago(s.updatedAt, lang)}</Typography></SessionStatus>
+            </Box>
                       </ListItemButton>
                       <Box className="kebab" sx={{ display: "flex" }}>
                         <SessionMenu kid={"t-" + s.id} session={s} onRename={() => setSedit({ id: s.id, mode: "rename" })} onDelete={() => setSedit({ id: s.id, mode: "delete" })} />

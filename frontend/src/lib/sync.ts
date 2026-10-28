@@ -4,7 +4,7 @@ import { capSessions, isProject, isSession, isTurn, MAX_SESSIONS, PERSONAL, pers
 import { isFileEntry, useFilesStore, type FileEntry } from "./files";
 import { safeStorage } from "./history";
 import { emptyProgress } from "./progress";
-import { attachRunning, isAttached, runningTurnId } from "./run";
+import { attachRunning, isAttached, isRunningHere, runningTurnIds } from "./run";
 
 // Shared-data sync. When /v1/health says db "ok", Postgres is the source of truth and the zustand stores are only a UI
 // cache: every store change is diffed into a small op queue (key + id only, bodies are built from the cache at send
@@ -98,7 +98,7 @@ const toSession = (r: Row, local?: Session): Session => {
   rows.forEach((x) => { idxOf.set(str(x.id), Number(x.idx)); maxIdx.set(id, Math.max(maxIdx.get(id) ?? -1, Number(x.idx))); versions.set(vkey("turn", str(x.id)), Number(x.version)); });
   const turns = rows.map((x) => {
     const mine = local?.turns.find((t) => t.id === x.id);
-    return mine && (isAttached(mine.id) || runningTurnId() === mine.id || queue.some((o) => o.k === "turn" && o.id === mine.id)) ? mine : toTurn(x);
+    return mine && (isAttached(mine.id) || isRunningHere(mine.id) || queue.some((o) => o.k === "turn" && o.id === mine.id)) ? mine : toTurn(x);
   }).filter((t): t is Turn => !!t);
   if (r.has_more_turns === true && local && rows.length) { // the server sent only the newest turns: keep the older ones we already hold
     const first = Number(rows[0].idx);
@@ -145,7 +145,7 @@ function merge(snap: Row, first: boolean) {
   set({ hasMore: sessions.length >= limit, rev: useSync.getState().rev + 1 });
   attachRunning(); // runs the server is still working on: follow them, whoever started them
   const after = next.find((s) => s.id === cur.activeId);
-  if (!first && before && after && JSON.stringify(before) !== JSON.stringify(after) && runningTurnId() === null) notify("remote");
+  if (!first && before && after && JSON.stringify(before) !== JSON.stringify(after) && !after.turns.some((t) => isRunningHere(t.id))) notify("remote");
 }
 
 // --- network --------------------------------------------------------------------------------------------------------
@@ -346,8 +346,7 @@ export async function undoDelete() {
 
 // Best effort on tab close: push what is still queued, and mark this tab's live run as interrupted.
 function flush() {
-  const run = runningTurnId();
-  if (run) {
+  for (const run of runningTurnIds()) {
     const s = useChatStore.getState().sessions.find((x) => x.turns.some((t) => t.id === run));
     const t = s?.turns.find((x) => x.id === run);
     if (s && t && !t.runId) void call("PUT", `/v1/store/sessions/${s.id}/turns/${t.id}`, turnBody({ ...t, status: "interrupted" }, idxOf.get(t.id) ?? (maxIdx.get(s.id) ?? 0)), true).catch(() => {});
