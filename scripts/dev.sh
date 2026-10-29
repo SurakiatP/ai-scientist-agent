@@ -66,6 +66,7 @@ if [ -z "${DEV_NO_MINIO:-}" ]; then
       quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data >/dev/null || die "could not start the local MinIO container."
   fi
   docker image inspect scientist-sandbox:latest >/dev/null 2>&1 || docker build -q -t scientist-sandbox:latest backend/sandbox >/dev/null || die "could not build the sandbox image."
+  docker image inspect scientist-sandbox-science:latest >/dev/null 2>&1 || { echo "dev: building the science analysis image once (large, a few minutes)..."; docker build -q -t scientist-sandbox-science:latest -f backend/sandbox/Dockerfile.science backend/sandbox >/dev/null || die "could not build the science sandbox image."; }
 fi
 
 # Local PostgreSQL (foundation only, no app data in it yet): loopback 55433 (55432 belongs to another project), throwaway

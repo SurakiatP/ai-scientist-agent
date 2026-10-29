@@ -19,6 +19,8 @@ jobs:
         include:
           - image: sandbox # analysis image; its Dockerfile COPYs runner.py relative to its own dir
             context: backend/sandbox
+          - image: sandbox-science # analysis image with field libraries (rdkit, scikit-learn, ...); same runner.py
+            context: backend/sandbox
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - id: meta
@@ -38,7 +40,7 @@ jobs:
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ${{ matrix.context }}
-          file: ${{ matrix.image == 'sandbox' && 'backend/sandbox' || matrix.image }}/Dockerfile
+          file: ${{ matrix.image == 'sandbox' && 'backend/sandbox/Dockerfile' || matrix.image == 'sandbox-science' && 'backend/sandbox/Dockerfile.science' || format('{0}/Dockerfile', matrix.image) }}
           push: true
           tags: |
             ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.ref_tag }}

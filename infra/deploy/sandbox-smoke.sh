@@ -24,6 +24,7 @@ sys.exit(0 if r.ok else 1)
 PY
 }
 check "(b) analysis sandbox profiles a 3-row CSV" b
+check "(b2) science analysis image imports rdkit" docker run --rm --network none --entrypoint python "${SANDBOX_SCIENCE_IMAGE:-scientist-sandbox-science:latest}" -c "import rdkit.Chem"
 
 # (c) path parity: a file the backend writes under the shared volume is visible at the same path in a branch-image container
 c() {

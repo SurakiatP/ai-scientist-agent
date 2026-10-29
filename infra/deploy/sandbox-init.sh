@@ -6,6 +6,7 @@ set -eu
 # Keep in sync with SANDBOX_IMAGE in backend/src/scientist/hermes.py (the Hermes branch image).
 HERMES_IMAGE="ghcr.io/astral-sh/uv:0.11.6-python3.13-trixie@sha256:b3c543b6c4f23a5f2df22866bd7857e5d304b67a564f4feab6ac22044dde719b"
 : "${ANALYSIS_IMAGE:?ANALYSIS_IMAGE is required}"
+: "${SCIENCE_IMAGE:?SCIENCE_IMAGE is required}"
 
 # Wait for dind to generate its client certs, then copy them into the backend-only volume (BusyBox install sets owner+mode).
 i=0
@@ -22,7 +23,7 @@ chown 10001:10001 /srv/sandbox-share/hermes-home /srv/sandbox-share/work
 # Pull over TLS (DOCKER_HOST / DOCKER_TLS_VERIFY / DOCKER_CERT_PATH come from the compose environment).
 # Always try to pull (a mutable tag like :develop must not stay stale in the persistent daemon); fall back to a pre-loaded image
 # (rehearsal: docs/deploy.md) and fail when neither works.
-for img in "$HERMES_IMAGE" "$ANALYSIS_IMAGE"; do
+for img in "$HERMES_IMAGE" "$ANALYSIS_IMAGE" "$SCIENCE_IMAGE"; do
   timeout 300 docker pull "$img" || docker image inspect "$img" >/dev/null
 done
 docker image prune -f >/dev/null  # dangling layers left by re-pulled mutable tags
