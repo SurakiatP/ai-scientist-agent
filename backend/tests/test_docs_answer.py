@@ -7,7 +7,7 @@ import pytest
 
 from scientist import docs_answer, llm, sandbox, usage
 from scientist.config import Settings
-from scientist.events import DocsIndexing, Error, FinalAnswer, Refused
+from scientist.events import Complete, DocsIndexing, Error, FinalAnswer, Refused
 from scientist.gate import RunGate
 from scientist.guardrail import ScopeVerdict
 from scientist.provenance import digest
@@ -201,7 +201,7 @@ async def mkpdf(c, name="a.pdf", kind="pdf", data=b"%PDF-1"):
 async def test_run_persists_doc_refs_with_the_turn_and_streams_docs_indexing(serve, fx):  # noqa: F811
     fx["reply"] = reply("ATP is made in mitochondria [1].", {"1": "oxidative phosphorylation in the inner membrane"})
     async with serve() as c:
-        sid, f = await mk_session(c), None
+        sid = await mk_session(c)
         f = await mkpdf(c, "bio.pdf")
         b = dbody(sid, [f])
         r = await post(c, b)
@@ -257,9 +257,9 @@ async def test_grouped_citations_are_expanded_renumbered_and_invalid_ones_droppe
 
 async def test_markdown_links_are_stripped_before_citations(d, settings, fx):  # noqa: F811
     f = mkfile(d)
-    fx["reply"] = reply("See [the paper](http://evil.example/x) and [1](http://evil.example/y).")
+    fx["reply"] = reply("See [the paper](http://evil.example/x) and [1](http://evil.example/y).\n[2]: http://evil.example/z\nOr <http://e.example/a>.")
     a = final(await run(d, settings, [f], Store(**{f: b"%PDF"})))
-    assert "http" not in a.content and "](" not in a.content and a.content == "See the paper and 1."
+    assert "http" not in a.content and "](" not in a.content and "evil" not in a.content and "<http" not in a.content and a.content.startswith("See [the paper] and [1].")
 
 
 async def test_empty_files_are_structured_and_names_never_enter_the_text(d, settings, fx, monkeypatch):  # noqa: F811
@@ -343,14 +343,14 @@ async def test_english_question_without_matching_words_uses_fallback_passages(d,
 
 async def test_sandbox_disabled_is_503_for_docs(serve, fx):  # noqa: F811
     async with serve(SANDBOX_ENABLED="false") as c:
-        sid, f = await mk_session(c), None
+        sid = await mk_session(c)
         f = await mkpdf(c)
         assert (await post(c, dbody(sid, [f]))).status_code == 503
 
 
 async def test_awaiting_plan_takeover_cannot_become_docs(serve, fx):  # noqa: F811
     async with serve() as c:
-        sid, f = await mk_session(c), None
+        sid = await mk_session(c)
         f = await mkpdf(c)
         t = u()
         assert (await c.put(f"/v1/store/sessions/{sid}/turns/{t}", json={"idx": 0, "question": "q", "mode": "deep", "status": "awaiting_plan", "plan": [{"term": "x", "instructions": ""}]})).status_code == 200
@@ -373,3 +373,47 @@ def test_doc_ids_field_is_capped_at_five():
     from scientist.routes_ask import AskRequest
     with pytest.raises(ValidationError):
         AskRequest(question=Q, mode="docs", doc_ids=["a" * 32] * 6)
+
+
+@pytest.mark.parametrize("text", ["a [1-2-3] b", "a [1-2, 3-4-5] b", "a [" + "9" * 5000 + "] b", "a [1,,2] b [-] [,] c"])
+async def test_odd_citation_groups_never_fail_the_run(d, settings, fx, text):  # noqa: F811
+    f = mkfile(d)
+    fx["reply"] = reply(text)
+    ev = await run(d, settings, [f], Store(**{f: b"%PDF"}))
+    assert isinstance(ev[-1], Complete) and final(ev).content.startswith("a ")
+
+
+def test_verify_failure_degrades_to_text_without_markers(monkeypatch):
+    monkeypatch.setattr(docs_answer, "_verify", lambda *a: 1 / 0)
+    assert docs_answer._safe_verify("x [1] y [2, 3].", {}, [], {}) == ("x  y .", [])
+
+
+def test_link_stripping_is_linear_and_nested_links_vanish():
+    import time
+    t = time.perf_counter()
+    docs_answer._verify("[](" * 4000, {}, [], {})
+    docs_answer._verify("[" * 6000 + "x", {}, [], {})
+    assert time.perf_counter() - t < 0.1
+    out, _ = docs_answer._verify("a [[1]](http://e) b", {}, [{"file_id": "f", "page": 1, "text": "t"}], {"f": "n.pdf"})
+    assert "http" not in out and out == "a [[1]] b"
+
+
+async def test_async_ask_docs_without_database_is_503(env_nodb, fx):
+    r = await env_nodb.post("/v1/async/ask", json={"question": Q, "mode": "docs", "doc_ids": ["a" * 32]})
+    assert r.status_code == 503
+
+
+@pytest.fixture
+async def env_nodb(monkeypatch, tmp_path):
+    import httpx
+    from scientist.config import get_settings
+    from scientist.main import create_app
+    from test_config import ENV
+    monkeypatch.chdir(tmp_path)
+    for k, v in ENV.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    get_settings.cache_clear()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app()), base_url="http://t") as c:
+        yield c
+    get_settings.cache_clear()

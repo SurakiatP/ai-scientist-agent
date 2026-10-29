@@ -19,8 +19,11 @@ from scientist.guardrail import guard
 from scientist.pipeline import _exact, _history_block, _squash
 
 DOCS = (Path(__file__).parent / "prompts/docs.md").read_text()
-MARK = re.compile(r"\[(\d+(?:\s*[,\u2013-]\s*\d+)*)\]")  # [2], [1, 2], [1-3]
-LINK = re.compile(r"\[([^\]]*)\]\([^)\s]*[^)]*\)")  # [label](url)
+DASH = "[\u2013-]"
+NUM = rf"\d{{1,4}}(?:\s*{DASH}\s*\d{{1,4}})?"  # one number or one range per part, at most 4 digits
+MARK = re.compile(rf"\[({NUM}(?:\s*,\s*{NUM})*)\]")  # [2], [1, 2], [1-3]
+DEFINITION = re.compile(r"^[ \t]*\[[^\]\n]+\]:[ \t]*\S.*$", re.M)  # [n]: http://...
+AUTOLINK = re.compile(r"<https?://[^>\n]*>")
 PERMANENT = ("unreadable", "bad_output", "output_too_large")
 FAIL = "Could not write the answer. Please try again."
 NO_TEXT = "The attached documents have no extractable text (they may be scans), so there is nothing to answer from."
@@ -42,6 +45,26 @@ def _parse(text: str) -> tuple[str, dict]:
         return str(d["answer"]).strip(), {str(k): v for k, v in quotes.items() if isinstance(v, str)} if isinstance(quotes, dict) else {}
     except Exception:
         return text.strip(), {}
+
+
+def _unlink(text: str) -> str:
+    """Markdown link targets and definitions removed in linear time: `[label](url)` -> `[label]` (a `[n](url)` is never a
+    citation or a link), reference definition lines and autolinks vanish."""
+    text = AUTOLINK.sub("", DEFINITION.sub("", text))
+    out, pos = [], 0
+    while (i := text.find("](", pos)) >= 0 and (j := text.find(")", i + 2)) >= 0:  # no ")" left: nothing more can match
+        out.append(text[pos:i + 1])
+        pos = j + 1
+    return "".join(out) + text[pos:]
+
+
+def _safe_verify(answer: str, quotes: dict, passages: list[dict], files: dict[str, str]) -> tuple[str, list[DocRef]]:
+    """_verify, or on any error the answer text without citation markers and no doc_refs: a run never fails here."""
+    try:
+        return _verify(answer, quotes, passages, files)
+    except Exception:
+        log.warning("docs: citation check failed", exc_info=True)
+        return re.sub(r"\[\d[\d\s,\u2013-]{0,60}\]", "", _unlink(answer)), []
 
 
 def _verify(answer: str, quotes: dict, passages: list[dict], files: dict[str, str]) -> tuple[str, list[DocRef]]:
@@ -68,7 +91,7 @@ def _verify(answer: str, quotes: dict, passages: list[dict], files: dict[str, st
                                   text=p["text"][:1200], quote=q if q and _exact(q, p["text"]) else None)
             kept.append(order[n].id)
         return "".join(f"[{k}]" for k in kept)
-    return MARK.sub(sub, LINK.sub(r"\1", answer)), list(order.values())
+    return MARK.sub(sub, _unlink(answer)), list(order.values())
 
 
 def _fail(name: str, error: str | None) -> str:
@@ -132,7 +155,7 @@ async def answer_docs(question: str, doc_ids: list[str], *, db, store, settings:
             yield Error(message=FAIL)
             return
         text, quotes = _parse(r.text)
-        content, refs = _verify(text, quotes, passages, files)
+        content, refs = _safe_verify(text, quotes, passages, files)
         yield FinalAnswer(content=content, references=[], doc_refs=refs, empty_files=empty, usage=usage.snapshot(),
                           provenance=provenance.docs(settings, DOCS, pf, passages=len(passages), cited=len(refs), history_turns=len(history)))
         yield Complete()
