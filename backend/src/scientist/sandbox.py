@@ -343,7 +343,7 @@ class ExtractResult(BaseModel):
     error: str | None = None  # unreadable / timeout / bad_output / docker_unavailable / ...
 
 
-MAX_PAGES, MAX_CHARS = 300, 2_000_000
+MAX_PAGES, MAX_CHARS = 300, 2_000_000  # keep equal to MAX_PAGES / MAX_CHARS in sandbox/runner.py (the runner enforces, this re-checks)
 
 
 def validate_extract(raw: bytes) -> ExtractResult:

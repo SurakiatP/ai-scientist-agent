@@ -1,6 +1,7 @@
 """PDF text index: extract once in the sandbox (lazily, on first use), store page-bound chunks, retrieve with Postgres
 full-text search. Nothing here parses PDF bytes; `extract` (sandbox.extract_pdf) does that inside the container."""
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 
 import sqlalchemy as sa
@@ -13,7 +14,6 @@ from scientist.db import Database
 
 CHUNK, OVERLAP = 1200, 150
 PER_DOC, TOP_K, MIN_HITS = 6, 12, 3  # at most 6 passages per document, 12 in total; fewer than 3 hits -> first chunks
-PERMANENT = "unreadable"  # an error worth remembering; every other failure (timeout, docker down) is retried next time
 
 
 def chunk_pages(pages: list[dict]) -> list[dict]:
@@ -49,50 +49,55 @@ async def ensure_index(db: Database, file_id: str, load: Callable[[], Awaitable[
     while True:
         async with db.session() as s, s.begin():
             claimed = (await s.execute(pg_insert(t).values(file_id=file_id, status="indexing").on_conflict_do_nothing()
-                                       .returning(t.c.file_id))).first()
+                                       .returning(t.c.created_at))).first()
             if not claimed:
                 claimed = (await s.execute(sa.update(t).where(
                     t.c.file_id == file_id, t.c.status == "indexing",
                     t.c.created_at < sa.func.now() - sa.func.make_interval(0, 0, 0, 0, 0, 0, stale)).values(created_at=sa.func.now())
-                    .returning(t.c.file_id))).first()
+                    .returning(t.c.created_at))).first()
             row = None if claimed else (await s.execute(sa.select(t).where(t.c.file_id == file_id))).first()
         if claimed:
-            return await _index(db, file_id, load, settings, extract)
+            return await _index(db, file_id, claimed.created_at, load, settings, extract)
         if row is not None and row.status != "indexing":
             return _status(file_id, row)
         await asyncio.sleep(0.2)  # row vanished (retry after a transient failure) or still indexing: look again
 
 
-async def _index(db, file_id, load, settings, extract) -> dict:
+async def _index(db, file_id, token, load, settings, extract) -> dict:
+    """token = our claim's created_at: every write is guarded by it, so an owner that was taken over cannot clobber the new one."""
     t = m.doc_index
+    mine = sa.and_(t.c.file_id == file_id, t.c.status == "indexing", t.c.created_at == token)
+
+    async def release():
+        async with db.session() as s, s.begin():
+            await s.execute(sa.delete(t).where(mine))  # not stuck: the next question retries
+
+    def failed(err):
+        return {"file_id": file_id, "status": "failed", "pages": 0, "chunks": 0, "truncated": False, "error": err}
     try:
         r = await extract(await load(), settings)
-        if not r.ok and r.error == PERMANENT:
-            async with db.session() as s, s.begin():
-                await s.execute(sa.update(t).where(t.c.file_id == file_id).values(status="failed", error=PERMANENT))
-            return {"file_id": file_id, "status": "failed", "pages": 0, "chunks": 0, "truncated": False, "error": PERMANENT}
-        if not r.ok:
-            raise RuntimeError(r.error)
-        chunks = chunk_pages(r.pages)
+        if not r.ok and r.error == "docker_unavailable":  # the host's problem, not the file's: try again later
+            await release()
+            return failed(r.error)
+        chunks = chunk_pages(r.pages) if r.ok else []
         async with db.session() as s, s.begin():
-            await s.execute(sa.delete(m.doc_chunks).where(m.doc_chunks.c.file_id == file_id))
+            vals = dict(status="ready", pages=len(r.pages), chunks=len(chunks), truncated=r.truncated, error=None) if r.ok \
+                else dict(status="failed", error=r.error)  # remembered: the same bytes are not re-run on every question
+            row = (await s.execute(sa.update(t).where(mine).values(**vals).returning(t))).first()
+            if row is None:  # taken over meanwhile: report what the new owner wrote
+                row = (await s.execute(sa.select(t).where(t.c.file_id == file_id))).first()
+                return _status(file_id, row) if row else failed("superseded")
             if chunks:
+                await s.execute(sa.delete(m.doc_chunks).where(m.doc_chunks.c.file_id == file_id))
                 await s.execute(sa.insert(m.doc_chunks), [{"file_id": file_id, **c} for c in chunks])
-            row = (await s.execute(sa.update(t).where(t.c.file_id == file_id).values(
-                status="ready", pages=len(r.pages), chunks=len(chunks), truncated=r.truncated, error=None).returning(t))).one()
         return _status(file_id, row)
-    except BaseException as e:
-        async def release():
-            async with db.session() as s, s.begin():
-                await s.execute(sa.delete(t).where(t.c.file_id == file_id))  # not stuck: the next question retries
+    except BaseException:
         await asyncio.shield(release())
-        if isinstance(e, RuntimeError) and e.args and isinstance(e.args[0], str) and not isinstance(e, asyncio.CancelledError):
-            return {"file_id": file_id, "status": "failed", "pages": 0, "chunks": 0, "truncated": False, "error": e.args[0]}
         raise
 
 
 _SEARCH = sa.text("""
-with q as (select to_tsquery('simple', replace(websearch_to_tsquery('simple', :q)::text, '&', '|')) as q)
+with q as (select to_tsquery('simple', :tsq) as q)
 select file_id, page, idx, text from (
   select c.file_id, c.page, c.idx, c.text, ts_rank_cd(c.tsv, q.q) as rank,
          row_number() over (partition by c.file_id order by ts_rank_cd(c.tsv, q.q) desc, c.idx) as rn
@@ -112,13 +117,19 @@ async def search(db: Database, file_ids: list[str], question: str) -> list[dict]
         return []
     args = {"ids": list(file_ids), "per": PER_DOC}
     async with db.session() as s:
-        hits = [dict(r._mapping) for r in await s.execute(_SEARCH, {**args, "q": question[:1000], "k": TOP_K})]
+        parsed = (await s.execute(sa.text("select websearch_to_tsquery('simple', :q)::text"), {"q": question[:1000]})).scalar()
+        terms = [f"'{t}'" for neg, t in re.findall(r"(!?)'((?:[^']|'')*)'", parsed) if not neg]  # OR the terms, drop negated ones
+        hits = [dict(r._mapping) for r in await s.execute(_SEARCH, {**args, "tsq": " | ".join(terms), "k": TOP_K})] if terms else []
         if len(hits) >= MIN_HITS:
             return hits
         first = [dict(r._mapping) for r in await s.execute(_FIRST, args)]
     by_file = [[h for h in first if h["file_id"] == f] for f in file_ids]
     seen = {(h["file_id"], h["idx"]) for h in hits}
-    out = list(hits)  # the few real matches stay first; first chunks fill up to the cap
+    room = {f: PER_DOC - sum(h["file_id"] == f for h in hits) for f in file_ids}  # the per-document cap counts real hits too
+    out = list(hits)  # the few real matches stay first; first chunks fill up to the caps
     for i in range(PER_DOC):
-        out += [g[i] for g in by_file if i < len(g) and (g[i]["file_id"], g[i]["idx"]) not in seen]
+        for g in by_file:
+            if i < len(g) and (g[i]["file_id"], g[i]["idx"]) not in seen and room[g[i]["file_id"]] > 0:
+                out.append(g[i])
+                room[g[i]["file_id"]] -= 1
     return out[:TOP_K]

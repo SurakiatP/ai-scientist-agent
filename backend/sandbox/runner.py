@@ -129,7 +129,12 @@ def finding(text):
     result["findings"].append(str(text)[:500])
 
 
-MAX_PAGES, MAX_CHARS = 300, 2_000_000
+MAX_PAGES, MAX_CHARS = 300, 2_000_000  # keep equal to MAX_PAGES / MAX_CHARS in src/scientist/sandbox.py (the backend re-checks them)
+
+
+def encode_result(res):
+    """UTF-8 JSON, not \\uXXXX escapes: 2,000,000 Thai characters are 6 MB, not 12 MB, and stay under sandbox_output_max_bytes."""
+    return json.dumps(res, default=str, ensure_ascii=False).encode("utf-8", "replace")
 
 
 def extract(path):
@@ -202,6 +207,6 @@ except BaseException:
     traceback.print_exc()
     result["error"] = "script failed"
     code = 1
-STDOUT.write(json.dumps(result, default=str))
+STDOUT.buffer.write(encode_result(result))
 STDOUT.flush()
 sys.exit(code)

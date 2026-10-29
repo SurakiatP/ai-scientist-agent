@@ -137,19 +137,44 @@ async def test_concurrent_questions_index_once(d):
     assert sql(d.raw, "select count(*) from doc_chunks where file_id=%s", f)[0][0] == a["chunks"]
 
 
-async def test_unreadable_is_remembered_but_transient_failure_retries(d):
+async def test_extraction_failures_are_remembered_except_docker_unavailable(d):
+    for err in ("unreadable", "timeout", "oom_or_crash", "bad_output"):
+        f, ex = mkfile(d), counting(sandbox.ExtractResult(ok=False, error=err))
+        st = await documents.ensure_index(d, f, loader(), S(), ex)
+        assert st["status"] == "failed" and st["error"] == err
+        assert (await documents.ensure_index(d, f, loader(), S(), ex))["error"] == err and len(ex.calls) == 1  # not re-run
+    g, down = mkfile(d), counting(sandbox.ExtractResult(ok=False, error="docker_unavailable"))
+    assert (await documents.ensure_index(d, g, loader(), S(), down))["status"] == "failed"
+    assert sql(d.raw, "select count(*) from doc_index where file_id=%s", g)[0][0] == 0  # released: retried later
+    assert (await documents.ensure_index(d, g, loader(), S(), counting(ok("fine now"))))["status"] == "ready"
+
+
+async def test_unexpected_exception_propagates_and_releases_the_row(d):
     f = mkfile(d)
-    bad = counting(sandbox.ExtractResult(ok=False, error="unreadable"))
-    st = await documents.ensure_index(d, f, loader(), S(), bad)
-    assert st["status"] == "failed" and st["error"] == "unreadable"
-    await documents.ensure_index(d, f, loader(), S(), bad)
-    assert len(bad.calls) == 1
-    g = mkfile(d)
-    flaky = counting(sandbox.ExtractResult(ok=False, error="timeout"))
-    assert (await documents.ensure_index(d, g, loader(), S(), flaky))["status"] == "failed"
-    assert sql(d.raw, "select count(*) from doc_index where file_id=%s", g)[0][0] == 0  # nothing stuck: next question retries
-    good = counting(ok("fine now"))
-    assert (await documents.ensure_index(d, g, loader(), S(), good))["status"] == "ready"
+
+    async def boom(data, settings): raise RuntimeError("kaboom")
+    with pytest.raises(RuntimeError, match="kaboom"):
+        await documents.ensure_index(d, f, loader(), S(), boom)
+    assert sql(d.raw, "select count(*) from doc_index where file_id=%s", f)[0][0] == 0
+
+
+async def test_stale_owner_cannot_clobber_a_newer_index(d):
+    f = mkfile(d)
+
+    async def takeover(data, settings):  # while we extract, another worker finishes and indexes the file
+        sql(d.raw, "delete from doc_index where file_id=%s", f)
+        sql(d.raw, "insert into doc_index (file_id, status, pages, chunks) values (%s, 'ready', 9, 1)", f)
+        sql(d.raw, "insert into doc_chunks (file_id, page, idx, text) values (%s, 9, 0, 'newer')", f)
+        return ok("older one", "older two")
+    st = await documents.ensure_index(d, f, loader(), S(), takeover)
+    assert st["pages"] == 9 and sql(d.raw, "select text from doc_chunks where file_id=%s", f) == [("newer",)]
+
+
+async def test_chunk_index_is_unique_per_file(d):
+    f = mkfile(d)
+    sql(d.raw, "insert into doc_chunks (file_id, page, idx, text) values (%s, 1, 0, 'a')", f)
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        sql(d.raw, "insert into doc_chunks (file_id, page, idx, text) values (%s, 1, 0, 'b')", f)
 
 
 async def test_stale_indexing_row_is_taken_over(d):
@@ -172,6 +197,23 @@ async def test_search_ranks_matches_and_caps(d):
     await documents.ensure_index(d, f, loader(), S(), counting(ok(*pages)))
     hits = await documents.search(d, [f], "how do mitochondria make ATP?")
     assert hits[0]["page"] == 5 and hits[0]["file_id"] == f and len(hits) <= 6
+
+
+async def test_fallback_respects_per_document_cap_with_real_hits(d):
+    f = mkfile(d)
+    pages = [f"filler text number {i}" for i in range(1, 10)]
+    pages[6] = "mitochondria are here"
+    pages[7] = "mitochondria again"
+    await documents.ensure_index(d, f, loader(), S(), counting(ok(*pages)))
+    hits = await documents.search(d, [f], "mitochondria")  # 2 real hits < 3: fills with first chunks, never beyond 6
+    assert len(hits) == 6 and {h["page"] for h in hits[:2]} == {7, 8}
+
+
+async def test_negated_terms_are_ignored(d):
+    f = mkfile(d)
+    await documents.ensure_index(d, f, loader(), S(), counting(ok("filler one", "mitochondria produce ATP", "filler two", "filler three")))
+    hits = await documents.search(d, [f], "mitochondria -ATP")
+    assert hits[0]["page"] == 2
 
 
 async def test_search_falls_back_to_first_chunks_per_document(d):
@@ -221,10 +263,65 @@ def _make_pdf(pages: int) -> bytes:
 
 
 @pytest.mark.skipif(not __import__("shutil").which("docker") or __import__("subprocess").run(
-    ["docker", "image", "inspect", "scientist-sandbox:latest"], capture_output=True).returncode, reason="base sandbox image not built")
+    ["docker", "image", "inspect", "scientist-sandbox-test:docs"], capture_output=True).returncode, reason="build it: docker build -t scientist-sandbox-test:docs backend/sandbox (then docker rmi it)")
 async def test_live_extract_real_pdf_and_garbage():
-    s = S()  # default work dir under $HOME: Docker Desktop shares it
+    s = S(sandbox_image="scientist-sandbox-test:docs")  # default work dir under $HOME: Docker Desktop shares it
     r = await sandbox.extract_pdf(_make_pdf(3), s)
     assert r.ok and [p["page"] for p in r.pages] == [1, 2, 3] and "marker-2" in r.pages[1]["text"] and not r.truncated
     bad = await sandbox.extract_pdf(b"%PDF-1.4 this is not a pdf", s)
     assert not bad.ok and bad.error == "unreadable"
+
+
+# --- runner serializer and truncation paths (the runner file needs pandas, so its functions are run from source) ----------
+def _runner_fn(name, **ns):
+    import ast
+    from pathlib import Path
+    src = (Path(sandbox.__file__).parents[2] / "sandbox/runner.py").read_text()
+    node = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == name)
+    g = {"json": json, **ns}
+    exec(ast.get_source_segment(src, node), g)
+    return g[name]
+
+
+def test_extract_output_for_2m_thai_chars_fits_the_output_cap():
+    enc = _runner_fn("encode_result")
+    out = enc({"pages": [{"page": 1, "text": "ก" * 2_000_000}], "truncated": False})
+    assert len(out) < S().sandbox_output_max_bytes and sandbox.validate_extract(out).ok
+    assert sandbox.validate_extract(out).pages[0]["text"] == "ก" * 2_000_000
+
+
+def _extract(max_pages=sandbox.MAX_PAGES, max_chars=sandbox.MAX_CHARS):
+    import sys
+    import traceback
+    import pypdf
+    res = {}
+    fn = _runner_fn("extract", pypdf=pypdf, sys=type("Y", (), {"addaudithook": staticmethod(lambda f: None)}), traceback=traceback,
+                    result=res, block_fork_exec=lambda: None, audit_block=None, MAX_PAGES=max_pages, MAX_CHARS=max_chars)
+    return fn, res
+
+
+def test_extract_truncates_at_300_pages(tmp_path):
+    from pathlib import Path
+    assert sandbox.MAX_PAGES == 300 and "MAX_PAGES, MAX_CHARS = 300, 2_000_000" in (Path(sandbox.__file__).parents[2] / "sandbox/runner.py").read_text()
+    (tmp_path / "a.pdf").write_bytes(_make_pdf(305))
+    fn, res = _extract()
+    fn(tmp_path / "a.pdf")
+    assert len(res["pages"]) == 300 and res["truncated"] is True and res["pages"][-1]["page"] == 300
+
+
+def test_extract_truncates_at_the_character_cap(tmp_path):
+    (tmp_path / "a.pdf").write_bytes(_make_pdf(5))
+    fn, res = _extract(max_chars=100)
+    fn(tmp_path / "a.pdf")
+    assert res["truncated"] is True and sum(len(p["text"]) for p in res["pages"]) == 100 and len(res["pages"]) == 2
+
+
+def test_extract_unreadable_and_complete(tmp_path):
+    (tmp_path / "a.pdf").write_bytes(b"not a pdf")
+    fn, res = _extract()
+    fn(tmp_path / "a.pdf")
+    assert res == {"error": "unreadable"}
+    (tmp_path / "b.pdf").write_bytes(_make_pdf(2))
+    fn, res = _extract()
+    fn(tmp_path / "b.pdf")
+    assert len(res["pages"]) == 2 and res["truncated"] is False

@@ -29,7 +29,7 @@ def upgrade() -> None:
         sa.Column("page", sa.Integer, nullable=False), sa.Column("idx", sa.Integer, nullable=False),
         sa.Column("text", sa.Text, nullable=False),
         sa.Column("tsv", pg.TSVECTOR, sa.Computed("to_tsvector('simple', text)", persisted=True)))
-    op.create_index("doc_chunks_file", "doc_chunks", ["file_id", "idx"])
+    op.create_index("doc_chunks_file", "doc_chunks", ["file_id", "idx"], unique=True)
     op.create_index("doc_chunks_tsv", "doc_chunks", ["tsv"], postgresql_using="gin")
 
 
