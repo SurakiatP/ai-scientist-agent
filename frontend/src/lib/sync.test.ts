@@ -224,6 +224,14 @@ describe("realtime", () => {
     await vi.waitFor(() => expect(useChatStore.getState().sessions.map((s) => s.title).sort()).toEqual(["Changed elsewhere", "New elsewhere"]), { timeout: 4000 });
   });
 
+  it("runs a full sync on a resync hint, even for rows it already knows", async () => {
+    snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "Old", turns: [] })] };
+    await online();
+    snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "Missed while the feed was down", version: 1, turns: [] })] };
+    FakeES.all[0].emit({ type: "resync" });
+    await vi.waitFor(() => expect(useChatStore.getState().sessions.map((s) => s.title)).toEqual(["Missed while the feed was down"]), { timeout: 4000 });
+  });
+
   it("never overwrites a turn that is running in this tab", async () => {
     snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "S", turns: [row(U(3), { idx: 0, question: "q", status: "running", progress: null, updated_at: new Date().toISOString() })] })] };
     await online();

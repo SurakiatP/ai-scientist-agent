@@ -288,6 +288,7 @@ function listen() {
     src.onmessage = (m) => {
       let e: Row | null = null;
       try { e = JSON.parse(m.data); } catch {}
+      if (e?.type === "resync") { snapSoon(); return; } // the server may have missed changes (its feed reconnected): full sync
       if (!e || e.type !== "changed" || typeof e.id !== "string" || typeof e.entity !== "string" || !["project", "session", "file", "turn"].includes(e.entity)) return;
       const known = versions.get(vkey(e.entity as Kind, e.id));
       if (known !== undefined && typeof e.version === "number" && e.version <= known) return; // our own write echoing back

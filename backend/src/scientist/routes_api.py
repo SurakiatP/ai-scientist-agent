@@ -158,8 +158,8 @@ async def api_session(svc: RunService, title: str) -> str:
         r = (await s.execute(ins.on_conflict_do_update(
             index_elements=["id"], where=m.projects.c.deleted_at.is_not(None),
             set_={"deleted_at": None, "version": m.projects.c.version + 1, "updated_at": sa.func.now()}).returning(m.projects))).first()
-    if r:
-        svc.data._changed("project", _row(r))
+        if r:
+            await svc.data._changed(s, "project", _row(r))
     sid = str(uuid.uuid4())
     await svc.data.upsert("session", sid, {"title": title[:200], "project_id": str(API_PROJECT)}, None)
     return sid

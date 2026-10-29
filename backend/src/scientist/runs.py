@@ -131,7 +131,7 @@ class RunService:
         self._bg.add(run.task)
         run.task.add_done_callback(self._bg.discard)
         run.task.add_done_callback(lambda _: ticket.close())  # whatever happened, the slot is given back
-        self.data._changed("turn", turn, session_id=str(turn["session_id"]))
+        await self.data.announce("turn", turn, session_id=str(turn["session_id"]))
         return {"run": self.view(row, client_id), "turn": turn}
 
     async def _check_docs(self, ids: list[str]) -> list[dict]:
@@ -404,8 +404,8 @@ class RunService:
                         progress=sa.func.coalesce(m.turns.c.progress, sa.cast(sa.literal("{}"), pg.JSONB))
                         .op("||")(sa.cast(sa.literal('{"_err": "interrupted"}'), pg.JSONB)))
                 .returning(m.turns))] if ids else []
-        for t in turns:
-            self.data._changed("turn", t, session_id=str(t["session_id"]))
+            for t in turns:
+                await self.data._changed(s, "turn", t, session_id=str(t["session_id"]))
 
     async def shutdown(self) -> None:
         """Cancel every run (their finally blocks kill bridges); each is recorded as interrupted."""

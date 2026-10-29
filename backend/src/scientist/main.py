@@ -60,6 +60,8 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
             if app.state.db and settings.database_url:
                 app.state.pgbus = PgBus(settings, app.state.db)
                 await app.state.pgbus.start()
+                if app.state.data:
+                    await app.state.data.start_feed(app.state.pgbus)
             if app.state.runs:
                 try:
                     await app.state.runs.startup()
@@ -71,6 +73,8 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                 if app.state.runs:
                     await app.state.runs.shutdown()  # before the runtime closes: runs kill their own bridges
                 if app.state.pgbus:
+                    if app.state.data:
+                        await app.state.data.stop_feed()
                     await app.state.pgbus.stop()
                 if purger:
                     purger.cancel()

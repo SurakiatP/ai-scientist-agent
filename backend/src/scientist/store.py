@@ -6,7 +6,7 @@ import logging
 import re
 import uuid as uuidlib
 from collections import defaultdict, deque
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -19,6 +19,7 @@ from scientist import models as m
 from scientist.config import Settings
 from scientist.db import Database
 from scientist.packs import PACKS
+from scientist.pgbus import GAP, MAX_PAYLOAD_BYTES, PgBus
 
 log = logging.getLogger(__name__)
 
@@ -139,15 +140,17 @@ def _now() -> datetime:
 
 # --- change broadcaster ----------------------------------------------------------------------------------------------
 class Bus:
-    """In-process fan-out of {"type":"changed"} messages.
-    ponytail: one process only (main.py runs a single worker); several workers would need Postgres LISTEN/NOTIFY."""
+    """In-process fan-out of {"type":"changed"} (and {"type":"resync"}) messages to this process's SSE listeners.
+    With a PgBus every process's Store feeds it from the `store_changes` channel (Store.start_feed)."""
     MAX_LISTENERS = 50
 
     def __init__(self) -> None:
         self.subs: set[asyncio.Queue] = set()
 
     def publish(self, entity: str, id: str, version: int | None, **extra: str) -> None:
-        msg = {"type": "changed", "entity": entity, "id": id, "version": version, "at": _now().isoformat(), **extra}
+        self.send({"type": "changed", "entity": entity, "id": id, "version": version, "at": _now().isoformat(), **extra})
+
+    def send(self, msg: dict) -> None:
         for q in self.subs:
             try:
                 q.put_nowait(msg)
@@ -170,14 +173,71 @@ class Store:
     def __init__(self, db: Database, bus: Bus, settings: Settings, objects=lambda: None):
         self.db, self.bus, self.settings, self.objects = db, bus, settings, objects
         self.writes: dict[str, deque] = defaultdict(deque)  # client ip -> recent write times (rate limit)
+        self.pgbus: PgBus | None = None  # set by start_feed; without it changes go straight to the in-process bus
+        self._feed: asyncio.Task | None = None
 
     @asynccontextmanager
     async def tx(self):
         async with self.db.session() as s, s.begin():
             yield s
+        for a in s.info.pop("changes", ()):  # no PgBus: published after the commit, never on rollback
+            self.bus.publish(*a[:3], **a[3])
 
-    def _changed(self, entity: str, r: dict, **extra: str) -> None:
-        self.bus.publish(entity, r["id"], r.get("version"), **extra)
+    async def _changed(self, s, entity: str, r: dict, **extra: str) -> None:
+        """Announce a change from inside the write's transaction `s`: with a PgBus the NOTIFY is delivered by Postgres on
+        commit (atomic with the write, nothing on rollback); without one it is queued and published after the commit."""
+        id, version = str(r["id"]), r.get("version")
+        if self.pgbus is None:
+            s.info.setdefault("changes", []).append((entity, id, version, extra))
+            return
+        msg = {"type": "changed", "entity": entity, "id": id, "version": version, "at": _now().isoformat(), **extra}
+        body = json.dumps(msg)
+        if len(body.encode()) > MAX_PAYLOAD_BYTES:
+            body = json.dumps({"ref": True, "entity": entity, "id": id})  # the listener rebuilds the message from the row
+        await self.pgbus.notify("store_changes", body, session=s)
+
+    async def announce(self, entity: str, r: dict, **extra: str) -> None:
+        """For a change whose write already committed elsewhere."""
+        async with self.tx() as s:
+            await self._changed(s, entity, r, **extra)
+
+    async def start_feed(self, pgbus: PgBus) -> None:
+        """One listener per process: every store_changes message (this process's own writes included) goes to the bus."""
+        self.pgbus = pgbus
+        cm = pgbus.subscribe("store_changes")
+        it = await cm.__aenter__()
+
+        async def run():
+            try:
+                async for item in it:
+                    try:
+                        if item is GAP:
+                            self.bus.send({"type": "resync"})  # notifications were missed: clients do their full sync
+                            continue
+                        msg = json.loads(item)
+                        self.bus.send(await self._rebuild(msg) if msg.get("ref") else msg)
+                    except Exception:
+                        log.exception("store change feed message dropped")
+                        self.bus.send({"type": "resync"})
+            finally:
+                await cm.__aexit__(None, None, None)
+        self._feed = asyncio.create_task(run())
+
+    async def stop_feed(self) -> None:
+        if self._feed:
+            self._feed.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._feed
+            self._feed = None
+        self.pgbus = None
+
+    async def _rebuild(self, ref: dict) -> dict:
+        t = m.turns if ref["entity"] == "turn" else TABLES[ref["entity"]]
+        async with self.db.session() as s:
+            r = (await s.execute(sa.select(t).where(t.c.id == ref["id"]))).first()
+        extra = {"session_id": str(r.session_id)} if r is not None and ref["entity"] == "turn" else {}
+        return {"type": "changed", "entity": ref["entity"], "id": ref["id"], "version": r.version if r is not None else None,
+                "at": _now().isoformat(), **extra}
 
     # --- projects / sessions / files: same upsert, soft delete, restore, permanent delete ----------------------------
     async def _get(self, s, t, id: str, lock: bool = True):
@@ -197,7 +257,7 @@ class Store:
                     break
                 ins = pg_insert(t).values(id=id, **values).on_conflict_do_nothing().returning(t)
                 if (r := (await s.execute(ins)).first()) is not None:
-                    self._changed(entity, _row(r))
+                    await self._changed(s, entity, _row(r))
                     return _row(r)
             if r.deleted_at is not None:
                 raise Conflict(f"{entity} is in the trash", _row(r))
@@ -207,7 +267,7 @@ class Store:
             if entity == "session":
                 upd["sort_ts"] = sa.func.now()
             out = _row((await s.execute(sa.update(t).where(t.c.id == id).values(**upd).returning(t))).one())
-        self._changed(entity, out)
+            await self._changed(s, entity, out)
         return out
 
     async def soft_delete(self, entity: str, id: str) -> dict:
@@ -229,9 +289,9 @@ class Store:
                         cu["updated_at"] = sa.func.now()
                     res = await s.execute(sa.update(child).where(child.c.project_id == id).values(**cu).returning(child.c.id, child.c.version))
                     moved += [(name, {"id": x.id, "version": x.version}) for x in res]
-        self._changed(entity, out)
-        for name, x in moved:
-            self._changed(name, x)
+            await self._changed(s, entity, out)
+            for name, x in moved:
+                await self._changed(s, name, x)
         return {"id": id, "deleted": True, "version": out["version"]}
 
     async def restore(self, entity: str, id: str) -> dict:
@@ -244,7 +304,7 @@ class Store:
                 return _row(r)
             upd = {"deleted_at": None, "version": r.version + 1, **({"updated_at": sa.func.now()} if "updated_at" in t.c else {})}
             out = _row((await s.execute(sa.update(t).where(t.c.id == id).values(**upd).returning(t))).one())
-        self._changed(entity, out)
+            await self._changed(s, entity, out)
         return out
 
     async def delete_permanent(self, entity: str, id: str) -> None:
@@ -256,9 +316,9 @@ class Store:
             if r.deleted_at is None:
                 raise Conflict(f"{entity} is not in the trash")
             await s.execute(sa.delete(t).where(t.c.id == id))
+            await self._changed(s, entity, {"id": id})
         if entity == "file":
             await self._drop_objects([id])
-        self.bus.publish(entity, id, None)
 
     async def _drop_objects(self, ids: list[str]) -> None:
         if not ids or (obj := self.objects()) is None:
@@ -302,7 +362,7 @@ class Store:
                 raise Conflict("another turn already uses this position in the session") from None
             await s.execute(sa.update(m.sessions).where(m.sessions.c.id == sid)
                             .values(updated_at=sa.func.now(), sort_ts=sa.func.now()))
-        self._changed("turn", out, session_id=sid)
+            await self._changed(s, "turn", out, session_id=sid)
         return out
 
     async def write_turn_server(self, tid: str, **fields: Any) -> dict | None:
@@ -317,7 +377,7 @@ class Store:
                                         .returning(m.turns))).one())
             await s.execute(sa.update(m.sessions).where(m.sessions.c.id == r.session_id)
                             .values(updated_at=sa.func.now(), sort_ts=sa.func.now()))
-        self._changed("turn", out, session_id=str(out["session_id"]))
+            await self._changed(s, "turn", out, session_id=str(out["session_id"]))
         return out
 
     async def truncate_turns(self, sid: str, from_idx: int) -> dict:
@@ -334,8 +394,8 @@ class Store:
                 await s.execute(sa.update(m.sessions).where(m.sessions.c.id == sid)
                                 .values(updated_at=sa.func.now(), sort_ts=sa.func.now(), version=m.sessions.c.version + 1))
                 sess = await self._get(s, m.sessions, sid)
-        if gone:
-            self._changed("session", _row(sess))  # others refetch the session (and its remaining turns)
+            if gone:
+                await self._changed(s, "session", _row(sess))  # others refetch the session (and its remaining turns)
         return {"removed": len(gone)}
 
     # --- reads ---------------------------------------------------------------------------------------------------------
@@ -461,9 +521,9 @@ class Store:
                                   "added_at": _when(d.get("added_at")) or _now()})
             new_files = await ins(s, m.files, frows)
             n["files"] = len(new_files)
-        for ent, ids in (("project", new_proj), ("session", new_sess), ("file", new_files)):
-            for i in ids:
-                self.bus.publish(ent, i, 1)
+            for ent, ids in (("project", new_proj), ("session", new_sess), ("file", new_files)):
+                for i in ids:
+                    await self._changed(s, ent, {"id": i, "version": 1})
         return n
 
 

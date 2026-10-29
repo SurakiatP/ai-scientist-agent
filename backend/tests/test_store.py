@@ -666,3 +666,81 @@ def test_turnin_drops_an_unknown_pack_but_keeps_the_turn():
     from scientist.store import TurnIn
     t = lambda p: TurnIn(idx=0, question="q", status="done", pack=p).pack  # noqa: E731
     assert [t("med"), t("nope"), t(None), t(5), t(["x"])] == ["med", None, None, None, None]
+
+
+# --- change feed across processes (two Store + PgBus pairs on one database = two processes) ----------------------------
+@pytest.fixture
+async def procs(newdb):
+    from scientist import db as dbmod
+    from scientist.pgbus import PgBus
+    from scientist.store import Bus, Store
+    command.upgrade(_alembic(), "head")
+    s = get_settings()
+    d = dbmod.open_database(s)
+    out = []
+    for _ in range(2):
+        st = Store(d, Bus(), s)
+        pb = PgBus(s, d)
+        await pb.start()
+        await st.start_feed(pb)
+        out.append((st, pb))
+    yield out
+    for st, pb in out:
+        await st.stop_feed()
+        await pb.stop()
+    await d.close()
+
+
+async def next_msg(q, timeout=5):
+    return await asyncio.wait_for(q.get(), timeout)
+
+
+async def test_feed_write_on_a_reaches_both_exactly_once(procs):
+    (a, _), (b, _) = procs
+    sid = u()
+    async with a.bus.subscribe() as qa, b.bus.subscribe() as qb:
+        await a.upsert("session", sid, {"title": "t"}, None)
+        ma, mb = await next_msg(qa), await next_msg(qb)
+        assert (ma["type"], ma["entity"], ma["id"], ma["version"]) == ("changed", "session", sid, 1) and ma["at"]
+        assert mb["id"] == sid
+        await asyncio.sleep(0.4)
+        assert qa.empty() and qb.empty()  # one path, no double delivery
+
+
+async def test_feed_rollback_publishes_nothing(procs):
+    (a, _), (b, _) = procs
+    sid = u()
+    async with a.bus.subscribe() as qa, b.bus.subscribe() as qb:
+        with pytest.raises(RuntimeError):
+            async with a.tx() as s:
+                await a._changed(s, "session", {"id": sid, "version": 1})
+                raise RuntimeError("boom")
+        await asyncio.sleep(0.4)
+        assert qa.empty() and qb.empty()
+
+
+async def test_feed_oversize_goes_by_reference(procs):
+    (a, _), (b, _) = procs
+    sid, tid = u(), u()
+    await a.upsert("session", sid, {"title": "t"}, None)
+    r = await a.upsert("session", sid, {"title": "t2"}, None)
+    async with b.bus.subscribe() as qb:
+        async with a.tx() as s:
+            await a._changed(s, "session", r, note="x" * 9000)
+        mb = await next_msg(qb)
+        assert mb["type"] == "changed" and mb["entity"] == "session" and mb["id"] == sid and mb["version"] == 2
+        assert "note" not in mb and "ref" not in mb
+        await a.write_turn_server(tid, status="done") if False else None
+
+
+async def test_feed_gap_sends_resync_to_both(procs):
+    (a, pa), (b, pb) = procs
+    async with a.bus.subscribe() as qa, b.bus.subscribe() as qb:
+        await asyncio.sleep(0.2)
+        while not qa.empty():
+            qa.get_nowait()
+        while not qb.empty():
+            qb.get_nowait()
+        for pbus in (pa, pb):
+            pbus._fan(__import__("scientist.pgbus", fromlist=["GAP"]).GAP)
+        assert await next_msg(qa) == {"type": "resync"} and await next_msg(qb) == {"type": "resync"}
