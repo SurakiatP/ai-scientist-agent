@@ -15,7 +15,7 @@ import { answerSourceIds, sourceNames, usableUsage } from "@/lib/sources";
 import { DataRecords } from "@/components/DataRecords";
 import { ReferenceList } from "@/components/ReferenceList";
 import { AnalysisArtifact } from "@/components/research/AnalysisArtifact";
-import { queueText } from "@/components/research/ProgressCard";
+import { queueText, replanText } from "@/components/research/ProgressCard";
 import { PlanCard, type PlanSearch } from "@/components/research/PlanCard";
 import { ProgressCard } from "@/components/research/ProgressCard";
 import { AnswerSkeleton } from "@/components/research/AnswerSkeleton";
@@ -70,6 +70,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const cost = usage && (usage.cost_usd === null ? t.runTokens : t.runCost)
     .replace("{cost}", `${usage.estimated ? "~" : ""}$${(usage.cost_usd ?? 0).toFixed(3)}`)
     .replace("{tokens}", (usage.prompt_tokens + usage.completion_tokens).toLocaleString(lang === "en" ? "en-US" : "th-TH"));
+  const replans = turn.progress.replans ?? [];
   const sourceIds = sourceNames(ids) ? ids : null; // no wrapper at all when no known source is to be named
   const [tab, setTab] = useState<"answer" | "sources">("answer");
   const openInspector = useInspector((x) => x.open);
@@ -142,13 +143,14 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
               <ReferenceList references={refs} t={t} scope={scope} />
             </Box>
           )}
-          {(sourceIds || cost) && (
+          {(sourceIds || cost || replans.length > 0) && (
             <Box sx={{ mt: 1.5 }}>
               {sourceIds && <SourcesUsed ids={sourceIds} />}
+              {replans.map((r, i) => <Typography key={i} role="note" sx={{ fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{replanText(r, t)}</Typography>)}
               {cost && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{cost}</Typography>}
             </Box>
           )}
-          <Stack direction="row" spacing={1} useFlexGap sx={{ mt: sourceIds || cost ? 1 : 2, flexWrap: "wrap" }}>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ mt: sourceIds || cost || replans.length ? 1 : 2, flexWrap: "wrap" }}>
             <Button variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={() => { useMode.getState().set("chat"); focusComposer(); }}>{t.askFollowUp}</Button>
             <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={refs.length === 0} sx={{ borderColor: "divider" }}
               onClick={(e) => openInspector({ ...scope, refId: refs[0].id }, e.currentTarget)}>{t.openEvidence}</Button>

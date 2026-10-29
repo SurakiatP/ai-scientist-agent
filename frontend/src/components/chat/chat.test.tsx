@@ -238,6 +238,14 @@ describe("Thread", () => {
     expect(screen.getByText("final answer").closest("[aria-live]")).toBeNull();
   });
 
+  it("a finished research answer shows its plan changes; one without none", () => {
+    const rp = { reasoning: "r", thin: ["alpha"], searches: [{ term: "b", instructions: "" }] };
+    const { rerender } = render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "final answer", references: [] }, progress: { ...emptyProgress, replans: [rp] } })} />);
+    expect(screen.getByText(t.replanLine1.replace("{terms}", "alpha").replace("{n}", "1"))).toBeInTheDocument();
+    rerender(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "final answer", references: [] } })} />);
+    expect(screen.queryByText(t.replanLine1.replace("{terms}", "alpha").replace("{n}", "1"))).toBeNull();
+  });
+
   it("an old finished turn (no records, no source on references) renders without the records section", () => {
     const old = { id: "1", status: "verified" as const, paper: { title: "Old paper", authors: [], year: null, doi: null, pmid: null, url: "https://example.com" } };
     render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "old answer", references: [old] } })} />);

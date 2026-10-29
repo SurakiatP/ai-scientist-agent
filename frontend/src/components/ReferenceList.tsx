@@ -6,7 +6,7 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import { enterFlash } from "@/lib/motion";
 import { useInspector } from "@/lib/inspector";
 import type { Reference } from "@/lib/sse";
-import { checkLabel, hasId, paperLink } from "@/lib/refs";
+import { checkLabel, hasId, paperLink, unsupported } from "@/lib/refs";
 import { sourceName } from "@/lib/sources";
 import type { Strings } from "@/lib/strings";
 
@@ -70,6 +70,7 @@ export function ReferenceList({ references, t, scope }: { references: Reference[
                 {r.status === "unknown" && <Chip size="small" variant="outlined" icon={<WarningAmberRoundedIcon />} label={checkLabel(r, t)} sx={chipSx("evidence-unknown")} />}
                 {r.paper.doi && <Chip size="small" variant="outlined" label={`${t.doi} ${r.paper.doi}`} sx={idChipSx} />}
                 {r.paper.pmid && <Chip size="small" variant="outlined" label={`${t.pmid} ${r.paper.pmid}`} sx={idChipSx} />}
+                {unsupported(r) && <Typography component="span" sx={{ fontSize: "0.75rem", fontWeight: 700, color: "evidence.unverified" }}>{t.notSupportedMark}</Typography>}
               </Stack>
               {r.status === "unverified" && (
                 <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.6 }}>{hasId(r.paper) ? t.unconfirmedText : t.noIdText}</Typography>

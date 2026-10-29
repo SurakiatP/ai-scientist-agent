@@ -21,6 +21,7 @@ function Body() {
   const r = useInspector((s) => s.ref);
   const close = useInspector((s) => s.close);
   const found = useChatStore((s) => find(s, r));
+  const cited = useChatStore((s) => !!r && !!found && !!s.sessions.find((x) => x.id === r.sessionId)?.turns.find((x) => x.id === r.turnId)?.answer?.content.includes(`[${found.id}]`));
   const btn = useRef<HTMLButtonElement>(null);
   useEffect(() => { btn.current?.focus(); }, [r?.refId, r?.turnId]);
   useEffect(() => {
@@ -53,6 +54,28 @@ function Body() {
         <Chip size="small" variant="outlined" label={checkLabel(found, t)} sx={{ color: ok ? "evidence.verified" : found.status === "unknown" ? "evidence.unknown" : "evidence.unverified", borderColor: "currentColor" }} />
         <Typography sx={{ mt: 1, fontSize: "0.8125rem", lineHeight: 1.6, color: "text.secondary" }}>{t.idCheckNote}</Typography>
       </Box>
+      {cited && (found.checks?.length || !p.abstract) && <Box component="section">
+        <Typography component="h3" sx={{ fontSize: "0.75rem", color: "text.secondary", mb: 0.75 }}>{t.evidenceTitle}</Typography>
+        {found.checks?.length ? (
+          <Stack spacing={1.5} component="ul" sx={{ m: 0, p: 0, listStyle: "none" }}>
+            {found.checks.map((c, i) => {
+              const tone = c.support === "supported" ? "evidence.verified" : c.support === "unsupported" ? "evidence.unverified" : "evidence.unknown";
+              const label = { supported: t.supSupported, partial: t.supPartial, unsupported: t.supUnsupported, no_quote: t.supNoQuote }[c.support];
+              return (
+                <Box component="li" key={i}>
+                  {c.claim && <Typography sx={{ fontSize: "0.8125rem", lineHeight: 1.6, color: "text.secondary", overflowWrap: "anywhere" }}>{c.claim}</Typography>}
+                  {c.quote && (
+                    <Box component="blockquote" sx={{ m: 0, my: 0.75, px: 1.5, py: 1, bgcolor: "surface.shell", border: 1, borderColor: "divider", borderRadius: 1, fontSize: "0.875rem", lineHeight: 1.7, overflowWrap: "anywhere" }}>{c.quote}</Box>
+                  )}
+                  <Typography sx={{ fontSize: "0.75rem", fontWeight: 700, color: tone }}>{label}</Typography>
+                </Box>
+              );
+            })}
+          </Stack>
+        ) : (
+          <Typography sx={{ fontSize: "0.8125rem", lineHeight: 1.6, color: "text.secondary" }}>{t.evidenceNoAbstract}</Typography>
+        )}
+      </Box>}
       {link && (
         <Box>
           <Button component={Link} href={link} target="_blank" rel="noopener noreferrer" variant="outlined" endIcon={<OpenInNewRoundedIcon />}>{t.openSource}</Button>

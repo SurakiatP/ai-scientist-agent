@@ -309,6 +309,29 @@ describe("newSession blank reuse", () => {
     expect(() => s.getState().patchTurn(id, "t3", { answer: { content: "a", references: [], records: [null, ok] as never } })).not.toThrow();
     expect(s.getState().sessions.find((x) => x.id === id)!.turns[0].answer?.records).toEqual([ok]);
   });
+  it("keeps abstract and checks on references (clamped, bad entries dropped) on save and on load; old references stay as they are", async () => {
+    const mk = (extra: object) => ({ id: "1", status: "verified", paper: { title: "T", authors: [], year: null, doi: null, pmid: null, url: "", ...extra } });
+    const good = { claim: "c".repeat(500), support: "partial", quote: "q".repeat(700) };
+    const checks = [good, null, { claim: "x", support: "weird", quote: null }, { claim: 1, support: "supported", quote: null }, { claim: "ok", support: "no_quote", quote: null }, ...Array(6).fill({ claim: "m", support: "supported", quote: "a" })];
+    const r = mk({ abstract: "a".repeat(3000) }) as Record<string, unknown>; r.checks = checks;
+    const s = await load();
+    const id = s.getState().newSession();
+    s.getState().addTurn(id, turn("t", "running") as never);
+    s.getState().patchTurn(id, "t", { status: "done", answer: { content: "a", references: [r as never, mk({}) as never] } });
+    const [a, old] = s.getState().sessions.find((x) => x.id === id)!.turns[0].answer!.references;
+    expect(a.paper.abstract).toHaveLength(2000);
+    expect(a.checks).toHaveLength(5);
+    expect(a.checks![0]).toEqual({ claim: "c".repeat(400), support: "partial", quote: "q".repeat(600) });
+    expect(a.checks![1]).toEqual({ claim: "ok", support: "no_quote", quote: null });
+    expect("checks" in old).toBe(false);
+    expect("abstract" in old.paper).toBe(false);
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [{ ...turn("t"), answer: { content: "a", references: [{ ...r, checks: "nope" }, r] } }])], activeId: "s" } }));
+    vi.resetModules();
+    const l = await load();
+    const refs = l.getState().sessions[0].turns[0].answer!.references;
+    expect(refs[0].checks).toBeUndefined();
+    expect(refs[1].checks).toHaveLength(5);
+  });
   it("usage on a stored or saved answer is kept when well-formed and dropped (not the turn) when malformed", async () => {
     const u = { prompt_tokens: 5, completion_tokens: 2, cost_usd: null, estimated: true };
     const withUsage = (usage: unknown) => ({ ...turn("t"), answer: { content: "a", references: [], usage } });

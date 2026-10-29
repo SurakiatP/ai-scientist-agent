@@ -4,6 +4,7 @@ import { DEFER_HYDRATION, gate } from "./config";
 import { dataStorage, isItem, newId, safeStorage, storageFull, useHistoryStore } from "./history";
 import type { Progress } from "./progress";
 import { usableRecords, usableUsage } from "./sources";
+import { cleanEvidence } from "./refs";
 import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, DataRecord, Reference, RunUsage, Search } from "./sse";
 
 // What the analyze stream taught us about this turn. Every field is optional because events arrive one at a time.
@@ -78,7 +79,7 @@ const clampProgress = (p: Progress): Progress => ({
   ...(p.seen && { seen: p.seen.slice(0, 100).map((x) => x.slice(0, 100)) }),
 });
 const clampRecord = (r: DataRecord): DataRecord => ({ database: r.database.slice(0, 100), id: r.id.slice(0, 500), title: r.title.slice(0, 300), url: r.url.slice(0, 2048), summary: r.summary.slice(0, 600) });
-const clampRef = (r: Reference): Reference => ({
+const clampRef = (r: Reference): Reference => cleanEvidence({
   ...r, id: r.id.slice(0, 20),
   paper: {
     ...r.paper, title: r.paper.title.slice(0, 500), authors: r.paper.authors.slice(0, 50).map((a) => a.slice(0, 200)),
@@ -182,9 +183,9 @@ const clampPatch = (p: Partial<Turn>): Partial<Turn> => ({
 // A stored answer's records are unvalidated: keep the usable ones, drop the field when it is not a list.
 const cleanRecords = (t: Turn): Turn => {
   if (!t.answer) return t;
-  const { usage, ...a } = t.answer;
+  const { usage, references, ...a } = t.answer;
   const u = usableUsage(usage);
-  return { ...t, answer: { ...a, ...(a.records !== undefined && { records: usableRecords(a.records) }), ...(u && { usage: u }) } };
+  return { ...t, answer: { ...a, references: references.map(cleanEvidence), ...(a.records !== undefined && { records: usableRecords(a.records) }), ...(u && { usage: u }) } };
 };
 // Reuses history's item validator for the answer + references (its question/id/createdAt are filled in).
 export const isTurn = (v: unknown): v is Turn => {

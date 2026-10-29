@@ -121,6 +121,44 @@ describe("citations and inspector", () => {
   };
   beforeEach(() => { localStorage.clear(); useChatStore.getState().clearAll(); });
 
+  it("shows quoted evidence with its verdict, and the no-abstract line otherwise", () => {
+    const sid = useChatStore.getState().newSession();
+    const r1 = { ...ref("1", { abstract: "abs" }), checks: [{ claim: "Drug X works", support: "unsupported" as const, quote: "it did not work" }, { claim: "Dose", support: "partial" as const, quote: null }] };
+    const tn = turn({ phase: "done" }, { status: "done", answer: { content: "Claim [1] and [2].", references: [r1, ref("2")] } });
+    useChatStore.getState().addTurn(sid, tn);
+    act(() => useInspector.getState().open({ sessionId: sid, turnId: tn.id, refId: "1" }));
+    const { unmount } = render(<SourceInspector variant="panel" />);
+    expect(screen.getByRole("heading", { name: t.evidenceTitle })).toBeInTheDocument();
+    expect(screen.getByText("Drug X works")).toBeInTheDocument();
+    expect(screen.getByText("it did not work").tagName).toBe("BLOCKQUOTE");
+    expect(screen.getByText(t.supUnsupported)).toBeInTheDocument();
+    expect(screen.getByText(t.supPartial)).toBeInTheDocument();
+    unmount();
+    act(() => useInspector.getState().open({ sessionId: sid, turnId: tn.id, refId: "2" }));
+    render(<SourceInspector variant="panel" />);
+    expect(screen.getByText(t.evidenceNoAbstract)).toBeInTheDocument();
+  });
+  it("shows nothing extra for an uncited reference, or a cited one with an abstract but no checks", () => {
+    const sid = useChatStore.getState().newSession();
+    const chk = [{ claim: "", support: "no_quote" as const, quote: "odd quote" }];
+    const tn = turn({ phase: "done" }, { status: "done", answer: { content: "Only [1] and [3].", references: [{ ...ref("1", { abstract: "abs" }), checks: chk }, { ...ref("2", { abstract: "abs" }), checks: chk }, ref("3", { abstract: "abs" })] } });
+    useChatStore.getState().addTurn(sid, tn);
+    const view = (refId: string) => { act(() => useInspector.getState().open({ sessionId: sid, turnId: tn.id, refId })); return render(<SourceInspector variant="panel" />); };
+    let v = view("1");
+    expect(screen.getByText("odd quote")).toBeInTheDocument();
+    v.unmount(); v = view("2");
+    expect(screen.queryByRole("heading", { name: t.evidenceTitle })).toBeNull();
+    v.unmount(); v = view("3");
+    expect(screen.queryByRole("heading", { name: t.evidenceTitle })).toBeNull();
+    expect(screen.queryByText(t.evidenceNoAbstract)).toBeNull();
+  });
+  it("marks only unsupported references in the list", () => {
+    const a = { ...ref("1"), checks: [{ claim: "c", support: "unsupported" as const, quote: null }] };
+    const b = { ...ref("2"), checks: [{ claim: "c", support: "supported" as const, quote: "q" }] };
+    render(<ReferenceList t={t} references={[a, b, ref("3")]} />);
+    expect(screen.getAllByText(t.notSupportedMark)).toHaveLength(1);
+  });
+
   it("scopes reference anchors per turn", () => {
     const { container } = render(<>
       <AnswerView content="x [1]" references={[{ id: "1" }]} scope={{ sessionId: "s", turnId: "A" }} />
@@ -144,7 +182,7 @@ describe("citations and inspector", () => {
     expect(within(dlg).getByText(/10\.1000\/abc/)).toBeInTheDocument();
     expect(within(dlg).getByText(/42/)).toBeInTheDocument();
     expect(within(dlg).getByText("example.org")).toBeInTheDocument();
-    expect(within(dlg).queryByText(/quote|passage/i)).toBeNull();
+    expect(dlg.querySelector("blockquote")).toBeNull(); // no checks, no quote
     const open = within(dlg).getByRole("link", { name: t.openSource });
     expect(open).toHaveAttribute("rel", "noopener noreferrer");
   });

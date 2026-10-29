@@ -1,4 +1,4 @@
-import type { Reference } from "./sse";
+import type { Check, Reference } from "./sse";
 import type { Strings } from "./strings";
 
 const ARXIV = /^https?:\/\/(www\.)?arxiv\.org\/(abs|pdf)\//i;
@@ -49,3 +49,18 @@ export function citeLabel(p: Reference["paper"]): string {
   const who = first ? `${first}${(p.authors?.length ?? 0) > 1 ? " et al." : ""}` : "";
   return [who, p.year ? String(p.year) : ""].filter(Boolean).join(" ") || host;
 }
+
+// Stored/streamed abstract and checks are unvalidated: keep the usable ones (bounded), drop bad entries and fields, never the reference.
+const SUPPORT = ["supported", "partial", "unsupported", "no_quote"];
+export function cleanEvidence(r: Reference): Reference {
+  const { checks, ...rest } = r;
+  const paper = { ...r.paper };
+  if (typeof paper.abstract === "string") paper.abstract = paper.abstract.slice(0, 2000);
+  else delete paper.abstract;
+  const ok: Check[] = Array.isArray(checks)
+    ? checks.filter((c) => !!c && typeof c.claim === "string" && SUPPORT.includes(c.support) && (c.quote === null || typeof c.quote === "string"))
+      .slice(0, 5).map((c) => ({ claim: c.claim.slice(0, 400), support: c.support, quote: c.quote ? c.quote.slice(0, 600) : null }))
+    : [];
+  return { ...rest, paper, ...(ok.length && { checks: ok }) };
+}
+export const unsupported = (r: Reference) => !!r.checks?.some((c) => c.support === "unsupported");
