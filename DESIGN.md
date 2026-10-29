@@ -72,7 +72,7 @@ Flat: paper elevation 0, 1px hairlines. Radius 10px base, composer 16px, bottom 
 - **ProgressCard / ProgressPanel**: four stages (plan, search, write, check), real counts from the stream only.
 - **Citation pill**: `[n]` in the answer opens the source inspector; Esc closes it and returns focus to the pill.
 - **Reference list**: numbered rows with ID-check status (verified, unconfirmed, no ID, unknown), DOI/PMID chips, "details" action.
-- **Report actions**: copy answer, download `.md`; PDF and DOCX shown disabled with a reason (the backend has no export).
+- **Report actions**: copy answer, download `.md`; PDF and DOCX export are available (the backend renders them).
 - **Sessions and projects**: inline rename and delete confirm, kebab menus with return-focus, move session between projects.
 
 ## Motion
@@ -87,4 +87,4 @@ Authored moment: the landing trace line. Supporting motion (shared in `frontend/
 ## Don't
 
 - Don't add new accent colours or gradients. Don't hide copy behind opacity on first paint.
-- Don't claim features the backend lacks (file attach, quick chat, PDF/DOCX, multi-turn context).
+- Don't claim features the backend lacks (file attach, quick chat, multi-turn context).

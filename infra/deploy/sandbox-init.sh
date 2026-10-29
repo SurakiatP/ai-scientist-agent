@@ -20,6 +20,8 @@ mkdir -p /srv/sandbox-share/hermes-home /srv/sandbox-share/work
 chown 10001:10001 /srv/sandbox-share/hermes-home /srv/sandbox-share/work
 
 # Pull over TLS (DOCKER_HOST / DOCKER_TLS_VERIFY / DOCKER_CERT_PATH come from the compose environment).
-docker pull "$HERMES_IMAGE"
-docker pull "$ANALYSIS_IMAGE"
+# Only when absent, so a rehearsal can load a locally built image into the daemon first (docs/deploy.md).
+for img in "$HERMES_IMAGE" "$ANALYSIS_IMAGE"; do
+  docker image inspect "$img" >/dev/null 2>&1 || docker pull "$img"
+done
 echo "sandbox-init: ok"

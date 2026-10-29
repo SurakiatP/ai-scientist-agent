@@ -10,6 +10,18 @@ install -d -m 0750 "$PRIVATE" /var/backups/ai-scientist "$CACHE"
 for f in minio-access-key minio-secret-key postgres-password postgres-app-password; do
   [ -f "$PRIVATE/$f" ] || (umask 077 && openssl rand -hex 24 > "$PRIVATE/$f")
 done
+# Sysbox runtime for the `sandbox` service (docs/deploy.md). Pinned: sysbox-ce 0.7.1, Ubuntu 24.04 amd64.
+# SHA-256 = the `digest` GitHub publishes for the release asset (gh api repos/nestybox/sysbox/releases, tag v0.7.1), and equal
+# to `shasum -a 256` of the file downloaded from the URL below on 2026-10-29. Idempotent: skipped when sysbox-runc is registered.
+SYSBOX_VERSION=0.7.1
+SYSBOX_SHA256=9d6d5484f980d0a17f86c492c1262015c2afb66280bdb97215b79fde6a0261c5
+if ! docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q sysbox-runc; then
+  T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
+  curl -fsSL -o "$T/sysbox.deb" "https://github.com/nestybox/sysbox/releases/download/v${SYSBOX_VERSION}/sysbox-ce_${SYSBOX_VERSION}.linux_amd64.deb"
+  echo "$SYSBOX_SHA256  $T/sysbox.deb" | sha256sum -c - || { echo "sysbox .deb checksum mismatch" >&2; exit 1; }
+  apt-get install -y "$T/sysbox.deb"  # the package registers the runtime and restarts docker
+  docker info --format '{{json .Runtimes}}' | grep -q sysbox-runc || { echo "sysbox-runc is not listed by docker info" >&2; exit 1; }
+fi
 # Cache must be readable by the backend (uid 10001) but not writable by it.
 chmod 0755 "$CACHE"
 # Compose bind-mounts file secrets with host owner/mode; the minio user (10001) reads them via this group.
