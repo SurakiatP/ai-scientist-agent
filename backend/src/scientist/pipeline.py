@@ -12,11 +12,11 @@ from pydantic import ValidationError
 from scientist import llm
 from scientist.citations import verify_references
 from scientist.config import Settings
-from scientist.events import (BranchAnswer, Paper, Complete, Error, Event, FinalAnswer, Reference, Refused, Search,
+from scientist.events import (BranchAnswer, DataRecord, Paper, Complete, Error, Event, FinalAnswer, Reference, Refused, Search,
                               Sources, Strategy, Waiting, arxiv_id, paper_key)
 from scientist.gate import RunGate
 from scientist.guardrail import guard
-from scientist.hermes import BranchFailed, BranchRunner, InvalidPaper
+from scientist.hermes import BranchFailed, BranchRunner, InvalidPaper, InvalidRecord
 
 PROMPTS = Path(__file__).parent / "prompts"
 STRATEGY = (PROMPTS / "strategy.md").read_text()
@@ -155,6 +155,8 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
                     unkeyed += 1
             elif isinstance(item, BranchAnswer):
                 answers.append(item)  # held back so all sources events come before the answers
+            elif isinstance(item, (DataRecord, InvalidRecord)):
+                continue  # ponytail: records are ignored until plan 2 task 2 wires them in
             elif (n := per_branch.get(term, 0)) >= settings.max_papers_per_branch:
                 capped += 1
             else:

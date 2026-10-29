@@ -238,3 +238,46 @@ def test_bridge_clean_record():
 def test_bridge_keeps_paper_source():
     assert load_bridge().clean_paper({"title": "T", "url": "https://x.org", "source": " PubMed Central "})[0]["source"] == "PubMed Central"
     assert load_bridge().ALLOWED >= {"report_record"}
+
+
+def test_bridge_and_backend_agree_on_record_urls():
+    from test_sources import URL_CASES
+
+    from scientist.sources import PAPER_SOURCES
+    bridge = load_bridge()
+    assert bridge.PAPER_SOURCES == tuple(PAPER_SOURCES)
+    for url, ok in URL_CASES:
+        record, _ = bridge.clean_record({**RECORD, "url": url}, {"uniprot": ["uniprot.org"]})
+        assert (record is not None) is ok, url
+
+
+def test_bridge_report_record_handler_payloads(monkeypatch):
+    import types
+
+    bridge = load_bridge()
+    wire, handlers = [], {}
+    monkeypatch.setattr(bridge, "emit", wire.append)
+    registry = types.SimpleNamespace(register=lambda name, handler, **_: handlers.__setitem__(name, handler),
+                                     dispatch=lambda *a, **k: "")
+    monkeypatch.setitem(sys.modules, "tools", types.ModuleType("tools"))
+    for name, attrs in {"tools.terminal_tool": {}, "tools.registry": {"registry": registry},
+                        "tools.terminal_tool_lifecycle": {"cleanup_vm": lambda *a, **k: None},
+                        "run_agent": {"AIAgent": lambda **k: (_ for _ in ()).throw(RuntimeError)}}.items():
+        mod = types.ModuleType(name)
+        mod.__dict__.update(attrs)
+        monkeypatch.setitem(sys.modules, name, mod)
+    monkeypatch.setattr(sys, "stdin", __import__("io").StringIO(json.dumps({"data_sources": {"uniprot": ["uniprot.org"]}}) + "\n"))
+    monkeypatch.setattr(bridge.signal, "signal", lambda *a: None)
+    monkeypatch.setattr(bridge, "WIRE", sys.stdout)
+    saved = sys.stdout
+    try:
+        bridge.main()
+    finally:
+        sys.stdout = saved
+    out = json.loads(handlers["report_record"]({"database": "uniprot", "id": "9" * 900, "url": "http://uniprot.org/x"}))
+    assert "record not recorded" in out["error"]
+    event = wire[-1]
+    assert event["event"] == "record_rejected" and event["reason"]
+    assert event["record"] == {"database": "uniprot", "id": "9" * 500, "url": "http://uniprot.org/x"}
+    handlers["report_record"](RECORD)
+    assert wire[-1] == {"event": "record", "record": RECORD}

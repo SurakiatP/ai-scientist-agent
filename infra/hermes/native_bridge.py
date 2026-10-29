@@ -19,6 +19,7 @@ PAPER_SOURCES = ("pubmed", "pmc", "europepmc", "biorxiv", "medrxiv", "arxiv", "o
                  "core", "unpaywall", "opencitations", "pubtator3", "zenodo", "figshare", "ror", "biostudies", "doaj")
 ALLOWED = {"terminal", "skills_list", "skill_view", "report_paper", "report_record"}
 HTTP_URL = re.compile(r"https?://(?:[^\s/?#@]+@)?[^\s/?#@]+[^\s]*", re.I)  # identical to scientist.events
+RECORD_URL = re.compile(r"https://[a-z0-9.-]+(?::[0-9]+)?(?:[/?#][^\s\\]*)?", re.I)  # no userinfo, backslash, %, whitespace in the authority
 PAPER_SCHEMA = {
     "name": "report_paper",
     "description": "Record one paper you retrieved and will use. Call once per paper, as soon as you have its metadata.",
@@ -99,6 +100,8 @@ def clean_record(args, data_sources):
     hosts = data_sources.get(rec["database"])
     if hosts is None:
         return None, "database is not available for this request; use one of: " + ", ".join(sorted(data_sources))
+    if not RECORD_URL.fullmatch(rec["url"]):
+        return None, "url must be an https link on the official site of the database: " + ", ".join(hosts)
     try:
         parts = urlsplit(rec["url"])
         host, _ = parts.hostname, parts.port  # .port raises on a malformed port

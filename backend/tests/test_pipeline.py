@@ -449,3 +449,16 @@ def test_memory_is_clamped_not_rejected(monkeypatch):
         assert [len(t.references) for t in m] == [1, 2]  # 3-ref budget goes to the newest turn first
     finally:
         get_settings.cache_clear()
+
+
+async def test_records_are_ignored_until_wired_in(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a", "b")
+    rec = {"database": "uniprot", "id": "P1", "title": "p53", "url": "https://uniprot.org/P1"}
+    rt = runner(settings, tmp_path, {
+        "a": [{"event": "record", "record": rec}, {"event": "record_rejected", "record": {"database": "x"}, "reason": "no"},
+              paper("A0", "10.1000/a0"), answer("a")],
+        "b": [paper("B0", "10.1000/b0"), answer("b")]})
+    events = await run(Q, rt, settings)
+    final = next(e for e in events if isinstance(e, FinalAnswer))
+    assert sorted(r.paper.title for r in final.references) == ["A0", "B0"]
+    assert types(events).endswith("final_answer complete")

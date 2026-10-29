@@ -1,7 +1,7 @@
 import re
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 from scientist.sources import DATA_SOURCES, normalize_source, record_host_ok
 
@@ -99,10 +99,11 @@ class Paper(BaseModel):
 
 class DataRecord(BaseModel):
     """One entry from a public scientific database; the url must be on that database's official host."""
+    model_config = ConfigDict(str_strip_whitespace=True)
     database: str
     id: str = Field(min_length=1, max_length=100)
     title: str = Field(min_length=1, max_length=300)
-    url: str
+    url: str = Field(max_length=2000)
     summary: str = Field(default="", max_length=600)
 
     @field_validator("database", mode="after")

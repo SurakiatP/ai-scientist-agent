@@ -31,11 +31,17 @@ def test_every_data_source_has_name_and_hosts():
         assert all(h == h.lower() and "/" not in h for h in d.hosts), key
 
 
-@pytest.mark.parametrize("url,ok", [
+URL_CASES = [
     ("https://uniprot.org/uniprotkb/P04637", True), ("https://rest.uniprot.org/uniprotkb/P04637", True),
     ("https://UniProt.org/x", True), ("https://uniprot.org.evil.com/x", False), ("https://eviluniprot.org/x", False),
     ("http://uniprot.org/x", False), ("https://93.184.216.34/x", False), ("https://uniprot.org@evil.com/", False),
-    ("https://evil.com/?u=uniprot.org", False), ("javascript:alert(1)", False), ("https://uniprot.org:bad/x", False)])
+    ("https://evil.com/?u=uniprot.org", False),
+    ("https://evil.com\\.uniprot.org/x", False), ("https://evil.com%2f.uniprot.org/x", False),
+    ("https://evil.com%2F.uniprot.org/x", False), ("https://uniprot.org /x", False), ("https://uniprot.org/a b", False),
+    ("https://uniprot.org\\@evil.com/", False), ("https://uniprot.org:443/x", True), ("https://uniprot.org", True), ("javascript:alert(1)", False), ("https://uniprot.org:bad/x", False)]
+
+
+@pytest.mark.parametrize("url,ok", URL_CASES)
 def test_record_host_ok(url, ok):
     assert record_host_ok("uniprot", url) is ok
 
@@ -51,5 +57,12 @@ def test_data_record_rules():
     assert DataRecord(**GOOD).summary == ""
     for bad in ({"database": "nope"}, {"url": "http://uniprot.org/x"}, {"title": "x" * 301}, {"summary": "x" * 601},
                 {"id": "x" * 101}, {"id": ""}):
+        with pytest.raises(ValidationError):
+            DataRecord(**{**GOOD, **bad})
+
+
+def test_data_record_strips_and_caps():
+    assert DataRecord(**{**GOOD, "title": "  p53  ", "id": " P1 "}).title == "p53"
+    for bad in ({"title": "   "}, {"id": "  "}, {"url": "https://uniprot.org/" + "a" * 2000}):
         with pytest.raises(ValidationError):
             DataRecord(**{**GOOD, **bad})

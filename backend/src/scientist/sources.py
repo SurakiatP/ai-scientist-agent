@@ -33,6 +33,8 @@ def normalize_source(v: object) -> str | None:
     """Canonical paper-source id for a name the model wrote ("PubMed Central", "S2"), or None for anything else."""
     return _ALIASES.get(_squash(v)) if isinstance(v, str) else None
 
+RECORD_URL = re.compile(r"https://[a-z0-9.-]+(?::[0-9]+)?(?:[/?#][^\s\\]*)?", re.I)  # no userinfo, backslash, %, whitespace in the authority
+
 
 @dataclass(frozen=True)
 class DataSource:
@@ -115,7 +117,7 @@ DATA_SOURCES: dict[str, DataSource] = {
 def record_host_ok(db: str, url: str) -> bool:
     """https only, no userinfo, and the host is one of the database's official hosts or a subdomain of one."""
     source = DATA_SOURCES.get(db)
-    if source is None or not isinstance(url, str):
+    if source is None or not isinstance(url, str) or not RECORD_URL.fullmatch(url.strip()):
         return False
     try:
         parts = urlsplit(url.strip())
