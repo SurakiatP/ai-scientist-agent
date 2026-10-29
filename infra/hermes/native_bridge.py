@@ -3,7 +3,8 @@
 stdin: one JSON request line. stdout: JSON lines, {"event": "paper", "paper": {...}} while running,
 and {"event": "rejected", "paper": {ids}, "reason": str} when report_paper refuses a call,
 {"event": "record", "record": {...}} / {"event": "record_rejected", "record": {database, id, url}, "reason": str}
-for report_record, then {"event": "answer", "content": str} or {"event": "failed", "code": str}. See setup.md.
+for report_record, then {"event": "answer", "content": str} or {"event": "failed", "code": str}, and last, always,
+{"event": "usage", "prompt_tokens", "completion_tokens", "cost_usd" (null = unpriced), "cost_status", "api_calls"}. See setup.md.
 """
 import json
 import re
@@ -132,6 +133,19 @@ def clean_record(args, data_sources, key_gated=None):
     return rec, None
 
 
+def usage_event(agent):
+    """The closing usage line from the agent's session counters; a missing or renamed counter reads as 0 / unknown."""
+    def count(name):
+        v = getattr(agent, name, 0)
+        return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else 0
+    status = getattr(agent, "session_cost_status", None)
+    status = status if isinstance(status, str) and status else "unknown"
+    cost = getattr(agent, "session_estimated_cost_usd", None)
+    ok = isinstance(cost, (int, float)) and not isinstance(cost, bool) and cost == cost and 0 <= cost < float("inf")
+    return {"event": "usage", "prompt_tokens": count("session_prompt_tokens"), "completion_tokens": count("session_completion_tokens"),
+            "cost_usd": float(cost) if ok and status != "unknown" else None, "cost_status": status, "api_calls": count("session_api_calls")}
+
+
 def emit(value):
     with LOCK:
         WIRE.write(json.dumps(value, ensure_ascii=False) + "\n")
@@ -195,6 +209,7 @@ def main():
         agent.valid_tool_names = set(ALLOWED)
     except Exception:
         emit({"event": "failed", "code": "native_start_failed"})
+        emit(usage_event(None))
         return
 
     def work():
@@ -223,6 +238,10 @@ def main():
                 agent.interrupt()
             except Exception:
                 pass
+        try:  # once, last, also after a failure or an interrupt: what was spent before dying still counts
+            emit(usage_event(agent))
+        except Exception:
+            pass
         environments = list(terminal._active_environments.values())
         cleanup_vm(task_id, force_remove=True)
         for environment in environments:  # removal runs on a thread; wait so exit does not orphan it

@@ -10,7 +10,7 @@ import anyio
 import sqlalchemy as sa
 
 from scientist import models as m
-from scientist.events import AnalysisResult, AnalysisStep, BranchAnswer, Complete, Error, Event, FinalAnswer, Refused, Replan, Sources, Strategy, Waiting
+from scientist.events import AnalysisResult, AnalysisStep, BranchAnswer, Complete, Error, Event, FinalAnswer, Refused, Replan, RunUsage, Sources, Strategy, Waiting
 
 log = logging.getLogger(__name__)
 PENDING: set[asyncio.Task] = set()
@@ -23,16 +23,25 @@ class Acc:
     def __init__(self) -> None:
         self.calls, self.prompt, self.completion, self.cost = 0, 0, 0, None
         self.papers = 0
+        self.estimated = False  # a part of the run had no known cost
 
 
-def note(prompt_tokens: int, completion_tokens: int, cost: float | None) -> None:
-    """Called by llm after each successful model call; a no-op outside a tracked run."""
+def note(prompt_tokens: int, completion_tokens: int, cost: float | None, estimated: bool = False) -> None:
+    """Called by llm after each successful model call (and for each Hermes branch); a no-op outside a tracked run."""
     if (a := CURRENT.get()) is not None:
         a.calls += 1
+        a.estimated = a.estimated or estimated or cost is None
         a.prompt += prompt_tokens
         a.completion += completion_tokens
         if cost is not None:
             a.cost = (a.cost or 0) + cost
+
+
+def snapshot() -> RunUsage | None:
+    """Totals of the tracked run so far, None outside one."""
+    if (a := CURRENT.get()) is None:
+        return None
+    return RunUsage(prompt_tokens=a.prompt, completion_tokens=a.completion, cost_usd=a.cost, estimated=a.estimated)
 
 
 async def track(events: AsyncIterator[Event], *, mode: str, db, session_id: str | None = None,

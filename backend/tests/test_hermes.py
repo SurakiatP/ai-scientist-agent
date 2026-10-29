@@ -30,8 +30,9 @@ def runtime(settings, tmp_path, script):
     return HermesRuntime(settings, command=[sys.executable, FAKE, str(path)])
 
 
-async def collect(rt, term="t"):
-    return [item async for item in rt.run(term, "find methods")]
+async def collect(rt, term="t", usage=False):
+    from scientist.hermes import BranchUsage
+    return [item async for item in rt.run(term, "find methods") if usage or not isinstance(item, BranchUsage)]
 
 
 async def test_papers_then_answer(settings, tmp_path):
@@ -360,3 +361,44 @@ def test_bridge_schemas_list_allowed_ids():
     assert bridge.PAPER_SCHEMA["parameters"]["properties"]["source"]["enum"] == list(PAPER_SOURCES)
     props = bridge.record_schema(UNIPROT)["parameters"]["properties"]["database"]
     assert props["enum"] == ["uniprot"] and "UniProt" in props["description"]
+
+
+def usage_line(**k):
+    return {"event": "usage", "prompt_tokens": 100, "completion_tokens": 20, "cost_usd": 0.01, "cost_status": "actual", "api_calls": 2, **k}
+
+
+async def test_usage_after_answer_and_after_failed(settings, tmp_path):
+    from scientist.hermes import BranchUsage
+    for end in ({"event": "answer", "content": "done"}, {"event": "failed", "code": "native_execution_failed"}):
+        items = await collect(runtime(settings, tmp_path, [end, usage_line()]), usage=True)
+        assert isinstance(items[-1], BranchUsage) and items[-1] == BranchUsage(term="t", prompt_tokens=100, completion_tokens=20,
+                                                                                cost_usd=0.01, cost_status="actual")
+        assert len(items) == 2
+
+
+async def test_missing_usage_line_is_reported_as_unknown_cost(settings, tmp_path):
+    from scientist.hermes import BranchUsage
+    items = await collect(runtime(settings, tmp_path, [{"event": "answer", "content": "done"}]), usage=True)
+    assert items[-1] == BranchUsage(term="t", prompt_tokens=0, completion_tokens=0, cost_usd=None, cost_status="unknown")
+    items = await asyncio.wait_for(collect(runtime(settings, tmp_path, [{"die": True}]), usage=True), 10)
+    assert isinstance(items[0], BranchFailed) and items[-1].cost_usd is None
+
+
+async def test_usage_counters_are_sanitized(settings, tmp_path):
+    items = await collect(runtime(settings, tmp_path, [{"event": "answer", "content": "d"},
+                                                       usage_line(prompt_tokens=-5, completion_tokens="x", cost_usd=-1.0)]), usage=True)
+    assert (items[-1].prompt_tokens, items[-1].completion_tokens, items[-1].cost_usd) == (0, 0, None)
+
+
+def test_bridge_usage_event_reads_counters_defensively():
+    ev = load_bridge().usage_event
+    class A:
+        session_prompt_tokens, session_completion_tokens, session_api_calls = 10, 5, 3
+        session_estimated_cost_usd, session_cost_status = 0.02, "estimated"
+    assert ev(A()) == {"event": "usage", "prompt_tokens": 10, "completion_tokens": 5, "cost_usd": 0.02,
+                       "cost_status": "estimated", "api_calls": 3}
+    zero = {"event": "usage", "prompt_tokens": 0, "completion_tokens": 0, "cost_usd": None, "cost_status": "unknown", "api_calls": 0}
+    assert ev(object()) == zero and ev(None) == zero
+    class B(A):
+        session_cost_status = "unknown"
+    assert ev(B())["cost_usd"] is None  # no price known: never invent a number

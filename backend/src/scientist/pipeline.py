@@ -9,14 +9,14 @@ from pathlib import Path
 import httpx
 from pydantic import ValidationError
 
-from scientist import llm
+from scientist import llm, usage
 from scientist.citations import verify_references
 from scientist.config import Settings
 from scientist.events import (BranchAnswer, Complete, DataRecord, Error, Event, FinalAnswer, Paper, Records, Reference, Refused,
                               Replan, Search, Sources, Strategy, Waiting, arxiv_id, paper_key)
 from scientist.gate import RunGate
 from scientist.guardrail import guard
-from scientist.hermes import BranchFailed, BranchRunner, InvalidPaper, InvalidRecord
+from scientist.hermes import BranchFailed, BranchRunner, BranchUsage, InvalidPaper, InvalidRecord
 from scientist.sources import DATA_SOURCES
 
 PROMPTS = Path(__file__).parent / "prompts"
@@ -189,7 +189,9 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
         try:
             while (msg := await queue.get()) is not DONE:
                 term, item = msg
-                if isinstance(item, BranchFailed):
+                if isinstance(item, BranchUsage):  # each branch reports once, so each is added once, whatever the round
+                    usage.note(item.prompt_tokens, item.completion_tokens, item.cost_usd, item.cost_status == "estimated")
+                elif isinstance(item, BranchFailed):
                     failed.append(term)
                 elif isinstance(item, InvalidPaper):
                     if item.key:
@@ -278,7 +280,8 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     if not answers:  # papers but no branch summary: say so plainly; never synthesise a comparison from titles alone
         yield FinalAnswer(content=f"Found {len(refs)} paper(s), but the search did not finish summarising them. "
                                   "The references below were found and checked; try again or narrow the question."
-                                  + note, references=refs, records=final_records)
+                                  + note, references=refs, records=final_records,
+                          usage=usage.snapshot())
         yield Complete()
         return
     user = (_history_block(history) + _data_block(refs, answers, final_records)
@@ -289,7 +292,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     except Exception:
         yield Error(message="Could not write the answer. Please try again.")
         return
-    yield FinalAnswer(content=r.text.strip() + note, references=refs, records=final_records)
+    yield FinalAnswer(content=r.text.strip() + note, references=refs, records=final_records, usage=usage.snapshot())
     yield Complete()
 
 

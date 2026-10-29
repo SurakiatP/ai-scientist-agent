@@ -102,7 +102,10 @@ stdin, one line: `{"term","instructions","system","model","api_key","base_url","
 (`data_sources` is `{}` unless `database-lookup` is enabled; then `report_record` is not registered).
 stdout, JSON lines: `{"event":"paper","paper":{...}}`, `{"event":"rejected",...}`, `{"event":"record","record":{...}}` and
 `{"event":"record_rejected","record":{...},"reason","code"?}` (zero or more), then exactly one of
-`{"event":"answer","content":str}` or `{"event":"failed","code":str}`. Then the process exits.
+`{"event":"answer","content":str}` or `{"event":"failed","code":str}`, then exactly one last
+`{"event":"usage","prompt_tokens":int,"completion_tokens":int,"cost_usd":float|null,"cost_status":str,"api_calls":int}`
+(the agent's session counters, read defensively; `cost_usd` is null when Hermes has no price; also sent after `failed` and after an
+interrupt). Then the process exits.
 SIGTERM stops the agent and removes the branch's container. If the process exits
 without a terminal line, the backend turns that into `BranchFailed`.
 

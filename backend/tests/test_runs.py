@@ -706,3 +706,11 @@ def test_outcome_carries_records_and_old_final_answer_has_none():
     r = {"database": "uniprot", "id": "P1", "title": "p", "url": "https://uniprot.org/P1", "summary": ""}
     assert _outcome(None, {"type": "final_answer", "content": "c", "references": [], "records": [r]})["answer"]["records"] == [r]
     assert _outcome(None, {"type": "final_answer", "content": "c", "references": []})["answer"]["records"] == []
+
+
+def test_outcome_carries_usage_and_old_final_answer_has_none():
+    from scientist.runs import _outcome
+    u = {"prompt_tokens": 1, "completion_tokens": 2, "cost_usd": 0.5, "estimated": False}
+    assert _outcome(None, {"type": "final_answer", "content": "c", "references": [], "usage": u})["answer"]["usage"] == u
+    assert "usage" not in _outcome(None, {"type": "final_answer", "content": "c", "references": [], "usage": None})["answer"]
+    assert "usage" not in _outcome(None, {"type": "final_answer", "content": "c", "references": []})["answer"]

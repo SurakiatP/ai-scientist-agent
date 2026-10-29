@@ -183,11 +183,20 @@ class BranchAnswer(BaseModel):
     content: str
 
 
+class RunUsage(BaseModel):
+    """Tokens and cost of the whole run so far (model calls + branches); estimated: some part had no known cost."""
+    prompt_tokens: int
+    completion_tokens: int
+    cost_usd: float | None
+    estimated: bool
+
+
 class FinalAnswer(BaseModel):
     type: Literal["final_answer"] = "final_answer"
     content: str
     references: list[Reference]
     records: list[DataRecord] = []
+    usage: RunUsage | None = None
 
 
 class Complete(BaseModel):

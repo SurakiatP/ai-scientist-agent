@@ -2,6 +2,7 @@
 See infra/hermes/setup.md for install, skills and the wire protocol."""
 import asyncio
 import json
+import math
 import os
 import re
 import shutil
@@ -68,7 +69,27 @@ def _invalid_record(term: str, raw: object, reason: str, code: str | None = None
 KEYLESS_SOURCES = {k: {"name": d.name, "hosts": list(d.hosts)} for k, d in DATA_SOURCES.items() if not d.needs_key}
 KEY_GATED_SOURCES = {k: d.name for k, d in DATA_SOURCES.items() if d.needs_key}  # named only so the bridge can say why it refuses them
 
-BranchItem = Paper | InvalidPaper | DataRecord | InvalidRecord | BranchAnswer | BranchFailed
+class BranchUsage(BaseModel):
+    """What one branch's Hermes agent spent; cost_usd None = no price known (never a guessed number)."""
+    term: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cost_usd: float | None = None
+    cost_status: str = "unknown"
+
+
+def _count(v: object) -> int:
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 0 else 0
+
+
+def _usage(term: str, msg: dict) -> BranchUsage:
+    c = msg.get("cost_usd")
+    cost = float(c) if isinstance(c, (int, float)) and not isinstance(c, bool) and math.isfinite(c) and c >= 0 else None
+    return BranchUsage(term=term, prompt_tokens=_count(msg.get("prompt_tokens")), completion_tokens=_count(msg.get("completion_tokens")),
+                       cost_usd=cost, cost_status=str(msg.get("cost_status") or "unknown")[:40])
+
+
+BranchItem = Paper | InvalidPaper | DataRecord | InvalidRecord | BranchAnswer | BranchFailed | BranchUsage
 
 
 class BranchRunner(Protocol):
@@ -150,6 +171,7 @@ class HermesRuntime(BranchRunner):
             stderr=asyncio.subprocess.DEVNULL, env=self.env, limit=1024 * 1024)
         self.procs.add(proc)
         deadline = time.monotonic() + BRANCH_TIMEOUT_S
+        ended = metered = False  # ended: answer/failed yielded; metered: the bridge's usage line arrived
         try:
             proc.stdin.write((json.dumps(request) + "\n").encode())
             await proc.stdin.drain()
@@ -175,6 +197,8 @@ class HermesRuntime(BranchRunner):
                     elif event == "record_rejected":
                         item = _invalid_record(term, msg.get("record"), str(msg.get("reason") or "rejected"),
                                                "needs_key" if msg.get("code") == "needs_key" else None)
+                    elif event == "usage":
+                        item = _usage(term, msg)
                     elif event == "answer":
                         item = BranchAnswer(term=term, content=str(msg["content"]))
                     elif event == "failed":
@@ -183,14 +207,22 @@ class HermesRuntime(BranchRunner):
                         continue
                 except (ValueError, KeyError, TypeError, ValidationError):
                     continue  # garbage or malformed line from the bridge: skip it
+                if ended and not isinstance(item, BranchUsage):
+                    continue  # nothing but the usage line follows the answer
                 yield item
-                if isinstance(item, (BranchAnswer, BranchFailed)):
-                    return
-            yield BranchFailed(term=term, reason="bridge_exited")
+                if isinstance(item, BranchUsage):
+                    metered = True
+                    return  # the bridge exits right after it
+                ended = isinstance(item, (BranchAnswer, BranchFailed))
+            if not ended:
+                yield BranchFailed(term=term, reason="bridge_exited")
         except (TimeoutError, ValueError, OSError) as e:  # ValueError: line over the 1 MB limit
-            yield BranchFailed(term=term, reason=type(e).__name__)
+            if not ended:
+                yield BranchFailed(term=term, reason=type(e).__name__)
         finally:
             await self._stop(proc)
+        if not metered:  # bridge died or timed out before reporting: the total must show it is incomplete
+            yield BranchUsage(term=term)
 
     async def _stop(self, proc: asyncio.subprocess.Process) -> None:
         # finally: a second cancel during the wait (seen on Linux) must not leave the process tracked; it already has SIGTERM

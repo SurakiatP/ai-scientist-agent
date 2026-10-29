@@ -713,3 +713,37 @@ async def test_stop_during_replan_call_and_round_two_kills_bridges(settings, tmp
     with pytest.raises(asyncio.CancelledError):
         await task
     assert not rt.procs
+
+
+def ev_usage(p=100, c=20, cost=0.01, status="actual"):
+    return {"event": "usage", "prompt_tokens": p, "completion_tokens": c, "cost_usd": cost, "cost_status": status, "api_calls": 1}
+
+
+async def test_final_answer_carries_whole_run_usage(settings, tmp_path, fake_complete):
+    from scientist import usage
+    usage.CURRENT.set(usage.Acc())
+    usage.note(7, 3, 0.002)  # a model call made earlier in the run
+    fake_complete["strategy"] = strategy("a", "b")
+    rt = runner(settings, tmp_path, {"a": [paper("P1", "10.1/a"), answer("s"), ev_usage()],
+                                     "b": [paper("P2", "10.1/b"), answer("s"), ev_usage(50, 10, 0.005)]})
+    final = next(e for e in await run(Q, rt, settings) if isinstance(e, FinalAnswer))
+    u = final.usage
+    assert (u.prompt_tokens, u.completion_tokens, u.estimated) == (157, 33, False)
+    assert u.cost_usd == pytest.approx(0.017)
+
+
+async def test_unknown_branch_cost_marks_run_estimated_and_failed_branch_still_counts(settings, tmp_path, fake_complete):
+    from scientist import usage
+    usage.CURRENT.set(usage.Acc())
+    fake_complete["strategy"] = strategy("a", "b")
+    rt = runner(settings, tmp_path, {"a": [paper("P1", "10.1/a"), answer("s"), ev_usage()],
+                                     "b": [{"event": "failed", "code": "native_execution_failed"}, ev_usage(40, 0, None, "unknown")]})
+    u = next(e for e in await run(Q, rt, settings) if isinstance(e, FinalAnswer)).usage
+    assert (u.prompt_tokens, u.estimated) == (140, True) and u.cost_usd == pytest.approx(0.01)
+
+
+async def test_no_usage_outside_a_tracked_run_serialises_as_null(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    rt = runner(settings, tmp_path, {"a": [paper("P1", "10.1/a"), answer("s")]})
+    final = next(e for e in await run(Q, rt, settings) if isinstance(e, FinalAnswer))
+    assert final.usage is None

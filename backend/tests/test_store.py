@@ -620,3 +620,14 @@ async def test_import_keeps_records_capped(api):
     assert (await api.post("/v1/store/import", json=body)).json()["turns"] == 1
     s = next(x for x in (await api.get("/v1/store/snapshot")).json()["sessions"] if x["id"] == sid)
     assert len(s["turns"][0]["answer"]["records"]) == 100
+
+
+async def test_turn_answer_keeps_usage_and_old_turns_load(api):
+    sid = await mk_session(api)
+    us = {"prompt_tokens": 10, "completion_tokens": 5, "cost_usd": None, "estimated": True}
+    r = await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(answer={"content": "c", "references": [], "usage": us}))
+    assert r.status_code == 200, r.text
+    r = await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(1, answer={"content": "c", "references": []}))
+    assert r.status_code == 200
+    s = next(x for x in (await api.get("/v1/store/snapshot")).json()["sessions"] if x["id"] == sid)
+    assert s["turns"][0]["answer"]["usage"] == us and "usage" not in s["turns"][1]["answer"]
