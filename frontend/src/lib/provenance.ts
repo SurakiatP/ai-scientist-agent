@@ -34,12 +34,17 @@ export function buildProvenanceFile(turn: Turn, now = new Date()) {
 
 export const provenanceFilename = (turn: Turn) => `ai-scientist-provenance-${isoOf(turn.createdAt).slice(0, 10)}-${turn.id.slice(0, 8)}.json`;
 
-export function downloadProvenance(turn: Turn) {
-  const file = buildProvenanceFile(turn);
-  if (!file) return;
-  const url = URL.createObjectURL(new Blob([JSON.stringify(file, null, 2)], { type: "application/json;charset=utf-8" }));
+export function downloadText(text: string, type: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }));
   const a = document.createElement("a");
-  a.href = url; a.download = provenanceFilename(turn);
+  a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+export const referencesFilename = (turn: Turn, ext: "bib" | "ris") => `ai-scientist-references-${isoOf(turn.createdAt).slice(0, 10)}-${turn.id.slice(0, 8)}.${ext}`;
+
+export function downloadProvenance(turn: Turn) {
+  const file = buildProvenanceFile(turn);
+  if (file) downloadText(JSON.stringify(file, null, 2), "application/json", provenanceFilename(turn));
 }

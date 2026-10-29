@@ -25,7 +25,8 @@ import { AnswerSkeleton } from "@/components/research/AnswerSkeleton";
 import { ReportArtifact, reportId } from "@/components/research/ReportArtifact";
 import type { RefusalCode, Turn } from "@/lib/chat";
 import { packName, usablePack } from "@/lib/packs";
-import { downloadProvenance, provenanceOf } from "@/lib/provenance";
+import { downloadProvenance, downloadText, provenanceOf, referencesFilename } from "@/lib/provenance";
+import { toBibtex, toRis } from "@/lib/bibliography";
 import { useReportPanel } from "@/lib/exportReport";
 import { useInspector } from "@/lib/inspector";
 import { usePrefs, useT } from "@/lib/prefs";
@@ -185,6 +186,11 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
                 <IconButton aria-label={t.downloadProvenance} onClick={() => downloadProvenance(turn)} sx={{ width: 44, height: 44, color: "text.secondary" }}><FileDownloadOutlinedIcon fontSize="small" /></IconButton>
               </Tooltip>
             )}
+            {(turn.answer?.references.length ?? 0) > 0 && ([["bib", t.downloadBibtex, "BibTeX", "application/x-bibtex", toBibtex], ["ris", t.downloadRis, "RIS", "application/x-research-info-systems", toRis]] as const).map(([ext, label, short, type, fn]) => (
+              <Tooltip key={ext} title={label}>
+                <Button variant="text" color="inherit" aria-label={label} onClick={() => downloadText(fn(turn.answer!.references), type, referencesFilename(turn, ext))} sx={{ minWidth: 44, minHeight: 44, color: "text.secondary" }}>{short}</Button>
+              </Tooltip>
+            ))}
             <Tooltip title={noDocs ? t.docsAttachAgain : busy ? t.retryBusy : t.regen}>
               <span><IconButton aria-label={t.regen} onClick={retry} disabled={busy || noDocs} sx={{ width: 44, height: 44, color: "text.secondary" }}><ReplayRoundedIcon fontSize="small" /></IconButton></span>
             </Tooltip>
