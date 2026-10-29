@@ -71,7 +71,48 @@ print(state.status, state.answer.content if state.answer else None)
 
 ## MCP
 
-_Placeholder: the MCP server (Streamable HTTP at `/mcp`, same bearer key) and client configuration are documented here when it lands._
+The same research tools for MCP clients, over Streamable HTTP (stateless, JSON responses) at `/mcp`. It uses the same bearer key, the same identical 401 and the same rate limits as the REST API; the key is checked on every request, so a revoked key stops on the next one. Runs started here are API runs (same queue caps per key, same project "API").
+
+| Tool | Arguments | Returns |
+|---|---|---|
+| `list_packs` | none | `{packs: [{id, th, en}]}` |
+| `plan_research` | `question`, `mode` (`deep`/`quick`), `pack?` | `{reasoning, searches: [{term, instructions}]}` |
+| `start_research` | `question`, `mode`, `pack?`, `plan?` (searches from `plan_research`) | `{run_id, session_id, turn_id, status}` |
+| `get_run` | `run_id` | the run, as `GET /runs/{run_id}` |
+| `wait_run` | `run_id`, `timeout_seconds` (1 to 600, default 60) | the run, as `get_run`; when the timeout passes first, the run with its current status (`queued` or `running`), not an error |
+| `get_artifact` | `run_id`, `kind` (`provenance`/`bibtex`/`ris`) | text: BibTeX, RIS, or the provenance JSON |
+| `cancel_run` | `run_id` | the run (only the key that started it) |
+
+Failures (unknown run, run not finished, refused question, queue full) come back as a tool error with the same message as the REST `detail`. Paper text in answers is untrusted data.
+
+Client configuration (Claude Desktop and any client that supports remote servers with headers; replace the host and the key):
+
+```json
+{
+  "mcpServers": {
+    "ai-scientist": {
+      "type": "http",
+      "url": "https://scientist.example.com/mcp",
+      "headers": { "Authorization": "Bearer sci_..." }
+    }
+  }
+}
+```
+
+Clients that only speak stdio can bridge with `npx mcp-remote https://scientist.example.com/mcp --header "Authorization: Bearer sci_..."`.
+
+Python (the `mcp` package):
+
+```python
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+async with streamablehttp_client("https://scientist.example.com/mcp", headers={"Authorization": "Bearer sci_..."}) as (r, w, _):
+    async with ClientSession(r, w) as s:
+        await s.initialize()
+        run = (await s.call_tool("start_research", {"question": "...", "mode": "quick"})).structuredContent
+        done = await s.call_tool("wait_run", {"run_id": run["run_id"], "timeout_seconds": 300})
+```
 
 ## Rate limits and queues
 

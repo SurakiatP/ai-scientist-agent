@@ -1,6 +1,7 @@
 """/v1/api: the public research API for programs (API key, JSON only). It drives the same RunService as the browser, with
 its own client id per key (`key:<id>`), so keys and browsers cannot cancel or crowd out each other. Runs live in the shared
 store (project "API"); any key may read any key's run, only the creating key may cancel it."""
+import re
 import uuid
 from contextlib import aclosing, suppress
 from datetime import UTC, datetime
@@ -105,6 +106,12 @@ class RunOut(BaseModel):
     progress: Progress
 
 
+def check_rid(rid: str) -> str:
+    if not re.fullmatch(UUID_RE, rid):
+        raise HTTPException(404, "run not found")
+    return rid
+
+
 def valid(model, **kw):
     """The app's own request model decides (limits, pack, plan clean-up, docs ids); its errors are a 422 like any other."""
     try:
@@ -156,35 +163,33 @@ async def api_session(svc: RunService, title: str) -> str:
     return sid
 
 
-@router.post("/research", status_code=202, response_model=Accepted, summary="Start a research run",
-             responses=errs(c429="client_busy / queue_full / rate limit"))
-async def research(body: ResearchIn, key: ApiKey = Depends(require_key), svc: RunService = Depends(service)):
+async def start_run(svc: RunService, key: ApiKey, body: ResearchIn) -> dict:
+    """Starts a run for a key (REST and MCP). Raises Rejected when the key's caps are full."""
     run_in = valid(RunIn, session_id=str(uuid.uuid4()), turn_id=str(uuid.uuid4()), kind="ask", question=body.question,
                    mode="docs" if body.doc_ids else body.mode, doc_ids=body.doc_ids or [], pack=body.pack, plan=body.plan)
+    svc.queue.admit(key.client_id)  # refuse before a session is created
+    sid = await guarded(api_session(svc, run_in.question))
+    run_in.session_id = sid
     try:
-        svc.queue.admit(key.client_id)  # refuse before a session is created
-        sid = await guarded(api_session(svc, run_in.question))
-        run_in.session_id = sid
-        try:
-            out = await guarded(svc.submit(run_in, key.client_id))
-        except BaseException:
-            with suppress(Exception):  # a refused submit leaves no empty session behind; the original error is what surfaces
-                await svc.data.soft_delete("session", sid)
-                await svc.data.delete_permanent("session", sid)
-            raise
-    except Rejected as e:
-        return JSONResponse({"detail": e.message, "code": e.code}, status_code=429)
+        out = await guarded(svc.submit(run_in, key.client_id))
+    except BaseException:
+        with suppress(Exception):  # a refused submit leaves no empty session behind; the original error is what surfaces
+            await svc.data.soft_delete("session", sid)
+            await svc.data.delete_permanent("session", sid)
+        raise
     return {"run_id": out["run"]["id"], "session_id": sid, "turn_id": run_in.turn_id, "status": out["run"]["status"]}
 
 
-@router.post("/plan", response_model=PlanOut, summary="Plan the searches for a question (no run is started)",
-             responses=errs(c422="The question was refused (code says why) or the body is invalid", c429="The server is busy (code busy) or the rate limit is hit",
-                            c502="No plan could be made (code no_plan)"))
-async def plan(body: PlanIn, request: Request, svc: RunService = Depends(service)):
+class PlanError(Exception):
+    def __init__(self, status: int, detail: str, code: str):
+        self.status, self.detail, self.code = status, detail, code
+
+
+async def make_plan(st, body: PlanIn) -> dict:
+    """The planned searches for a question (REST and MCP); raises PlanError (422 refused, 429 busy, 502 no plan)."""
     q = valid(AskRequest, question=body.question, mode=body.mode, pack=body.pack, plan_only=True)
-    st = request.app.state
     if st.gate.free == 0 and len(st.gate.queue) >= st.settings.analyze_max_queue:  # the browser plan_only path's bound
-        return JSONResponse({"detail": "too many requests queued; try again shortly", "code": "busy"}, status_code=429)
+        raise PlanError(429, "too many requests queued; try again shortly", "busy")
     events = track(ask(q.question, st.runner, settings=st.settings, client=st.client, gate=st.gate, mode=q.mode, plan_only=True,
                        pack=q.pack), mode="plan", db=st.db)
     message = "no plan was produced"
@@ -193,11 +198,30 @@ async def plan(body: PlanIn, request: Request, svc: RunService = Depends(service
             if isinstance(e, Strategy):
                 return {"reasoning": e.reasoning, "searches": [s.model_dump() for s in e.searches]}
             if isinstance(e, Refused):
-                return JSONResponse({"detail": e.reason, "code": e.code}, status_code=422)
+                raise PlanError(422, e.reason, e.code)
             if isinstance(e, Error):
                 message = e.message
                 break
-    return JSONResponse({"detail": message, "code": "no_plan"}, status_code=502)
+    raise PlanError(502, message, "no_plan")
+
+
+@router.post("/research", status_code=202, response_model=Accepted, summary="Start a research run",
+             responses=errs(c429="client_busy / queue_full / rate limit"))
+async def research(body: ResearchIn, key: ApiKey = Depends(require_key), svc: RunService = Depends(service)):
+    try:
+        return await start_run(svc, key, body)
+    except Rejected as e:
+        return JSONResponse({"detail": e.message, "code": e.code}, status_code=429)
+
+
+@router.post("/plan", response_model=PlanOut, summary="Plan the searches for a question (no run is started)",
+             responses=errs(c422="The question was refused (code says why) or the body is invalid", c429="The server is busy (code busy) or the rate limit is hit",
+                            c502="No plan could be made (code no_plan)"))
+async def plan(body: PlanIn, request: Request, svc: RunService = Depends(service)):
+    try:
+        return await make_plan(request.app.state, body)
+    except PlanError as e:
+        return JSONResponse({"detail": e.detail, "code": e.code}, status_code=e.status)
 
 
 @router.get("/packs", response_model=list[PackOut], summary="The research packs")
@@ -205,10 +229,23 @@ async def packs():
     return [{"id": k, "th": p.name_th, "en": p.name_en} for k, p in PACKS.items()]
 
 
+async def run_shape(svc: RunService, rid: str) -> dict:
+    row = await own(svc, rid)
+    return shape(row, await turn_of(svc, row))
+
+
+async def cancel_run(svc: RunService, rid: str, key: ApiKey) -> dict:
+    await own(svc, rid)
+    try:
+        row = await svc.cancel(rid, key.client_id)
+    except PermissionError:
+        raise HTTPException(403, "only the API key that started this run can cancel it") from None
+    return shape(row, await turn_of(svc, row))
+
+
 @router.get("/runs/{run_id}", response_model=RunOut, summary="Status, progress and the answer of a run", responses=GONE)
 async def get_run(run_id: Rid, svc: RunService = Depends(service)):
-    row = await own(svc, run_id)
-    return shape(row, await turn_of(svc, row))
+    return await run_shape(svc, run_id)
 
 
 @router.get("/runs/{run_id}/events", summary="Server-sent events of a run (resume with Last-Event-ID or ?after=)",
@@ -222,12 +259,7 @@ async def events(run_id: Rid, request: Request, after: Annotated[int | None, Que
 @router.post("/runs/{run_id}/cancel", response_model=RunOut, summary="Stop a run (only the key that started it)",
              responses={**GONE, **errs(c403="The run was started by another key")})
 async def cancel(run_id: Rid, key: ApiKey = Depends(require_key), svc: RunService = Depends(service)):
-    await own(svc, run_id)
-    try:
-        row = await svc.cancel(run_id, key.client_id)
-    except PermissionError:
-        raise HTTPException(403, "only the API key that started this run can cancel it") from None
-    return shape(row, await turn_of(svc, row))
+    return await cancel_run(svc, run_id, key)
 
 
 def provenance_file(turn: dict, answer: dict) -> dict:
@@ -242,11 +274,9 @@ def provenance_file(turn: dict, answer: dict) -> dict:
             "analysis": None, "provenance": answer["provenance"]}
 
 
-@router.get("/runs/{run_id}/artifacts/{kind}", summary="provenance (JSON), bibtex or ris of a finished run",
-            responses={200: {"content": {"application/json": {}, "application/x-bibtex": {}, "application/x-research-info-systems": {}}},
-                       **GONE, **errs(c409="The run has not finished")})
-async def artifact(run_id: Rid, kind: Literal["provenance", "bibtex", "ris"], svc: RunService = Depends(service)):
-    row = await own(svc, run_id)
+async def artifact_of(svc: RunService, rid: str, kind: str) -> dict | str:
+    """The provenance file (dict) or the bibtex / ris text of a finished run (REST and MCP)."""
+    row = await own(svc, rid)
     if row["status"] in ("queued", "running"):
         raise HTTPException(409, "the run has not finished")
     turn = await turn_of(svc, row)
@@ -256,8 +286,17 @@ async def artifact(run_id: Rid, kind: Literal["provenance", "bibtex", "ris"], sv
     if kind == "provenance":
         return provenance_file(turn, a)
     refs = a.get("references", [])
-    return Response(to_bibtex(refs) if kind == "bibtex" else to_ris(refs),
-                    media_type="application/x-bibtex; charset=utf-8" if kind == "bibtex" else "application/x-research-info-systems; charset=utf-8")
+    return to_bibtex(refs) if kind == "bibtex" else to_ris(refs)
+
+
+@router.get("/runs/{run_id}/artifacts/{kind}", summary="provenance (JSON), bibtex or ris of a finished run",
+            responses={200: {"content": {"application/json": {}, "application/x-bibtex": {}, "application/x-research-info-systems": {}}},
+                       **GONE, **errs(c409="The run has not finished")})
+async def artifact(run_id: Rid, kind: Literal["provenance", "bibtex", "ris"], svc: RunService = Depends(service)):
+    out = await artifact_of(svc, run_id, kind)
+    if isinstance(out, dict):
+        return out
+    return Response(out, media_type="application/x-bibtex; charset=utf-8" if kind == "bibtex" else "application/x-research-info-systems; charset=utf-8")
 
 
 @spec_router.get("/openapi.json", include_in_schema=False)

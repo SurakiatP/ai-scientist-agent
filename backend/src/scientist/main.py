@@ -7,7 +7,9 @@ import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from scientist import store as store_mod, usage
+from starlette.routing import Route
+
+from scientist import mcp_server, store as store_mod, usage
 from scientist.config import get_settings
 from scientist.gate import RunGate
 from scientist.runqueue import RunQueue
@@ -45,7 +47,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
             sweep_containers()
             await asyncio.to_thread(sandbox.sweep_stale_runs, settings)
         rt = runner or HermesRuntime(settings)
-        async with client or httpx.AsyncClient() as c:
+        async with client or httpx.AsyncClient() as c, mcp_server.running(mcp):  # /mcp's session manager lives as long as the app
             app.state.runner, app.state.client = rt, c
             app.state.store = store
             if store is None and settings.minio_endpoint:  # MinIO down at boot: files and health answer 503
@@ -115,6 +117,8 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     app.include_router(runs_router)
     app.include_router(api_router)
     app.include_router(api_spec_router)
+    mcp_asgi, mcp = mcp_server.build(app)
+    app.router.routes.append(Route("/mcp", mcp_asgi))  # a plain route: /mcp itself, no trailing-slash redirect
 
     @app.get("/v1/health")
     async def health():
