@@ -1,6 +1,7 @@
 """PDF text index: extract once in the sandbox (lazily, on first use), store page-bound chunks, retrieve with Postgres
 full-text search. Nothing here parses PDF bytes; `extract` (sandbox.extract_pdf) does that inside the container."""
 import asyncio
+import hashlib
 import re
 from collections.abc import Awaitable, Callable
 
@@ -37,7 +38,7 @@ def chunk_pages(pages: list[dict]) -> list[dict]:
 
 
 def _status(file_id: str, r) -> dict:
-    return {"file_id": file_id, "status": r.status, "pages": r.pages, "chunks": r.chunks, "truncated": r.truncated, "error": r.error}
+    return {"file_id": file_id, "status": r.status, "pages": r.pages, "chunks": r.chunks, "truncated": r.truncated, "error": r.error, "sha256": r.sha256}
 
 
 async def ensure_index(db: Database, file_id: str, load: Callable[[], Awaitable[bytes]], settings: Settings,
@@ -73,16 +74,18 @@ async def _index(db, file_id, token, load, settings, extract) -> dict:
             await s.execute(sa.delete(t).where(mine))  # not stuck: the next question retries
 
     def failed(err):
-        return {"file_id": file_id, "status": "failed", "pages": 0, "chunks": 0, "truncated": False, "error": err}
+        return {"file_id": file_id, "status": "failed", "pages": 0, "chunks": 0, "truncated": False, "error": err, "sha256": None}
     try:
-        r = await extract(await load(), settings)
+        data = await load()
+        r = await extract(data, settings)
         if not r.ok and r.error == "docker_unavailable":  # the host's problem, not the file's: try again later
             await release()
             return failed(r.error)
         chunks = chunk_pages(r.pages) if r.ok else []
         async with db.session() as s, s.begin():
-            vals = dict(status="ready", pages=len(r.pages), chunks=len(chunks), truncated=r.truncated, error=None) if r.ok \
-                else dict(status="failed", error=r.error)  # remembered: the same bytes are not re-run on every question
+            sha = hashlib.sha256(data).hexdigest()  # of the bytes that were extracted (provenance of docs answers)
+            vals = dict(status="ready", pages=len(r.pages), chunks=len(chunks), truncated=r.truncated, error=None, sha256=sha) if r.ok \
+                else dict(status="failed", error=r.error, sha256=sha)  # remembered: the same bytes are not re-run on every question
             row = (await s.execute(sa.update(t).where(mine).values(**vals).returning(t))).first()
             if row is None:  # taken over meanwhile: report what the new owner wrote
                 row = (await s.execute(sa.select(t).where(t.c.file_id == file_id))).first()

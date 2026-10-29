@@ -39,7 +39,7 @@ doc_index = sa.Table(  # one row per indexed PDF; the primary key is the guard a
     "doc_index", md, sa.Column("file_id", sa.CHAR(32), sa.ForeignKey("files.id", ondelete="CASCADE"), primary_key=True),
     sa.Column("status", sa.Text, nullable=False), sa.Column("pages", sa.Integer, nullable=False, server_default="0"),
     sa.Column("chunks", sa.Integer, nullable=False, server_default="0"), sa.Column("truncated", sa.Boolean, nullable=False, server_default="false"),
-    sa.Column("error", sa.Text), _ts("created_at", nullable=False, server_default=NOW))
+    sa.Column("error", sa.Text), _ts("created_at", nullable=False, server_default=NOW), sa.Column("sha256", sa.Text))
 doc_chunks = sa.Table(
     "doc_chunks", md, sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
     sa.Column("file_id", sa.CHAR(32), sa.ForeignKey("files.id", ondelete="CASCADE"), nullable=False),

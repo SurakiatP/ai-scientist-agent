@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import uuid
 
@@ -125,7 +126,8 @@ def counting(result):
 async def test_index_ready_with_pages_and_chunks(d):
     f, ex = mkfile(d), counting(ok("first page about enzymes", "second page about ribosomes", truncated=True))
     st = await documents.ensure_index(d, f, loader(), S(), ex)
-    assert st == {"file_id": f, "status": "ready", "pages": 2, "chunks": 2, "truncated": True, "error": None}
+    assert st == {"file_id": f, "status": "ready", "pages": 2, "chunks": 2, "truncated": True, "error": None,
+                  "sha256": hashlib.sha256(b"%PDF").hexdigest()}  # of the bytes that were indexed
     assert sql(d.raw, "select page, idx from doc_chunks where file_id=%s order by idx", f) == [(1, 0), (2, 1)]
     assert await documents.ensure_index(d, f, loader(), S(), ex) == st and len(ex.calls) == 1  # lazily once
 

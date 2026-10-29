@@ -248,6 +248,20 @@ class ProvAnalysisSettings(BaseModel):
     analyze_max_tokens: int
 
 
+class ProvDocFile(BaseModel):
+    file_id: str
+    sha256: str | None = None  # of the PDF bytes that were indexed (None: indexed before the hash was kept)
+
+
+class ProvDocs(BaseModel):
+    """docs answers: which files, and how passages were picked."""
+    files: list[ProvDocFile]
+    top_k: int
+    per_doc: int
+    passages: int  # sent to the model
+    cited: int  # kept after checking [n]
+
+
 class Provenance(BaseModel):
     """How an answer was produced, frozen when it was made. No secrets, abstracts or question text.
     Research runs fill hermes, settings and rounds; an analysis run leaves those None and fills sandbox_image."""
@@ -265,8 +279,26 @@ class Provenance(BaseModel):
     input_sha256: str | None = None  # analysis only: sha256 hex of the analysed file's bytes
     history_turns: int = 0  # earlier turns sent to the model as history
     pack: str | None = None  # the domain pack the user picked, research and analysis alike (None = General)
+    docs: ProvDocs | None = None  # docs answers only
     phase_seconds: dict[str, float]
     usage: RunUsage | None = None
+
+
+class DocRef(BaseModel):
+    """A passage of an attached PDF cited as [id] in a docs answer; quote is kept only if it is an exact part of text."""
+    id: str
+    file_id: str
+    file_name: str
+    page: int  # 1-based
+    text: str = Field(max_length=1200)
+    quote: str | None = Field(default=None, max_length=600)
+
+
+class DocsIndexing(BaseModel):
+    """docs mode: this file is being read (text extracted) now; sent only when the file was not indexed yet."""
+    type: Literal["docs_indexing"] = "docs_indexing"
+    file_id: str
+    file_name: str
 
 
 class FinalAnswer(BaseModel):
@@ -274,6 +306,7 @@ class FinalAnswer(BaseModel):
     content: str
     references: list[Reference]
     records: list[DataRecord] = []
+    doc_refs: list[DocRef] = []
     usage: RunUsage | None = None
     provenance: Provenance | None = None
 
@@ -323,7 +356,7 @@ class AnalysisResult(BaseModel):
 
 
 Event = Annotated[Refused | Waiting | Strategy | Replan | Sources | BranchAnswer | FinalAnswer | Complete | Error
-                  | AnalysisStep | AnalysisScript | AnalysisResult,
+                  | AnalysisStep | AnalysisScript | AnalysisResult | DocsIndexing,
                   Field(discriminator="type")]
 
 

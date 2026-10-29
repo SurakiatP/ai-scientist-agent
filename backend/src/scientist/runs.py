@@ -12,6 +12,9 @@ from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from scientist import models as m
+from fastapi import HTTPException
+
+from scientist.docs_answer import answer_docs
 from scientist.events import Error
 from scientist.routes_analyze import _slot, prepare
 from scientist.pipeline import ask
@@ -104,14 +107,17 @@ class RunService:
     # --- submit ----------------------------------------------------------------------------------------------------
     async def submit(self, body, client_id: str) -> dict:
         analyze = body.kind == "analyze"
+        docs = not analyze and body.mode == "docs"
         name = ext = ""
+        if docs:
+            await self._check_docs(body.doc_ids)
         if analyze:
             if not body.file_id:
                 raise Invalid("file_id is required")
             _, name, ext = await prepare(self.st, body.file_id)
         rid = str(uuid.uuid4())
         self.queue.admit(client_id)  # Rejected -> 429; no await between admit and ticket
-        ticket = self.queue.ticket(rid, client_id, "analysis" if analyze else "research")
+        ticket = self.queue.ticket(rid, client_id, "analysis" if analyze or docs else "research")  # docs read PDFs in the sandbox: its pool
         try:
             row, turn = await self._create(body, client_id, rid, name)
         except BaseException:
@@ -125,6 +131,18 @@ class RunService:
         run.task.add_done_callback(lambda _: ticket.close())  # whatever happened, the slot is given back
         self.data._changed("turn", turn, session_id=str(turn["session_id"]))
         return {"run": self.view(row, client_id), "turn": turn}
+
+    async def _check_docs(self, ids: list[str]) -> None:
+        """422 unless every id is a live (not deleted) PDF file of the shared store."""
+        async with self.data.db.session() as s:
+            ok = {r.id for r in await s.execute(sa.select(m.files.c.id).where(
+                m.files.c.id.in_(ids), m.files.c.deleted_at.is_(None), sa.func.lower(m.files.c.kind) == "pdf"))}
+        if bad := [i for i in ids if i not in ok]:
+            raise HTTPException(422, f"document {bad[0]} was not found or is not a PDF")
+        if not self.st.settings.sandbox_enabled:
+            raise HTTPException(503, "documents need the sandbox, which is disabled on this deployment")
+        if self.st.store is None:
+            raise HTTPException(503, "file storage unavailable")
 
     async def _create(self, body, client_id: str, rid: str, file_name: str) -> tuple[dict, dict]:
         """The turn (new, or an approved plan) and the run row, in one transaction under the session lock."""
@@ -144,7 +162,7 @@ class RunService:
                     raise TooMany("session is full")
                 fname = (body.file_name or file_name)[:120]
                 vals = {"id": body.turn_id, "session_id": body.session_id, "idx": top + 1, "question": body.question[:4000],
-                        "mode": "analysis" if analyze else body.mode, "pack": None if body.mode == "chat" and not analyze else body.pack, "status": "running", "progress": EMPTY_PROGRESS,
+                        "mode": "analysis" if analyze else body.mode, "pack": None if body.mode in ("chat", "docs") and not analyze else body.pack, "status": "running", "progress": EMPTY_PROGRESS,
                         "plan": plan, "run_id": rid, "version": 1,
                         "analysis": {"fileId": body.file_id, **({"fileName": fname} if fname else {}), "steps": []}
                         if analyze else None}
@@ -171,6 +189,9 @@ class RunService:
         if body.kind == "analyze":
             events, mode = _slot(body.file_id, body.question, gate=run.ticket, store=st.store, settings=st.settings,
                                  name=run.file_name, ext=run.ext, pack=body.pack), "analysis"
+        elif body.mode == "docs":
+            events, mode = answer_docs(body.question, body.doc_ids, db=st.db, store=st.store, settings=st.settings,
+                                       gate=run.ticket, history=body.history), "docs"
         else:
             events, mode = ask(body.question, st.runner, settings=st.settings, client=st.client, gate=run.ticket,
                                mode=body.mode, history=body.history, plan=body.plan, memory=body.memory,
@@ -412,6 +433,7 @@ def _outcome(out: dict | None, d: dict) -> dict | None:
     t = d["type"]
     if t == "final_answer":
         return {"status": "done", "answer": {"content": d["content"], "references": d["references"], "records": d.get("records", []),
+                                                         **({"doc_refs": d["doc_refs"]} if d.get("doc_refs") else {}),
                                                          **({"usage": d["usage"]} if d.get("usage") else {}),
                                                          **({"provenance": d["provenance"]} if d.get("provenance") else {})}}
     if t == "refused":

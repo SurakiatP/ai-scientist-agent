@@ -113,7 +113,7 @@ async def test_ping_and_schema_state_ok_and_behind(newdb):
         assert await d.schema_state() == "behind"  # empty database: migrations never ran
         command.upgrade(_alembic(), "head")
         assert await d.schema_state() == "ok"
-        assert dbmod.code_head() == "0006"
+        assert dbmod.code_head() == "0007"
     finally:
         await d.close()
 

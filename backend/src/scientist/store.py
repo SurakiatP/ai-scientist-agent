@@ -29,7 +29,7 @@ MAX_TURNS, MAX_IDX, MAX_FILES, MAX_PROJECTS = 500, 999, 1000, 200
 MAX_VERSION = 2_000_000_000
 MAX_JSON_BYTES = [200_000]  # per-JSON-field cap; main.py sets it from settings
 MIN_WHEN = datetime(2000, 1, 1, tzinfo=timezone.utc)
-Mode = Literal["deep", "quick", "chat", "analysis"]
+Mode = Literal["deep", "quick", "chat", "analysis", "docs"]
 Status = Literal["running", "done", "refused", "error", "stopped", "interrupted", "awaiting_plan"]
 TABLES = {"project": m.projects, "session": m.sessions, "file": m.files}
 

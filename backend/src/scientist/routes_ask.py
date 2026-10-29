@@ -1,6 +1,7 @@
 """POST /v1/async/ask: one research question in, a server-sent event stream out (see events.py)."""
 import asyncio
 import logging
+import re
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from typing import Literal
@@ -9,7 +10,7 @@ import anyio
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi import HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from scientist.config import get_settings
 from scientist.events import Error, Event, to_sse
@@ -52,7 +53,8 @@ class PlanSearch(BaseModel):
 
 class AskRequest(BaseModel):
     question: str
-    mode: Literal["deep", "quick", "chat"] = "deep"
+    mode: Literal["deep", "quick", "chat", "docs"] = "deep"
+    doc_ids: list[str] = []  # mode docs: 1-5 ids of attached PDFs (checked against the files table by the run service)
     memory: list[MemoryTurn] = []
     history: list[HistoryTurn] = Field(default=[], max_length=20)
     plan: list[PlanSearch] | None = Field(default=None, max_length=20)
@@ -68,6 +70,15 @@ class AskRequest(BaseModel):
         if len(v) > (limit := get_settings().max_question_chars):
             raise ValueError(f"question is longer than {limit} characters")
         return v
+
+    @model_validator(mode="after")
+    def _docs(self):
+        if self.mode != "docs":
+            self.doc_ids = []  # no meaning outside docs mode
+        elif not 1 <= len(self.doc_ids) <= 5 or len(set(self.doc_ids)) != len(self.doc_ids) \
+                or not all(re.fullmatch(r"[0-9a-f]{32}", i) for i in self.doc_ids):
+            raise ValueError("docs mode needs 1 to 5 different document ids")
+        return self
 
     @field_validator("pack")
     @classmethod
@@ -135,6 +146,8 @@ async def _sse(events: AsyncIterator[Event], ping: float) -> AsyncIterator[str]:
 @router.post("/v1/async/ask")
 async def ask_route(body: AskRequest, request: Request) -> StreamingResponse:
     st = request.app.state
+    if body.mode == "docs" and (st.db is None or body.plan_only):  # documents are indexed in the database and answered as a run
+        raise HTTPException(503 if st.db is None else 422, "documents need the shared store" if st.db is None else "plan_only does not apply to docs")
     if st.db is not None and not body.plan_only:  # runs belong to the server; plan review stays here (it is short)
         return JSONResponse({"detail": "use POST /v1/runs", "code": "use_runs"}, status_code=409)
     if (body.plan_only or body.mode == "chat") and st.gate.free == 0 and len(st.gate.queue) >= st.settings.analyze_max_queue:  # same cap as analyze
