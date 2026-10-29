@@ -1,9 +1,29 @@
 #!/bin/sh
 # Entrypoint of the `sandbox` service: stock dind entrypoint plus an egress filter for branch containers.
 # Agent code in branch containers has internet egress (NAT via sandbox-egress); this blocks private/link-local/loopback
-# destinations (the backend, the VM host, cloud metadata 169.254.169.254). If the rules cannot be installed we exit
-# non-zero instead of running unfiltered.
+# destinations (the backend, the VM host, cloud metadata 169.254.169.254). Fails closed: if the rules cannot be installed
+# or verified we exit non-zero instead of running unfiltered. The compose environment sets DOCKER_IPTABLES_LEGACY=""
+# so dockerd uses the same (nft) backend as the `iptables` called here and in the healthcheck.
 set -eu
+
+fill() {
+  iptables -N DOCKER-USER 2>/dev/null || true
+  iptables -F DOCKER-USER || return 1
+  iptables -A DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT || return 1
+  for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10 127.0.0.0/8; do
+    iptables -A DOCKER-USER -d "$net" -j DROP || return 1
+  done
+  iptables -A DOCKER-USER -j RETURN || return 1
+}
+verify() {
+  iptables -C FORWARD -j DOCKER-USER || return 1
+  for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10 127.0.0.0/8; do
+    iptables -C DOCKER-USER -d "$net" -j DROP || return 1
+  done
+}
+
+# Fill the chain before dockerd starts (on a restart it leaves an existing DOCKER-USER chain alone), verify after.
+fill || { echo "sandbox-entrypoint: could not install the DOCKER-USER egress filter" >&2; exit 1; }
 
 dockerd-entrypoint.sh "$@" &
 pid=$!
@@ -16,23 +36,15 @@ until DOCKER_HOST=tcp://localhost:2376 DOCKER_TLS_VERIFY=1 DOCKER_CERT_PATH=/cer
   sleep 1
 done
 
-setup() {
-  iptables -N DOCKER-USER 2>/dev/null || true
-  iptables -F DOCKER-USER
-  iptables -A DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-  for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10 127.0.0.0/8; do
-    iptables -A DOCKER-USER -d "$net" -j DROP
-  done
-  iptables -A DOCKER-USER -j RETURN
-}
-if ! setup; then
-  echo "sandbox-entrypoint: could not install the DOCKER-USER egress filter" >&2
+if ! verify; then
+  echo "sandbox-entrypoint: egress filter missing after dockerd start (iptables backend mismatch?)" >&2
   kill -TERM "$pid" 2>/dev/null || true
   exit 1
 fi
 
-# wait returns early on a trapped signal; wait again for the real exit code.
+# wait returns early on a trapped signal; wait again for dockerd's real exit code.
 rc=0
 wait "$pid" || rc=$?
-if kill -0 "$pid" 2>/dev/null; then wait "$pid" || rc=$?; fi
+rc=0
+wait "$pid" || rc=$?
 exit "$rc"

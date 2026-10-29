@@ -73,6 +73,7 @@ services:
     entrypoint: ["sh", "/sandbox-entrypoint.sh"]
     environment:
       DOCKER_TLS_CERTDIR: /certs
+      DOCKER_IPTABLES_LEGACY: ""  # set-but-empty makes dind use nft (the `iptables` the filter and healthcheck call); non-empty would force legacy
     volumes:
       - ./deploy/sandbox-entrypoint.sh:/sandbox-entrypoint.sh:ro
       - sandbox-certs:/certs
@@ -83,7 +84,7 @@ services:
     cpus: ${SANDBOX_CPUS:-4}
     pids_limit: ${SANDBOX_PIDS_LIMIT:-4096}
     healthcheck:
-      test: ["CMD-SHELL", "DOCKER_HOST=tcp://localhost:2376 DOCKER_TLS_VERIFY=1 DOCKER_CERT_PATH=/certs/client docker version && iptables -C DOCKER-USER -d 169.254.0.0/16 -j DROP"]
+      test: ["CMD-SHELL", "DOCKER_HOST=tcp://localhost:2376 DOCKER_TLS_VERIFY=1 DOCKER_CERT_PATH=/certs/client docker version && iptables -C FORWARD -j DOCKER-USER && iptables -C DOCKER-USER -d 169.254.0.0/16 -j DROP"]
       interval: 5s
       timeout: 5s
       retries: 24
