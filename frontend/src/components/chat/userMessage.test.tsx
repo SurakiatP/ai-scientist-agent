@@ -61,7 +61,22 @@ describe("UserMessage actions", () => {
     cleanup();
     setup([mkTurn("b", { kind: "analysis", analysis: { fileId: "f1", fileName: "d.csv", steps: [] } })]);
     fireEvent.click(btn(t.retryMsg));
-    expect(run.startAnalysis).toHaveBeenCalledWith(expect.any(String), "คำถามแรก", "f1", "d.csv");
+    expect(run.startAnalysis).toHaveBeenCalledWith(expect.any(String), "คำถามแรก", "f1", "d.csv", undefined);
+  });
+  it("retry and edit keep the field pack of the turn", () => {
+    setup([mkTurn("a", { pack: "chem" })]);
+    fireEvent.click(btn(t.retryMsg));
+    expect(run.startRun).toHaveBeenLastCalledWith(expect.any(String), "คำถามแรก", { mode: "quick", pack: "chem" });
+    fireEvent.click(btn(t.editMsg));
+    edit("ใหม่");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(run.startRun).toHaveBeenLastCalledWith(expect.any(String), "ใหม่", { mode: "quick", pack: "chem" });
+    cleanup();
+    setup([mkTurn("b", { kind: "analysis", pack: "ml", analysis: { fileId: "f1", fileName: "d.csv", steps: [] } })]);
+    fireEvent.click(btn(t.editMsg));
+    edit("ใหม่");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(run.startAnalysis).toHaveBeenLastCalledWith(expect.any(String), "ใหม่", "f1", "d.csv", "ml");
   });
   it("retry and edit are disabled while a run is active", () => {
     run.turnId = "x";
@@ -145,6 +160,6 @@ describe("UserMessage edit", () => {
     fireEvent.click(btn(t.editMsg));
     edit("ใหม่");
     fireEvent.keyDown(box(), { key: "Enter" });
-    expect(run.startAnalysis).toHaveBeenCalledWith(expect.any(String), "ใหม่", "f1", undefined);
+    expect(run.startAnalysis).toHaveBeenCalledWith(expect.any(String), "ใหม่", "f1", undefined, undefined);
   });
 });

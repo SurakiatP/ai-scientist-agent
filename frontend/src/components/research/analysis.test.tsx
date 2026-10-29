@@ -34,6 +34,16 @@ beforeEach(() => {
 });
 const tab = (name: string) => fireEvent.click(screen.getByRole("tab", { name }));
 
+describe("field caption", () => {
+  it("names the pack on the analysis header; General and unknown ids show nothing", () => {
+    const { unmount } = render(<AnalysisArtifact turn={{ ...base(data), pack: "chem" }} />);
+    expect(screen.getByText("Field: Cheminformatics")).toBeInTheDocument();
+    unmount();
+    render(<AnalysisArtifact turn={{ ...base(data), pack: "nope" as never }} />);
+    expect(screen.queryByText(/^Field:/)).toBeNull();
+  });
+});
+
 describe("provenance button", () => {
   it("shows only when the analysis has provenance", () => {
     const { unmount } = render(<AnalysisArtifact turn={base(data)} />);

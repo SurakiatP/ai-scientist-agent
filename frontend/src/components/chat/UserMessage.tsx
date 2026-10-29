@@ -1,4 +1,5 @@
 "use client";
+import { usablePack } from "@/lib/packs";
 import { srOnly } from "@/lib/config";
 import { useRef, useState } from "react";
 import { Box, Button, IconButton, Stack, TextField, Tooltip, Typography } from "@mui/material";
@@ -31,7 +32,7 @@ export async function copyText(text: string): Promise<boolean> {
 
 // Same run the first send would start: analysis turns keep their file, others keep their mode.
 const ask = (sessionId: string, turn: Turn, question: string) =>
-  turn.analysis ? startAnalysis(sessionId, question, turn.analysis.fileId, turn.analysis.fileName) : startRun(sessionId, question, { mode: turn.mode });
+  turn.analysis ? startAnalysis(sessionId, question, turn.analysis.fileId, turn.analysis.fileName, usablePack(turn.pack)) : startRun(sessionId, question, { mode: turn.mode, pack: usablePack(turn.pack) });
 
 const fine = "@media (hover: hover) and (pointer: fine)";
 const btn = { width: 44, height: 44, color: "text.secondary" };

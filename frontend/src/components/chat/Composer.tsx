@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Box, Button, CircularProgress, IconButton, InputBase, Menu, MenuItem, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, IconButton, InputBase, Menu, MenuItem, Tooltip, Typography } from "@mui/material";
 import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
@@ -17,7 +17,7 @@ import { registerUpload, useAttach } from "@/lib/files";
 import { ease, enterPop } from "@/lib/motion";
 import { API_BASE } from "@/lib/config";
 import { useT, usePrefs } from "@/lib/prefs";
-import { PACK_IDS, packName, type PackId } from "@/lib/packs";
+import { PACK_IDS, packName, usablePack, type PackId } from "@/lib/packs";
 import { canStart, startAnalysis, startError, startRun, stopRun, useRunState } from "@/lib/run";
 import { UploadError, uploadFile, type AskMode } from "@/lib/sse";
 import { MAX_QUESTION } from "@/lib/strings";
@@ -35,8 +35,11 @@ export const useStartErr = create<{ by: Record<string, string>; set: (sid: strin
   set: (sid, msg) => set((d) => ({ by: { ...d.by, [sid]: msg } })),
 }));
 export const useMode = create<{ mode: AskMode; set: (m: AskMode) => void }>((set) => ({ mode: "deep", set: (mode) => set({ mode }) }));
-// The chosen field pack, shared like the mode (in memory only); undefined = General.
-export const usePack = create<{ pack: PackId | undefined; set: (p: PackId | undefined) => void }>((set) => ({ pack: undefined, set: (pack) => set({ pack }) }));
+// The chosen field pack per session (in memory); a session without a pick uses the pack of its latest non-chat turn, so a reload restores it. undefined = General.
+export const usePack = create<{ by: Record<string, PackId | undefined>; set: (sid: string, p: PackId | undefined) => void }>((set) => ({
+  by: {},
+  set: (sid, p) => set((d) => ({ by: { ...d.by, [sid]: p } })),
+}));
 export const focusComposer = () => document.getElementById("composer")?.focus();
 
 type Attached = { name: string; size: number; status: "uploading" | "ready" | "error"; fileId?: string; error?: string };
@@ -54,7 +57,8 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   // "Answer research" needs this session's own finished answers; without them the pill shows (and sends) deep
   const hasMemory = useChatStore((s) => !!s.sessions.find((x) => x.id === sessionId)?.turns.some((x) => x.status === "done" && !!x.answer?.content.trim()));
   const mode: AskMode = picked === "chat" && !hasMemory ? "deep" : picked;
-  const pack = usePack((s) => s.pack), setPack = usePack((s) => s.set), lang = usePrefs((s) => s.lang);
+  const lastPack = useChatStore((s) => usablePack([...(s.sessions.find((x) => x.id === sessionId)?.turns ?? [])].reverse().find((x) => x.mode !== "chat")?.pack));
+  const pack = usePack((s) => sessionId in s.by ? s.by[sessionId] : lastPack), setPack = usePack((s) => s.set), lang = usePrefs((s) => s.lang);
   const packText = (p: PackId | undefined) => p ? packName(p, lang) : t.packGeneral;
   const modeName = (m: AskMode) => m === "deep" ? t.modeDeep : m === "chat" ? t.modeChat : t.modeQuick;
   const [attachOff, setAttachOff] = useState(false); // backend says uploads/analysis cannot work: say so instead of failing after the upload
@@ -69,6 +73,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const [modeAnchor, setModeAnchor] = useState<HTMLElement | null>(null);
   const [packAnchor, setPackAnchor] = useState<HTMLElement | null>(null);
   const [file, setFile] = useState<Attached | null>(null);
+  const packOff = mode === "chat" && !file; // an analysis (file attached) uses the field even from answer mode
   const picker = useRef<HTMLInputElement>(null);
   const upload = useRef<AbortController | null>(null);
   useEffect(() => () => upload.current?.abort(), []);
@@ -212,23 +217,28 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               })}
             </Menu>
             {/* the field: same chip + menu pattern as the mode; outlined = General, tinted = a field is set. Answer-from-memory searches nothing, so it has no field */}
-            <Button color="inherit" variant="outlined" disabled={mode === "chat"} aria-haspopup="menu" aria-expanded={!!packAnchor}
-              aria-label={`${t.packLabel}: ${packText(pack)}`} onClick={(e) => setPackAnchor(e.currentTarget)}
-              startIcon={<ScienceOutlinedIcon sx={{ color: mode === "chat" ? "inherit" : "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
-              sx={{
-                borderRadius: 99, fontSize: "0.875rem", px: 1.5, minHeight: 44, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap", maxWidth: { xs: 190, sm: 240 },
-                "& .MuiButton-startIcon": { mr: 0.5 }, "& .MuiButton-endIcon": { ml: 0.5 },
-                ...(pack
-                  ? { borderColor: "primary.main", bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)", color: "text.primary", fontWeight: 600,
-                      "&:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 22%, transparent)", borderColor: "primary.main" } }
-                  : { borderColor: "divider", fontWeight: 400 }),
-              }}>
-              <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis" }}>{packText(pack)}</Box>
-            </Button>
+            <Tooltip title={packOff ? t.packOffChat : ""}>
+              <Button color="inherit" variant="outlined" aria-disabled={packOff || undefined} aria-haspopup="menu" aria-expanded={!!packAnchor} aria-describedby={packOff ? "pack-off" : undefined}
+                aria-label={`${t.packLabel}: ${packText(pack)}`} onClick={(e) => { if (!packOff) setPackAnchor(e.currentTarget); }}
+                startIcon={<ScienceOutlinedIcon sx={{ color: packOff ? "inherit" : "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
+                sx={{
+                  borderRadius: 99, fontSize: "0.875rem", px: 1.5, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap", maxWidth: { xs: 190, sm: 240 },
+                  "& .MuiButton-startIcon": { mr: 0.5 }, "& .MuiButton-endIcon": { ml: 0.5 },
+                  ...(packOff
+                    ? { bgcolor: "action.disabledBackground", color: "text.disabled", borderColor: "transparent", fontWeight: 400, cursor: "default", "&:hover": { bgcolor: "action.disabledBackground", borderColor: "transparent" } }
+                    : pack
+                      ? { borderColor: "primary.main", bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)", color: "text.primary", fontWeight: 600,
+                          "&:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 22%, transparent)", borderColor: "primary.main" } }
+                      : { borderColor: "divider", fontWeight: 400 }),
+                }}>
+                <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis" }}>{packText(pack)}</Box>
+              </Button>
+            </Tooltip>
+            {packOff && <Box id="pack-off" component="span" hidden>{t.packOffChat}</Box>}
             <Menu anchorEl={packAnchor} open={!!packAnchor} onClose={() => setPackAnchor(null)} slotProps={{ list: { "aria-label": t.choosePack } }}>
               {([undefined, ...PACK_IDS] as (PackId | undefined)[]).map((p) => (
                 <MenuItem key={p ?? "general"} selected={p === pack} role="menuitemradio" aria-checked={p === pack} sx={{ minHeight: 44 }}
-                  onClick={() => { setPack(p); setPackAnchor(null); }}>
+                  onClick={() => { setPack(sessionId, p); setPackAnchor(null); }}>
                   {packText(p)}
                 </MenuItem>
               ))}

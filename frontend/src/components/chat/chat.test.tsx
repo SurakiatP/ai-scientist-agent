@@ -48,7 +48,7 @@ beforeEach(() => {
   upload.fn.mockReset();
   useDraft.setState({ drafts: {} });
   useMode.setState({ mode: "deep" });
-  usePack.setState({ pack: undefined });
+  usePack.setState({ by: {} });
 });
 afterEach(cleanup);
 
@@ -76,11 +76,37 @@ describe("Composer", () => {
     fireEvent.keyDown(box(), { key: "Enter" });
     expect(run.startRun).toHaveBeenCalledWith(id, "hello", { mode: "deep", pack: "chem" });
   });
-  it("the field picker is disabled in answer-from-memory mode", () => {
+  it("the field is per session: picking in A leaves B on General", () => {
+    const a = "sess-a", b = "sess-b";
+    usePack.getState().set(a, "med");
+    const { unmount } = render(<Composer sessionId={a} />);
+    expect(screen.getByRole("button", { name: `${t.packLabel}: การแพทย์` })).toBeInTheDocument();
+    unmount();
+    render(<Composer sessionId={b} />);
+    expect(screen.getByRole("button", { name: `${t.packLabel}: ${t.packGeneral}` })).toBeInTheDocument();
+  });
+  it("a fresh store restores the field from the latest non-chat turn; a new chat is General", () => {
+    const id = mk([turn("done", { pack: "bio" }), turn("done", { mode: "chat", answer: { content: "a", references: [] } })]);
+    render(<Composer sessionId={id} />);
+    expect(screen.getByRole("button", { name: `${t.packLabel}: ชีวสารสนเทศ` })).toBeInTheDocument();
+  });
+  it("in answer-from-memory mode the field chip stays focusable, explains itself and does nothing", () => {
     const id = mk([turn("done", { answer: { content: "a", references: [] } })]);
     useMode.setState({ mode: "chat" });
     render(<Composer sessionId={id} />);
-    expect(screen.getByRole("button", { name: new RegExp(t.packLabel) })).toBeDisabled();
+    const chip = screen.getByRole("button", { name: new RegExp(t.packLabel) });
+    expect(chip).not.toBeDisabled();
+    expect(chip).toHaveAttribute("aria-disabled", "true");
+    expect(chip).toHaveAccessibleDescription(t.packOffChat);
+    fireEvent.click(chip);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+  it("with a file attached the field chip is on even in answer mode (analysis uses it)", async () => {
+    const id = mk([turn("done", { answer: { content: "a", references: [] } })]);
+    useMode.setState({ mode: "chat" });
+    useAttach.setState({ file: { id: "f9", name: "lib.csv", size: 1 } });
+    render(<Composer sessionId={id} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: new RegExp(t.packLabel) })).not.toHaveAttribute("aria-disabled", "true"));
   });
 
   it("Enter while IME composing does not send", () => {

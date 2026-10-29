@@ -73,7 +73,8 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const cost = usage && (usage.cost_usd === null ? t.runTokens : t.runCost)
     .replace("{cost}", `${usage.estimated ? "~" : ""}$${(usage.cost_usd ?? 0).toFixed(3)}`)
     .replace("{tokens}", (usage.prompt_tokens + usage.completion_tokens).toLocaleString(lang === "en" ? "en-US" : "th-TH"));
-  const field = usablePack(turn.pack) && t.packCaption.replace("{name}", packName(usablePack(turn.pack)!, lang));
+  const turnPack = usablePack(turn.pack);
+  const field = turnPack && t.packCaption.replace("{name}", packName(turnPack, lang));
   const replans = turn.progress.replans ?? [];
   const sourceIds = sourceNames(ids) ? ids : null; // no wrapper at all when no known source is to be named
   const [tab, setTab] = useState<"answer" | "sources">("answer");
