@@ -99,25 +99,50 @@ def _squash(s: str) -> str:
     return " ".join(s.split())
 
 
+def _pool(text: str, refs: list[Reference]) -> dict[str, Reference]:
+    """References the reviewer sees: cited in the part of the answer that is sent, with an abstract, first 30."""
+    cited = {m[1] for m in re.finditer(r"\[(\d+)\]", text[:20000])}
+    return dict(list({r.id: r for r in refs if r.id in cited and r.paper.abstract}.items())[:30])
+
+
+def _trim(text: str, refs: list[Reference]) -> list[Reference]:
+    """Abstracts stay only on reviewed references, so a stored answer never carries 100 of them."""
+    keep = _pool(text, refs)
+    return [r if r.id in keep or not r.paper.abstract else r.model_copy(update={"paper": r.paper.model_copy(update={"abstract": None})})
+            for r in refs]
+
+
+def _exact(quote: str, abstract: str) -> bool:
+    """A quote of at least 20 chars that is a substring of the abstract (whitespace collapsed, case-sensitive) and
+    starts and ends on word boundaries, so "0% efficiency" is not a quote of "60% efficiency"."""
+    if len(quote) < 20 or len(quote) > 600:
+        return False
+    i = abstract.find(quote)
+    while i >= 0:
+        j = i + len(quote)
+        if (i == 0 or not abstract[i - 1].isalnum()) and (j == len(abstract) or not abstract[j].isalnum()):
+            return True
+        i = abstract.find(quote, i + 1)
+    return False
+
+
 async def _review(text: str, refs: list[Reference], settings: Settings) -> list[Reference] | None:
     """Check each claim cited to a reference with an abstract. Returns the references with `checks`, or None when there is
-    nothing to review or anything fails (the answer then goes out as without review). A quote survives only as an exact,
-    case-sensitive substring of that abstract after collapsing whitespace; otherwise the check becomes no_quote."""
-    cited = {m[1] for m in re.finditer(r"\[(\d+)\]", text)}
-    pool = {r.id: r for r in refs if r.id in cited and r.paper.abstract}
-    for k in list(pool)[30:]:  # at most 30 references go to the reviewer
-        del pool[k]
+    nothing to review or anything fails (the answer then goes out as without review). A quote survives only if _exact;
+    otherwise the check becomes no_quote."""
+    pool = _pool(text, refs)
     if not pool:
         return None
     data = {"answer": text[:20000],
             "references": [{"id": r.id, "title": r.paper.title, "abstract": r.paper.abstract} for r in pool.values()]}
     user = "<data>\n" + json.dumps(data, ensure_ascii=False, indent=1).replace("<", "\\u003c") + "\n</data>"
     try:
-        r = await llm.complete(REVIEW, user, max_tokens=settings.review_max_tokens, json_mode=True, settings=settings)
-        raw = json.loads(r.text)["checks"]
+        async with asyncio.timeout(60):
+            r = await llm.complete(REVIEW, user, max_tokens=settings.review_max_tokens, json_mode=True, settings=settings)
+            raw = json.loads(r.text)["checks"]
         if not isinstance(raw, list):
             return None
-    except Exception:
+    except Exception:  # includes TimeoutError
         return None
     checks: dict[str, list[Check]] = {}
     total = 0
@@ -127,7 +152,7 @@ async def _review(text: str, refs: list[Reference], settings: Settings) -> list[
             if ref not in pool or support not in ("supported", "partial", "unsupported", "no_quote") or len(checks.get(ref, [])) >= 5 or total >= 60:
                 continue
             quote = _squash(c["quote"]) if isinstance(c.get("quote"), str) else ""
-            if quote and quote not in _squash(pool[ref].paper.abstract) or len(quote) > 600:
+            if quote and not _exact(quote, _squash(pool[ref].paper.abstract)):
                 quote = ""
             if support in ("supported", "partial") and not quote:
                 support = "no_quote"
@@ -324,7 +349,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     if not answers:  # papers but no branch summary: say so plainly; never synthesise a comparison from titles alone
         yield FinalAnswer(content=f"Found {len(refs)} paper(s), but the search did not finish summarising them. "
                                   "The references below were found and checked; try again or narrow the question."
-                                  + note, references=refs, records=final_records,
+                                  + note, references=_trim("", refs), records=final_records,
                           usage=usage.snapshot())
         yield Complete()
         return
@@ -342,7 +367,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
         if ids := "".join(f"[{x.id}]" for x in refs if any(c.support == "unsupported" for c in x.checks)):
             note += (f"\n\nNote: the reviewer found that reference(s) {ids} do not support the claim they are cited for. "
                      "Treat those claims with caution.")
-    yield FinalAnswer(content=text + note, references=refs, records=final_records, usage=usage.snapshot())
+    yield FinalAnswer(content=text + note, references=_trim(text, refs), records=final_records, usage=usage.snapshot())
     yield Complete()
 
 

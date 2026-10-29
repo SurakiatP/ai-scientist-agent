@@ -808,13 +808,13 @@ async def test_injection_stays_in_data_block_and_prompt_says_data_is_not_instruc
 
 
 async def test_unknown_or_uncited_refs_dropped_and_caps(settings, tmp_path, fake_complete):
-    papers = [apaper(f"P{i}", f"10.1/p{i}") for i in range(1, 13)]
-    many = [(str(i), f"c{j}", "supported", None) for i in range(1, 13) for j in range(7)]
+    papers = [apaper(f"P{i}", f"10.1/p{i}") for i in range(1, 14)]
+    many = [(str(i), f"c{j}", "supported", None) for i in range(1, 14) for j in range(5)]
     final = await reviewed(settings, tmp_path, fake_complete,
                            review_reply(("7", "a", "supported", None), ("99", "b", "supported", None), *many),
-                           papers=papers, synthesis="Claim [1] [2] [3] [4] [5] [6] [7] [8] [9] [10] [11] [12] [99].")
+                           papers=papers, synthesis="Claim [1] [2] [3] [4] [5] [6] [7] [8] [9] [10] [11] [12] [13] [99].")
     assert all(len(r.checks) <= 5 for r in final.references)
-    assert sum(len(r.checks) for r in final.references) == 60
+    assert sum(len(r.checks) for r in final.references) == 60  # 13 refs x 5 = 65: the answer cap is what stops it
     assert not any(c.claim == "b" for r in final.references for c in r.checks)
     # an uncited reference is not reviewed
     final = await reviewed(settings, tmp_path, fake_complete, review_reply(("2", "a", "supported", None)),
@@ -827,7 +827,7 @@ async def test_reviewer_input_is_bounded(settings, tmp_path, fake_complete):
     s = settings.model_copy(update={"max_papers_per_branch": 40})
     fake_complete["strategy"] = strategy("a")
     fake_complete["review"] = review_reply()
-    fake_complete["synthesis"] = "x" * 30000 + "".join(f"[{i}]" for i in range(1, 36))
+    fake_complete["synthesis"] = "".join(f"[{i}]" for i in range(1, 36)) + "x" * 30000
     await run(Q, runner(s, tmp_path, {"a": papers + [answer("ok")]}), s.model_copy(update={"replan_rounds": 0}))
     [call] = review_calls(fake_complete)
     data = json.loads(call["user"].removeprefix("<data>\n").removesuffix("\n</data>"))
@@ -853,7 +853,7 @@ async def test_no_abstract_no_review_call(settings, tmp_path, fake_complete):
     assert review_calls(fake_complete) == [] and final.references[0].paper.abstract is None
 
 
-async def test_review_tokens_join_usage_and_quick_mode_reviews(settings, tmp_path, fake_complete):
+async def test_checks_and_abstract_reach_the_sse_json(settings, tmp_path, fake_complete):
     final = await reviewed(settings, tmp_path, fake_complete, review_reply(("1", "c", "supported", "Off-target edits were rare.")))
     assert final.references[0].checks[0].quote == "Off-target edits were rare."
     body = json.loads(to_sse(final).split("data: ", 1)[1])
@@ -866,3 +866,45 @@ def test_paper_abstract_stripped_capped_and_empty_is_none():
     assert Paper(title="t", url="https://x.org", abstract="  hi  ").abstract == "hi"
     assert len(Paper(title="t", url="https://x.org", abstract="a" * 5000).abstract) == 2000
     assert Paper(title="t", url="https://x.org", abstract="  ").abstract is None
+
+
+async def test_quote_must_be_long_enough_and_on_word_boundaries(settings, tmp_path, fake_complete):
+    final = await reviewed(settings, tmp_path, fake_complete, review_reply(
+        ("1", "a", "supported", "0% efficiency in HEK293 cells."),  # starts inside "60%"
+        ("1", "b", "supported", "reach 60% efficiency in HEK"),  # ends inside "HEK293"
+        ("1", "c", "supported", "Off-target"),  # under 20 chars
+        ("1", "d", "supported", "Off-target edits were rare.")))
+    assert [x.support for x in final.references[0].checks] == ["no_quote", "no_quote", "no_quote", "supported"]
+
+
+async def test_review_timeout_leaves_answer_unchanged(settings, tmp_path, fake_complete, monkeypatch):
+    from scientist import llm as llm_mod, pipeline
+    real, orig = asyncio.timeout, llm_mod.complete
+
+    async def hang(system, *a, **k):
+        if system == REVIEW:
+            await asyncio.sleep(30)
+        return await orig(system, *a, **k)
+    monkeypatch.setattr(llm_mod, "complete", hang)
+    monkeypatch.setattr(pipeline.asyncio, "timeout", lambda _s: real(0.05))
+    final = await reviewed(settings, tmp_path, fake_complete, review_reply(("1", "c", "unsupported", None)))
+    assert "reviewer" not in final.content and final.references[0].checks == []
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_only_cited_references_keep_abstracts_and_answer_stays_small(settings, tmp_path, fake_complete, enabled):
+    papers = [apaper(f"P{i}", f"10.1/p{i}", "word " * 400) for i in range(1, 101)]
+    s = settings.model_copy(update={"max_papers_per_branch": 100, "review_enabled": enabled})
+    final = await reviewed(s, tmp_path, fake_complete, review_reply(), papers=papers, synthesis="A [1] B [2] C [3].")
+    assert [r.id for r in final.references if r.paper.abstract] == ["1", "2", "3"]
+    assert len(json.dumps(final.model_dump(mode="json"))) < 200_000
+
+
+async def test_quick_mode_also_reviews(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    fake_complete["review"] = review_reply(("1", "c", "unsupported", None))
+    fake_complete["synthesis"] = "Claim [1]."
+    rt = runner(settings, tmp_path, {"a": [apaper("P", "10.1/p"), answer("ok")]})
+    events = [e async for e in ask(Q, rt, settings=settings, client=crossref(), gate=RunGate(4), mode="quick")]
+    assert len(review_calls(fake_complete)) == 1
+    assert "do not support" in next(e for e in events if isinstance(e, FinalAnswer)).content
