@@ -40,7 +40,7 @@ def client_id(x_client_id: Annotated[str | None, Header()] = None) -> str:
 
 @router.get("/status")
 async def status(svc: RunService = Depends(service)):
-    return svc.queue.status()
+    return await svc.queue.status()
 
 
 @router.post("", status_code=202, dependencies=[Depends(service)])
@@ -63,7 +63,7 @@ async def submit(body: RunIn, request: Request, cid: str = Depends(client_id), s
 async def get_run(rid: Uid, x_client_id: Annotated[str | None, Header()] = None, svc: RunService = Depends(service)):
     if (row := await svc.get(rid)) is None:
         raise HTTPException(404, "run not found")
-    return svc.view(row, x_client_id)
+    return await svc.view(row, x_client_id)
 
 
 @router.post("/{rid}/cancel")
@@ -74,7 +74,7 @@ async def cancel(rid: Uid, cid: str = Depends(client_id), svc: RunService = Depe
         raise HTTPException(403, "only the browser that started this run can cancel it")
     if row is None:
         raise HTTPException(404, "run not found")
-    return svc.view(row, cid)
+    return await svc.view(row, cid)
 
 
 @router.get("/{rid}/events")

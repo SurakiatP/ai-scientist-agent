@@ -66,7 +66,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                 try:
                     await app.state.runs.startup()
                 except Exception:
-                    log.exception("could not mark unfinished runs as interrupted")
+                    log.exception("could not start the run scheduler")
             try:
                 yield
             finally:
@@ -115,7 +115,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
   # None = database disabled; the engine connects lazily, so a down DB cannot break boot
     app.state.settings, app.state.gate = settings, RunGate(settings.max_concurrent_runs)
     app.state.analyze_gate = RunGate(settings.sandbox_max_concurrent)
-    app.state.queue = RunQueue(settings)
+    app.state.queue = RunQueue(settings, app.state.db)
     app.state.runs = RunService(app.state, app.state.data, app.state.queue) if app.state.data else None
     app.state.preview_gate = RunGate(settings.preview_max_concurrent)
     app.state.translate_gate = RunGate(2)

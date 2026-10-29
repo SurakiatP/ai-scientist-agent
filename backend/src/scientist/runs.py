@@ -3,9 +3,11 @@ fanned out, and the turn in the shared store is kept up to date by the server.""
 import asyncio
 import json
 import logging
+import os
+import socket
 import time
 import uuid
-from contextlib import aclosing
+from contextlib import aclosing, asynccontextmanager
 
 import sqlalchemy as sa
 from fastapi import HTTPException
@@ -17,6 +19,7 @@ from scientist.docs_answer import answer_docs
 from scientist.events import Error
 from scientist.routes_analyze import _slot, prepare
 from scientist.pipeline import ask
+from scientist.pgbus import GAP
 from scientist.runqueue import RunQueue, Ticket
 from scientist.store import MAX_IDX, MAX_JSON_BYTES, Conflict, Gone, Invalid, NotFound, Store, TooMany, _row
 from scientist.usage import track
@@ -30,6 +33,9 @@ REFUSAL_CODES = {"out_of_scope", "injection", "needs_search", "use_research", "e
 CUT_OFF = "The run ended before it finished. Please try again."
 FAILED = "Something went wrong. Please try again."
 TERMINAL = ("done", "refused", "error", "stopped", "interrupted")
+POLL_EVENTS = 2.0  # a viewer re-reads the event table at least this often, whatever the notifications did
+CANCEL_WAIT = 10.0  # a cancel waits this long for the owner's final write
+LOST = "The run was interrupted."
 
 
 def _seen(p: dict, ids: list) -> dict:
@@ -59,6 +65,8 @@ def reduce_progress(p: dict, e: dict) -> dict:
         return {**p, "answered": [*p["answered"], e["term"]], "writing": True, "phase": "writing"}
     if t in ("final_answer", "complete"):
         return {**p, "writing": False, "phase": "done"}
+    if t == "restarted":  # the run starts over after its process died: nothing so far counts (the docs picked stay)
+        return {**EMPTY_PROGRESS, **({"_docs": p["_docs"]} if "_docs" in p else {})}
     return p
 
 
@@ -80,8 +88,6 @@ class Run:
 
     def __init__(self, row: dict, ticket: Ticket, body, file_name: str, ext: str):
         self.row, self.id, self.ticket, self.body, self.file_name, self.ext = row, row["id"], ticket, body, file_name, ext
-        self.seq = 0
-        self.subs: set[asyncio.Queue] = set()
         self.task: asyncio.Task | None = None
         self.timer: asyncio.Task | None = None  # trailing flush of the throttled turn write
         self.progress, self.analysis = dict(EMPTY_PROGRESS), None
@@ -90,18 +96,57 @@ class Run:
         self.gone = False  # the turn was removed under the run
         self.stopped = False  # a user cancel was accepted
         self.ending = False  # the final write has started: nothing may cancel the task any more
+        self.lost = False  # the lease was lost to another process: this copy must write nothing more
 
     def cancel_task(self) -> None:
         if not self.ending and not self.task.cancelling():
             self.task.cancel()
 
 
+class _Never:
+    """A subscription that never delivers (no PgBus): waits time out and the loops fall back to polling."""
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        await asyncio.Event().wait()
+
+
 class RunService:
     def __init__(self, st, data: Store, queue: RunQueue):
         self.st, self.data, self.queue = st, data, queue  # st: app.state (runner, client, store are set at startup)
-        self.live: dict[str, Run] = {}
+        self.pid = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:6]}"  # this process, for leases
+        self.live: dict[str, Run] = {}  # the runs executing in this process
         self.closing = False
         self._bg: set[asyncio.Task] = set()
+        self._loops: list[asyncio.Task] = []
+
+    # --- cross-process plumbing -----------------------------------------------------------------------------------------
+    @asynccontextmanager
+    async def _listen(self, channel: str):
+        if bus := getattr(self.st, "pgbus", None):
+            async with bus.subscribe(channel) as it:
+                yield it
+        else:
+            yield _Never()
+
+    async def _notify(self, channel: str, payload: str, s=None) -> None:
+        if bus := getattr(self.st, "pgbus", None):
+            await bus.notify(channel, payload, session=s)
+
+    @staticmethod
+    async def _wait(it, timeout: float, match=lambda _: True) -> bool:
+        """Until a notification for `match` (or GAP: something may have been missed) arrives; False on timeout."""
+        end = time.monotonic() + timeout
+        while (left := end - time.monotonic()) > 0:
+            try:
+                msg = await asyncio.wait_for(anext(it), left)
+            except asyncio.TimeoutError:
+                return False
+            if msg is GAP or match(msg):
+                return True
+        return False
 
     # --- submit ----------------------------------------------------------------------------------------------------
     async def submit(self, body, client_id: str) -> dict:
@@ -116,22 +161,9 @@ class RunService:
                 raise Invalid("file_id is required")
             _, name, ext = await prepare(self.st, body.file_id)
         rid = str(uuid.uuid4())
-        self.queue.admit(client_id)  # Rejected -> 429; no await between admit and ticket
-        ticket = self.queue.ticket(rid, client_id, "analysis" if analyze or docs else "research")  # docs read PDFs in the sandbox: its pool
-        try:
-            row, turn = await self._create(body, client_id, rid, name, picked)
-        except BaseException:
-            ticket.close()
-            raise
-        run = Run(row, ticket, body, name, ext)
-        if picked:
-            run.progress = {**run.progress, "_docs": picked}
-        self.live[rid] = run
-        run.task = asyncio.create_task(self._run(run))
-        self._bg.add(run.task)
-        run.task.add_done_callback(self._bg.discard)
-        run.task.add_done_callback(lambda _: ticket.close())  # whatever happened, the slot is given back
-        return {"run": self.view(row, client_id), "turn": turn}
+        pool = "analysis" if analyze or docs else "research"  # docs read PDFs in the sandbox: its pool
+        row, turn = await self._create(body, client_id, rid, name, picked, pool)  # Rejected -> 429; a scheduler claims it
+        return {"run": await self.view(row, client_id), "turn": turn}
 
     async def _check_docs(self, ids: list[str]) -> list[dict]:
         """422 unless every id is a live (not deleted) PDF file of the shared store. Returns [{id, name}] in request order."""
@@ -146,10 +178,13 @@ class RunService:
             raise HTTPException(503, "file storage unavailable")
         return [{"id": i, "name": ok[i][:500]} for i in ids]
 
-    async def _create(self, body, client_id: str, rid: str, file_name: str, picked: list[dict] | None = None) -> tuple[dict, dict]:
-        """The turn (new, or an approved plan) and the run row, in one transaction under the session lock."""
+    async def _create(self, body, client_id: str, rid: str, file_name: str, picked: list[dict] | None = None,
+                      pool: str = "research") -> tuple[dict, dict]:
+        """The turn (new, or an approved plan) and the run row, in one transaction under the session lock; the
+        admission caps are counted in the same transaction."""
         analyze = body.kind == "analyze"
         async with self.data.tx() as s:
+            await self.queue.admit(client_id, s)
             sess = await self.data._get(s, m.sessions, body.session_id)
             if sess is None or sess.deleted_at is not None:
                 raise NotFound("session")
@@ -181,11 +216,12 @@ class RunService:
                 raise Conflict("turn already exists")
             row = _row((await s.execute(sa.insert(m.runs).values(
                 id=rid, client_id=client_id, session_id=body.session_id, turn_id=body.turn_id, kind=body.kind,
-                mode="analysis" if analyze else body.mode, status="queued",
+                mode="analysis" if analyze else body.mode, status="queued", pool=pool,
                 request=body.model_dump(mode="json", exclude={"session_id", "turn_id"})).returning(m.runs))).one())
             await s.execute(sa.update(m.sessions).where(m.sessions.c.id == body.session_id)
                             .values(updated_at=sa.func.now(), sort_ts=sa.func.now()))
             await self.data._changed(s, "turn", turn, session_id=str(turn["session_id"]))
+            await self._notify("runs", rid, s)  # a scheduler (this process or another) claims it
         return row, turn
 
     # --- the run itself --------------------------------------------------------------------------------------------
@@ -205,12 +241,14 @@ class RunService:
 
     async def _run(self, run: Run) -> None:
         body, analyze = run.body, run.body.kind == "analyze"
-        run.ticket.on_start = lambda: self._spawn(self._mark(run))
-        if analyze:
-            run.analysis = {"fileId": body.file_id, **({"fileName": n} if (n := (body.file_name or run.file_name)[:120]) else {}),
-                            "steps": []}
         status, out = "", {}
         try:
+            if run.stopped:  # a cancel was requested while it waited
+                raise asyncio.CancelledError
+            if analyze:
+                _, run.file_name, run.ext = await prepare(self.st, body.file_id)
+                run.analysis = {"fileId": body.file_id, **({"fileName": n} if (n := (body.file_name or run.file_name)[:120]) else {}),
+                                "steps": []}
             async with aclosing(self._generator(run)) as events:
                 async for e in events:
                     d = json.loads(e.model_dump_json())
@@ -242,8 +280,9 @@ class RunService:
         finally:
             run.ending = True
             run.ticket.close()  # usually already released by the pipeline's own finally
-            if status in ("done", "error"):
-                self.queue.record(run.ticket)
+        if run.lost:  # another process owns this run now: write nothing
+            self.live.pop(run.id, None)
+            return
         # the final write is its own task: a second cancel (user, shutdown) must not abort it
         fin = asyncio.ensure_future(self._finalize(run, status, out))
         while True:
@@ -295,38 +334,30 @@ class RunService:
                 if await self.data.write_turn_server(body.turn_id, **fields) is None:
                     status = "stopped"  # the turn vanished before the end: nothing to write, record the run as stopped
             async with self.data.tx() as s:
-                await s.execute(sa.update(m.runs).where(m.runs.c.id == run.id, m.runs.c.status.in_(("queued", "running")))
+                await s.execute(sa.update(m.runs).where(m.runs.c.id == run.id, m.runs.c.status == "running", m.runs.c.worker == self.pid)
                                 .values(status=status, finished_at=sa.func.now(), error=out.get("error")))
+                await self._notify("run_events", f"{run.id}:end", s)  # followers see the terminal row
+                await self._notify("runs", run.id, s)  # a slot is free: let any scheduler claim
         except Exception:
             log.exception("run %s: final write failed", run.id)
         finally:
             self.live.pop(run.id, None)
-            for q in run.subs:
-                q.put_nowait(None)
 
-    def _spawn(self, coro) -> None:
-        t = asyncio.create_task(coro)
-        self._bg.add(t)
-        t.add_done_callback(self._bg.discard)
-
-    async def _mark(self, run: Run) -> None:
-        """The slot was granted: the run is running now."""
-        try:
-            async with self.data.tx() as s:
-                await s.execute(sa.update(m.runs).where(m.runs.c.id == run.id, m.runs.c.status == "queued")
-                                .values(status="running", started_at=sa.func.now()))
-        except Exception:
-            log.exception("run %s: status not written", run.id)
+    async def _event(self, s, rid: str, d: dict) -> int:
+        """Store an event under the next seq of the run (unique across restarts: it continues from max(seq)) and
+        announce it when the transaction commits."""
+        seq = (await s.execute(sa.text(
+            "insert into run_events(run_id, seq, event) select cast(:r as uuid), coalesce(max(seq), 0) + 1, cast(:e as jsonb) "
+            "from run_events where run_id = cast(:r as uuid) returning seq"), {"r": rid, "e": json.dumps(d)})).scalar_one()
+        await self._notify("run_events", f"{rid}:{seq}", s)
+        return seq
 
     async def _emit(self, run: Run, d: dict) -> None:
-        run.seq += 1
         try:
             async with self.data.tx() as s:
-                await s.execute(sa.insert(m.run_events).values(run_id=run.id, seq=run.seq, event=d))
-        except Exception:  # live viewers still get it; a replay will miss it
-            log.exception("run %s: event %s not stored", run.id, run.seq)
-        for q in run.subs:
-            q.put_nowait((run.seq, d))
+                await self._event(s, run.id, d)
+        except Exception:  # a replay will miss it
+            log.exception("run %s: event not stored", run.id)
 
     # --- follow / cancel -------------------------------------------------------------------------------------------
     async def get(self, rid: str) -> dict | None:
@@ -334,82 +365,208 @@ class RunService:
             r = (await s.execute(sa.select(m.runs).where(m.runs.c.id == rid))).first()
         return _row(r) if r else None
 
-    def view(self, row: dict, client_id: str | None) -> dict:
+    async def _waiting(self, row: dict) -> dict | None:
+        """Position and ETA of a queued run from the rows (fair order, last finished runs), None when it is not waiting."""
+        async with self.data.db.session() as s:
+            if (pos := await self.queue.position(s, row)) == 0:
+                return None
+            return {"type": "waiting", "position": pos, "eta_seconds": await self.queue.eta(s, row["pool"], pos)}
+
+    async def view(self, row: dict, client_id: str | None) -> dict:
         """The run as the API shows it. client_id is never exposed (it is the cancel permission): `mine` says whether
         the caller's id is the submitter's."""
         out = {k: row[k] for k in ("id", "session_id", "turn_id", "kind", "mode", "status", "created_at", "started_at",
                                    "finished_at", "error")}
         out["mine"] = client_id is not None and row["client_id"] == client_id
-        if (run := self.live.get(row["id"])) and run.ticket.state == "queued":
-            out["position"], out["eta_seconds"] = run.ticket.position, run.ticket.eta()
+        if row["status"] == "queued" and (w := await self._waiting(row)):
+            out["position"], out["eta_seconds"] = w["position"], w["eta_seconds"]
         return out
 
     async def events(self, rid: str, after: int, ping: float):
-        """(seq, event) pairs after `after`, then live ones until the run ends; seq None = a ping. Disconnecting
-        (closing this generator) never touches the run."""
-        run = self.live.get(rid)
-        q: asyncio.Queue = asyncio.Queue()
-        if run:
-            run.subs.add(q)  # subscribe before reading the store: nothing falls in the gap
-        try:
-            async with self.data.db.session() as s:
-                rows = (await s.execute(sa.select(m.run_events.c.seq, m.run_events.c.event)
-                                        .where(m.run_events.c.run_id == rid, m.run_events.c.seq > after)
-                                        .order_by(m.run_events.c.seq))).all()
-            for r in rows:
-                after = r.seq
-                yield r.seq, r.event
-            if run and run.ticket.state == "queued":  # fresh position and wait, whatever was stored
-                yield None, {"type": "waiting", "position": run.ticket.position, "eta_seconds": run.ticket.eta()}
-            while run:
-                if rid not in self.live and q.empty():
+        """(seq, event) pairs after `after` read from the table, then new ones as notifications (or a poll) say there are,
+        until the run is terminal and nothing is left; seq None = a ping or the live queue position. Works for a run
+        executing in any process. Disconnecting (closing this generator) never touches the run."""
+        last_out, last_wait = time.monotonic(), None
+        async with self._listen("run_events") as it:  # subscribe before reading: nothing falls in the gap
+            while True:
+                row = await self.get(rid)  # status first: a terminal row means every event is already stored
+                async with self.data.db.session() as s:
+                    rows = (await s.execute(sa.select(m.run_events.c.seq, m.run_events.c.event)
+                                            .where(m.run_events.c.run_id == rid, m.run_events.c.seq > after)
+                                            .order_by(m.run_events.c.seq))).all()
+                for r in rows:
+                    after, last_out = r.seq, time.monotonic()
+                    yield r.seq, r.event
+                if row is None or (row["status"] in TERMINAL and not rows):
                     return
-                try:
-                    msg = await asyncio.wait_for(q.get(), ping)
-                except asyncio.TimeoutError:
+                if row["status"] == "queued" and (w := await self._waiting(row)) and w != last_wait:
+                    last_wait, last_out = w, time.monotonic()
+                    yield None, w  # fresh position and wait: not a stored event, so no id
+                if not await self._wait(it, min(ping, POLL_EVENTS), lambda p: p.startswith(f"{rid}:")) \
+                        and time.monotonic() - last_out >= ping:
+                    last_out = time.monotonic()
                     yield None, None
-                    continue
-                if msg is not None and msg[0] > after:
-                    after = msg[0]
-                    yield msg
-        finally:
-            if run:
-                run.subs.discard(q)
+
+    def _cancel_local(self, rid: str) -> None:
+        if run := self.live.get(rid):
+            run.stopped = True
+            run.cancel_task()
 
     async def cancel(self, rid: str, client_id: str) -> dict | None:
-        """None = no such run; PermissionError = not the submitter. Idempotent."""
+        """None = no such run; PermissionError = not the submitter. Idempotent. A queued run is stopped here, in the
+        database; a running one is asked to stop (its owner, in any process, does it) and we wait up to CANCEL_WAIT
+        for its final write."""
         row = await self.get(rid)
         if row is None:
             return None
         if row["client_id"] != client_id:
             raise PermissionError
-        if run := self.live.get(rid):
-            run.stopped = True
-            run.cancel_task()
-            await asyncio.wait({run.task})  # the final write lands before we answer
-            row = await self.get(rid)
+        if row["status"] == "queued" and await self._stop_queued(row):
+            return await self.get(rid)
+        async with self.data.tx() as s:
+            await s.execute(sa.update(m.runs).where(m.runs.c.id == rid, m.runs.c.status.in_(("queued", "running")))
+                            .values(cancel_requested=True))
+            await self._notify("run_cancel", rid, s)
+        self._cancel_local(rid)
+        end = time.monotonic() + CANCEL_WAIT
+        while (row := await self.get(rid)) and row["status"] in ("queued", "running") and time.monotonic() < end:
+            await asyncio.sleep(0.05)
         return row
 
-    # --- lifecycle -------------------------------------------------------------------------------------------------
-    async def startup(self) -> None:
-        """Whatever was queued or running when the last process died will never finish."""
+    async def _stop_queued(self, row: dict) -> bool:
+        """Stopped before it ever ran. False when a scheduler claimed it first (then it is a running cancel)."""
         async with self.data.tx() as s:
-            ids = [r.turn_id for r in await s.execute(
-                sa.update(m.runs).where(m.runs.c.status.in_(("queued", "running")))
-                .values(status="interrupted", finished_at=sa.func.now()).returning(m.runs.c.turn_id)) if r.turn_id]
-            turns = [_row(r) for r in await s.execute(
-                sa.update(m.turns).where(m.turns.c.id.in_(ids), m.turns.c.status == "running")
-                .values(status="interrupted", version=m.turns.c.version + 1, updated_at=sa.func.now(),
-                        error="The run was interrupted.",
-                        progress=sa.func.coalesce(m.turns.c.progress, sa.cast(sa.literal("{}"), pg.JSONB))
-                        .op("||")(sa.cast(sa.literal('{"_err": "interrupted"}'), pg.JSONB)))
-                .returning(m.turns))] if ids else []
-            for t in turns:
-                await self.data._changed(s, "turn", t, session_id=str(t["session_id"]))
+            if not (await s.execute(sa.update(m.runs).where(m.runs.c.id == row["id"], m.runs.c.status == "queued")
+                                    .values(status="stopped", finished_at=sa.func.now(), error="The run was stopped.", cancel_requested=True)
+                                    .returning(m.runs.c.id))).first():
+                return False
+            await self._event(s, row["id"], json.loads(Error(message="stopped", code="stopped").model_dump_json()))
+            await self._notify("run_events", f"{row['id']}:end", s)
+            if row["turn_id"]:
+                await self._end_turns(s, [row["turn_id"]], "stopped", "The run was stopped.", "stopped")
+        return True
+
+    async def _end_turns(self, s, ids: list, status: str, error: str, err: str) -> None:
+        """The still-running turns of ended runs get their final state, announced to every process."""
+        turns = [_row(r) for r in await s.execute(
+            sa.update(m.turns).where(m.turns.c.id.in_(ids), m.turns.c.status == "running")
+            .values(status=status, version=m.turns.c.version + 1, updated_at=sa.func.now(), error=error,
+                    progress=sa.func.coalesce(m.turns.c.progress, sa.cast(sa.literal("{}"), pg.JSONB))
+                    .op("||")(sa.cast(sa.literal(json.dumps({"_err": err})), pg.JSONB)))
+            .returning(m.turns))]
+        for t in turns:
+            await self.data._changed(s, "turn", t, session_id=str(t["session_id"]))
+
+    # --- scheduler, leases, sweep ----------------------------------------------------------------------------------
+    async def startup(self) -> None:
+        """Start this process's scheduler. Nothing is marked interrupted here: a run whose lease ran out (its process
+        died, this one included) is found by the sweep and restarted or interrupted."""
+        self.closing = False
+        self._loops = [asyncio.create_task(c) for c in (self._scheduler(), self._cancels(), self._renewer())]
+
+    async def _scheduler(self) -> None:
+        async with self._listen("runs") as it:
+            while True:
+                try:
+                    await self._sweep()
+                    await self._claim_all()
+                except Exception:
+                    log.exception("scheduler pass failed")
+                await self._wait(it, self.st.settings.scheduler_poll_seconds)
+
+    async def _claim_all(self) -> None:
+        for pool in self.queue.limits:
+            while not self.closing:
+                async with self.data.tx() as s:
+                    row = await self.queue.claim(s, pool, self.pid, self.st.settings.run_lease_seconds)
+                if row is None:
+                    break
+                try:
+                    await self._launch(row)
+                except Exception:  # the lease is never renewed: the sweep restarts or interrupts it
+                    log.exception("run %s could not be started", row["id"])
+
+    async def _launch(self, row: dict) -> None:
+        from scientist.routes_runs import RunIn  # routes_runs imports this module
+        body = RunIn.model_validate({**row["request"], "session_id": str(row["session_id"]), "turn_id": str(row["turn_id"])})
+        async with self.data.db.session() as s:
+            prog = (await s.execute(sa.select(m.turns.c.progress).where(m.turns.c.id == body.turn_id))).scalar_one_or_none()
+        ticket = Ticket(row["id"], row["client_id"], row["pool"])
+        run = Run(row, ticket, body, "", "")
+        if prog and prog.get("_docs"):
+            run.progress = {**run.progress, "_docs": prog["_docs"]}
+        run.stopped = row["cancel_requested"]
+        self.live[run.id] = run
+        run.task = asyncio.create_task(self._run(run))
+        self._bg.add(run.task)
+        run.task.add_done_callback(self._bg.discard)
+        run.task.add_done_callback(lambda _: ticket.close())  # whatever happened, the slot is given back
+
+    async def _cancels(self) -> None:
+        async with self._listen("run_cancel") as it:
+            while True:
+                msg = await anext(it)
+                try:
+                    if msg is GAP:
+                        await self._renew_once()
+                    else:
+                        self._cancel_local(msg)
+                except Exception:
+                    log.exception("cancel check failed")
+
+    async def _renewer(self) -> None:
+        while True:
+            await asyncio.sleep(self.st.settings.run_lease_seconds / 3)
+            try:
+                await self._renew_once()
+            except Exception:
+                log.exception("lease renewal failed")
+
+    async def _renew_once(self) -> None:
+        """Extend the lease of this process's live runs; a run that is no longer ours (swept after a stall) is dropped
+        without writes, and a requested cancel is picked up even if its notification was missed."""
+        if not self.live:
+            return
+        c = m.runs.c
+        async with self.data.tx() as s:
+            mine = {r.id: r.cancel_requested for r in await s.execute(
+                sa.update(m.runs).where(c.id.in_(list(self.live)), c.worker == self.pid, c.status == "running")
+                .values(lease_until=sa.func.now() + sa.func.make_interval(0, 0, 0, 0, 0, 0, self.st.settings.run_lease_seconds))
+                .returning(c.id, c.cancel_requested))}
+        for rid, run in list(self.live.items()):
+            if rid in mine:
+                if mine[rid]:
+                    self._cancel_local(rid)
+            elif not run.ending:
+                run.lost = True
+                run.cancel_task()
+
+    async def _sweep(self) -> None:
+        """Any process: a running run whose lease ran out goes back to queued (attempt + 1, a `restarted` event) while
+        attempts remain, otherwise it and its turn are interrupted."""
+        c, st = m.runs.c, self.st.settings
+        lost = sa.and_(c.status == "running", sa.or_(c.lease_until.is_(None), c.lease_until < sa.func.now()))
+        async with self.data.tx() as s:
+            again = (await s.execute(sa.update(m.runs).where(lost, c.attempt < st.run_max_attempts)
+                                     .values(status="queued", attempt=c.attempt + 1, worker=None, lease_until=None, started_at=None)
+                                     .returning(c.id))).scalars().all()
+            for rid in again:
+                await self._event(s, rid, {"type": "restarted"})
+            if again:
+                await self._notify("runs", "restarted", s)
+            dead = [r.turn_id for r in await s.execute(
+                sa.update(m.runs).where(lost, c.attempt >= st.run_max_attempts)
+                .values(status="interrupted", finished_at=sa.func.now()).returning(c.id, c.turn_id))]
+            if dead := [t for t in dead if t]:
+                await self._end_turns(s, dead, "interrupted", LOST, "interrupted")
 
     async def shutdown(self) -> None:
-        """Cancel every run (their finally blocks kill bridges); each is recorded as interrupted."""
+        """Stop scheduling, cancel every local run (their finally blocks kill bridges); each is recorded as interrupted."""
         self.closing = True
+        for t in self._loops:
+            t.cancel()
+        await asyncio.gather(*self._loops, return_exceptions=True)
+        self._loops = []
         for r in list(self.live.values()):
             r.cancel_task()
         await asyncio.gather(*self._bg, return_exceptions=True)

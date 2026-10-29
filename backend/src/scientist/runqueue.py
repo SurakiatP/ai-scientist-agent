@@ -1,17 +1,21 @@
-"""Fair run queue: two pools (research, analysis), one ticket per run. A ticket has RunGate's acquire()/release()
-interface, so pipeline.ask and the analyze path take it as their `gate` unchanged.
+"""Fair run queue over the runs table (shared by every process): two pools (research, analysis). Admission, the fair order,
+position and ETA are computed from rows; a claim moves one queued row to running under a per-pool advisory lock, so the
+global and per-client caps are exact however many processes compete.
 The client id is used only to share slots fairly and to cap one browser; it is never an identity or a permission here."""
-import asyncio
-import itertools
 import math
-import time
-from collections import deque
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 
+import sqlalchemy as sa
+
+from scientist import models as m
 from scientist.config import Settings
 
 MIN_COUNTED_SECONDS = 5  # shorter runs (refusals, instant errors) would drag the ETA average down
-DEFAULT_SECONDS = {"research": 180, "analysis": 60}  # ETA average before any run has finished in this process
+DEFAULT_SECONDS = {"research": 180, "analysis": 60}  # ETA average before any run has finished in this pool
+LOCK_ADMIT = 7300  # advisory lock keys: admission, then one per pool
+LOCKS = {"research": 7301, "analysis": 7302}
+NEVER = datetime.min.replace(tzinfo=timezone.utc)
 
 
 class Rejected(Exception):
@@ -21,143 +25,123 @@ class Rejected(Exception):
 
 
 class Ticket:
-    def __init__(self, queue: "RunQueue", run_id: str, client_id: str, pool: str, seq: int):
-        self.q, self.run_id, self.client_id, self.pool, self.seq = queue, run_id, client_id, pool, seq
-        self.state = "new"  # new (counts against caps, not yet waiting) -> queued -> running -> closed
-        self.started_at: float | None = None
-        self.on_start = None  # called (sync) the moment a slot is granted
-        self.held: float | None = None  # seconds it held a slot; the run service feeds it to the ETA once the outcome is known
+    """The pipeline's `gate` for a run that was already granted its slot: acquire() yields no position, release() ends it."""
 
-    @property
-    def position(self) -> int:
-        return self.q.position(self) if self.state == "queued" else 0
-
-    def eta(self, position: int | None = None) -> int:
-        return self.q.eta(self.pool, position or self.position)
+    def __init__(self, run_id: str, client_id: str, pool: str):
+        self.run_id, self.client_id, self.pool = run_id, client_id, pool
+        self.state = "running"
 
     async def acquire(self) -> AsyncIterator[int]:
-        """Yields the 1-based position whenever it changes; when the iteration ends the caller holds a slot and
-        must call release(). Closing or cancelling it early takes no slot."""
-        q = self.q
-        if self.state == "new":
-            self.state = "queued"
-            q._pump()
-        done = False
-        try:
-            last = 0
-            while self.state == "queued":
-                if (pos := q.position(self)) != last:
-                    last = pos
-                    yield pos
-                    continue  # the caller awaited: state may have moved, check again
-                await q._changed.wait()
-            done = self.state == "running"
-        finally:
-            if not done:
-                self.close()
+        return
+        yield  # an empty async generator: the slot is already held
 
     def release(self) -> None:
-        self.close()
+        self.state = "closed"
 
-    def close(self) -> None:
-        """Idempotent: leave the queue, or give the slot back (a refused or cancelled run never acquired)."""
-        if self.state == "closed":
-            return
-        was_running, self.state = self.state == "running", "closed"
-        if was_running:
-            self.q._finish(self)
-        self.q._tickets.discard(self)
-        self.q._pump()
+    close = release
+
+
+def fair_order(queued: list[dict], served: dict, running: dict, per_client: int) -> list[dict]:
+    """Queued rows in the order slots will go to them: least recently served client first, then oldest; a client already
+    at its running limit waits for the next round (rounds assume the picked runs finish). `served`: client -> last claim
+    time, `running`: client -> runs running now (both pools)."""
+    key = lambda r: (served.get(r["client_id"]) or NEVER, r["created_at"], r["id"])  # noqa: E731
+    rest, order = list(queued), []
+    load = {r["client_id"]: running.get(r["client_id"], 0) for r in rest}
+    while rest:
+        picked = []
+        for r in sorted(rest, key=key):
+            if load[r["client_id"]] < per_client:
+                load[r["client_id"]] += 1
+                picked.append(r)
+        if not picked:
+            load = dict.fromkeys(load, 0)
+            continue
+        order += picked
+        rest = [r for r in rest if r not in picked]
+        load = dict.fromkeys(load, 0)
+    return order
 
 
 class RunQueue:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, db=None):
         self.limits = {"research": settings.max_concurrent_runs, "analysis": settings.sandbox_max_concurrent}
         self.per_client = settings.max_running_per_client
         self.queued_cap = settings.max_queued_per_client
         self.queue_max = settings.run_queue_max
-        self._tickets: set[Ticket] = set()
-        self._seq = itertools.count()
-        self._changed = asyncio.Event()
-        self._durations = {p: deque(maxlen=20) for p in self.limits}  # seconds of the last finished runs, per pool
-        self._served: dict[str, int] = {}  # client -> tick of its latest slot grant (least recently served goes first)
-        self._tick = itertools.count()
+        self.db = db
 
     # --- admission ---------------------------------------------------------------------------------------------------
-    def admit(self, client_id: str) -> None:
-        """Submit-time caps; raises Rejected. A client holds at most MAX_RUNNING running plus MAX_QUEUED waiting tickets
-        (3 by default; with nothing running it is still that total), checked as one count. Call right before ticket() with no await between."""
-        mine = [t for t in self._tickets if t.client_id == client_id]
-        waiting = lambda ts: sum(t.state in ("new", "queued") for t in ts)  # noqa: E731
-        if len(mine) >= self.queued_cap + self.per_client:
+    async def admit(self, client_id: str, s=None) -> None:
+        """Submit-time caps; raises Rejected. A client holds at most MAX_RUNNING running plus MAX_QUEUED waiting runs
+        (checked as one count), and the queue holds RUN_QUEUE_MAX. Counted in Postgres, globally; with `s` (the submit's
+        transaction) under the admission lock so two processes cannot both take the last place."""
+        if s is None:
+            async with self.db.session() as s2, s2.begin():
+                return await self.admit(client_id, s2)
+        await s.execute(sa.text("select pg_advisory_xact_lock(:k)"), {"k": LOCK_ADMIT})
+        mine, waiting = (await s.execute(sa.text(
+            "select count(*) filter (where client_id = :c), count(*) filter (where status = 'queued') "
+            "from runs where status in ('queued', 'running')"), {"c": client_id})).one()
+        if mine >= self.queued_cap + self.per_client:
             raise Rejected("client_busy", "you already have as many runs waiting as allowed")
-        if waiting(self._tickets) >= self.queue_max:
+        if waiting >= self.queue_max:
             raise Rejected("queue_full", "the queue is full; try again shortly")
 
-    def ticket(self, run_id: str, client_id: str, pool: str) -> Ticket:
-        t = Ticket(self, run_id, client_id, pool, next(self._seq))
-        self._tickets.add(t)
-        return t
-
     # --- scheduling --------------------------------------------------------------------------------------------------
-    def _running(self, pool: str | None = None, client: str | None = None) -> int:
-        return sum(t.state == "running" and (pool is None or t.pool == pool) and (client is None or t.client_id == client)
-                   for t in self._tickets)
+    async def _state(self, s, pool: str) -> tuple[list[dict], dict]:
+        """(queued rows of the pool in fair order, running per client over both pools)."""
+        c = m.runs.c
+        queued = [dict(r._mapping) for r in await s.execute(
+            sa.select(c.id, c.client_id, c.created_at).where(c.status == "queued", c.pool == pool))]
+        clients = {r["client_id"] for r in queued}
+        if not clients:
+            return [], {}
+        served = dict((await s.execute(sa.select(c.client_id, sa.func.max(c.served_at))
+                                       .where(c.client_id.in_(clients)).group_by(c.client_id))).all())
+        running = dict((await s.execute(sa.select(c.client_id, sa.func.count())
+                                        .where(c.status == "running", c.client_id.in_(clients)).group_by(c.client_id))).all())
+        return fair_order(queued, served, running, self.per_client), running
 
-    def _order(self, pool: str) -> list[Ticket]:
-        """Queued tickets in the order slots will go to them: least recently served client first, then oldest
-        enqueue; a client already at its running limit waits for the next round (rounds assume the picked runs finish)."""
-        rest = [t for t in self._tickets if t.pool == pool and t.state == "queued"]
-        key = lambda t: (self._served.get(t.client_id, -1), t.seq)  # noqa: E731
-        load = {t.client_id: self._running(client=t.client_id) for t in rest}
-        order: list[Ticket] = []
-        while rest:
-            picked = []
-            for t in sorted(rest, key=key):
-                if load[t.client_id] < self.per_client:
-                    load[t.client_id] += 1
-                    picked.append(t)
-            if not picked:
-                load = dict.fromkeys(load, 0)
-                continue
-            order += picked
-            rest = [t for t in rest if t not in picked]
-            load = dict.fromkeys(load, 0)
-        return order
+    async def claim(self, s, pool: str, worker: str, lease_seconds: int) -> dict | None:
+        """In the caller's transaction: move the next fair queued run of the pool to running for `worker`, or None
+        (pool full, nothing queued, or the next one is locked by a concurrent cancel)."""
+        await s.execute(sa.text("select pg_advisory_xact_lock(:k)"), {"k": LOCKS[pool]})
+        c = m.runs.c
+        if (await s.execute(sa.select(sa.func.count()).where(c.status == "running", c.pool == pool))).scalar_one() >= self.limits[pool]:
+            return None
+        order, running = await self._state(s, pool)
+        # the per-client cap counts both pools, and another pool may have claimed since the order was computed
+        nxt = next((r for r in order if running.get(r["client_id"], 0) < self.per_client), None)
+        if nxt is None:
+            return None
+        pick = sa.select(c.id).where(c.id == nxt["id"], c.status == "queued").with_for_update(skip_locked=True).scalar_subquery()
+        row = (await s.execute(sa.update(m.runs).where(c.id == pick).values(
+            status="running", worker=worker, started_at=sa.func.now(), served_at=sa.func.now(),
+            lease_until=sa.func.now() + sa.func.make_interval(0, 0, 0, 0, 0, 0, lease_seconds)).returning(m.runs))).first()
+        return dict(row._mapping) if row else None
 
-    def position(self, t: Ticket) -> int:
-        order = self._order(t.pool)
-        return order.index(t) + 1 if t in order else 0
-
-    def _pump(self) -> None:
-        for pool, limit in self.limits.items():
-            while self._running(pool) < limit:
-                nxt = next((t for t in self._order(pool) if self._running(client=t.client_id) < self.per_client), None)
-                if nxt is None:
-                    break
-                nxt.state, nxt.started_at = "running", time.monotonic()
-                self._served[nxt.client_id] = next(self._tick)
-                if nxt.on_start:
-                    nxt.on_start()
-        self._changed.set()
-        self._changed = asyncio.Event()
-
-    def _finish(self, t: Ticket) -> None:
-        if t.started_at is not None:
-            t.held = time.monotonic() - t.started_at
-
-    def record(self, t: Ticket) -> None:
-        """A run that ended done/error after holding its slot long enough teaches the ETA (called once, after close)."""
-        if t.held is not None and t.held >= MIN_COUNTED_SECONDS:
-            self._durations[t.pool].append(t.held)
+    async def position(self, s, row: dict) -> int:
+        order, _ = await self._state(s, row["pool"])
+        return next((i + 1 for i, r in enumerate(order) if r["id"] == row["id"]), 0)
 
     # --- reporting ---------------------------------------------------------------------------------------------------
-    def eta(self, pool: str, position: int) -> int:
-        d = self._durations[pool]
+    async def eta(self, s, pool: str, position: int) -> int:
+        """Average of the last 20 done/error runs of the pool that held a slot at least MIN_COUNTED_SECONDS."""
+        c = m.runs.c
+        secs = sa.func.extract("epoch", c.finished_at - c.started_at)
+        d = [float(x) for x in (await s.execute(
+            sa.select(secs).where(c.pool == pool, c.status.in_(("done", "error")), c.finished_at.is_not(None),
+                                  c.started_at.is_not(None), secs >= MIN_COUNTED_SECONDS)
+            .order_by(c.finished_at.desc()).limit(20))).scalars()]
         avg = sum(d) / len(d) if d else DEFAULT_SECONDS[pool]
         return math.ceil(position / self.limits[pool]) * round(avg)
 
-    def status(self) -> dict:
-        return {p: {"running": self._running(p), "limit": n,
-                    "queued": sum(t.pool == p and t.state in ("new", "queued") for t in self._tickets)}
-                for p, n in self.limits.items()}
+    async def status(self) -> dict:
+        c = m.runs.c
+        async with self.db.session() as s:
+            rows = (await s.execute(sa.select(c.pool, c.status, sa.func.count()).where(c.status.in_(("queued", "running")))
+                                    .group_by(c.pool, c.status))).all()
+        n = {(p, st): k for p, st, k in rows}
+        return {p: {"running": n.get((p, "running"), 0), "limit": lim, "queued": n.get((p, "queued"), 0)}
+                for p, lim in self.limits.items()}

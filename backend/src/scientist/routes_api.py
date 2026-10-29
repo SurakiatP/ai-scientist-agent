@@ -176,7 +176,7 @@ async def start_run(svc: RunService, key: ApiKey, body: ResearchIn) -> dict:
     """Starts a run for a key (REST and MCP). Raises Rejected when the key's caps are full."""
     run_in = valid(RunIn, session_id=str(uuid.uuid4()), turn_id=str(uuid.uuid4()), kind="ask", question=body.question,
                    mode="docs" if body.doc_ids else body.mode, doc_ids=body.doc_ids or [], pack=body.pack, plan=body.plan)
-    svc.queue.admit(key.client_id)  # refuse before a session is created
+    await svc.queue.admit(key.client_id)  # refuse before a session is created
     sid = settled(await guarded(api_session(svc, run_in.question)))
     run_in.session_id = sid
     try:

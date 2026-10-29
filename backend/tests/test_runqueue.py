@@ -1,185 +1,197 @@
-import asyncio
+"""The fair queue over the runs table: admission, claim order, position, ETA (needs the throwaway Postgres)."""
+import uuid
 
 import pytest
+import sqlalchemy as sa
+from alembic import command
 
-from scientist.config import Settings
-from scientist.runqueue import Rejected, RunQueue
-
-
-def queue(**kw):
-    kw.setdefault("max_running_per_client", 1)  # the fairness tests below are about a tight per-client cap; the defaults are tested separately
-    kw.setdefault("max_queued_per_client", 2)
-    s = Settings(openrouter_api_key="k", model="m", fallback_model="f", hermes_source_path=".", hermes_revision="x", **kw)
-    return RunQueue(s)
+from scientist.config import Settings, get_settings
+from scientist.db import open_database
+from scientist.runqueue import Rejected, RunQueue, Ticket
+from test_config import ENV
+from test_db import _alembic, newdb, pg  # noqa: F401
 
 
-class Waiter:
-    """A ticket whose acquire() is being iterated, like pipeline.ask does."""
-
-    def __init__(self, q, client, pool="research"):
-        self.t = q.ticket(str(id(self)), client, pool)
-        self.positions: list[int] = []
-        self.task = asyncio.create_task(self._go())
-
-    async def _go(self):
-        async for p in self.t.acquire():
-            self.positions.append(p)
-
-    @property
-    def running(self):
-        return self.t.state == "running"
+@pytest.fixture(autouse=True)
+def _env(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    for k, v in ENV.items():
+        monkeypatch.setenv(k, v)
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
-async def settle():
-    for _ in range(5):
-        await asyncio.sleep(0)
+@pytest.fixture
+async def mk(newdb):  # noqa: F811
+    command.upgrade(_alembic(), "head")
+    made = []
+
+    def make(**kw):
+        kw.setdefault("max_running_per_client", 1)  # the fairness tests below are about a tight per-client cap; the defaults are tested separately
+        kw.setdefault("max_queued_per_client", 2)
+        db = open_database(get_settings())
+        made.append(db)
+        return Q(RunQueue(Settings(openrouter_api_key="k", model="m", fallback_model="f", hermes_source_path=".", hermes_revision="x", **kw), db))
+    yield make
+    for db in made:
+        await db.close()
 
 
-async def test_other_client_starts_before_a_clients_second_and_third():
-    q = queue(max_concurrent_runs=2)
-    a1, a2, a3 = (Waiter(q, "A") for _ in range(3))
-    b1 = Waiter(q, "B")
-    await settle()
-    assert a1.running and b1.running and not a2.running and not a3.running  # A holds one slot, B gets the other
-    assert q.status()["research"] == {"running": 2, "limit": 2, "queued": 2}
+class Q:
+    """A queue plus helpers that act like the run service: enqueue, claim, finish."""
+
+    def __init__(self, q):
+        self.q, self.db, self.n = q, q.db, 0
+
+    async def add(self, client, pool="research"):
+        rid = str(uuid.uuid4())
+        self.n += 1
+        async with self.db.session() as s, s.begin():
+            await s.execute(sa.text("insert into runs(id, client_id, kind, status, pool) values (:i, :c, 'ask', 'queued', :p)"),
+                            {"i": rid, "c": client, "p": pool})
+        return rid
+
+    async def claim(self, pool="research"):
+        async with self.db.session() as s, s.begin():
+            row = await self.q.claim(s, pool, "w", 30)
+        return str(row["id"]) if row else None
+
+    async def claim_all(self):
+        got = []
+        for pool in self.q.limits:
+            while (rid := await self.claim(pool)):
+                got.append(rid)
+        return got
+
+    async def end(self, rid, status="done", secs=None):
+        async with self.db.session() as s, s.begin():
+            await s.execute(sa.text("update runs set status = :st, finished_at = now(), started_at = coalesce(started_at, now()) - make_interval(secs => :n) "
+                                    "where id = :i"), {"st": status, "i": rid, "n": secs or 0})
+
+    async def position(self, rid):
+        async with self.db.session() as s:
+            row = dict((await s.execute(sa.text("select id::text as id, pool from runs where id = :i"), {"i": rid})).one()._mapping)
+            return await self.q.position(s, row)
+
+    async def eta(self, pool, position):
+        async with self.db.session() as s:
+            return await self.q.eta(s, pool, position)
 
 
-async def test_per_client_running_limit_is_across_pools():
-    q = queue(max_concurrent_runs=4, sandbox_max_concurrent=3)
-    r1, r2 = Waiter(q, "A"), Waiter(q, "A")
-    an = Waiter(q, "A", "analysis")
-    await settle()
-    assert [w.running for w in (r1, r2, an)] == [True, False, False]
-    r1.t.release()
-    await settle()
-    assert r2.running and not an.running  # earliest enqueue goes first
-    r2.t.release()
-    await settle()
-    assert an.running
+async def test_other_client_starts_before_a_clients_second_and_third(mk):
+    q = mk(max_concurrent_runs=2)
+    a1, a2, a3 = [await q.add("A") for _ in range(3)]
+    b1 = await q.add("B")
+    assert await q.claim_all() == [a1, b1]  # A holds one slot, B gets the other
+    assert await q.q.status() == {"research": {"running": 2, "limit": 2, "queued": 2}, "analysis": {"running": 0, "limit": 3, "queued": 0}}
 
 
-async def test_limit_one_serves_the_least_recently_served_client_first():
-    q = queue(max_concurrent_runs=1)
-    a1, a2, a3, b1 = (Waiter(q, "A"), Waiter(q, "A"), Waiter(q, "A"), Waiter(q, "B"))
-    await settle()
-    assert a1.running
-    assert (b1.positions[-1], a2.positions[-1], a3.positions[-1]) == (1, 2, 3)  # positions follow the same order
-    c1 = Waiter(q, "C")  # joins later, never served
-    await settle()
-    assert (b1.positions[-1], c1.positions[-1], a2.positions[-1], a3.positions[-1]) == (1, 2, 3, 4)
-    order = []
-    for w, name in ((a1, "a1"), (b1, "b1"), (c1, "c1"), (a2, "a2"), (a3, "a3")):
-        await settle()
-        assert w.running, name
-        order.append(name)
-        w.t.release()
-    assert order == ["a1", "b1", "c1", "a2", "a3"]
+async def test_per_client_running_limit_is_across_pools(mk):
+    q = mk(max_concurrent_runs=4, sandbox_max_concurrent=3)
+    r1, r2, an = await q.add("A"), await q.add("A"), await q.add("A", "analysis")
+    assert await q.claim_all() == [r1]
+    await q.end(r1)
+    assert await q.claim_all() == [r2]  # earliest enqueue goes first
+    await q.end(r2)
+    assert await q.claim_all() == [an]
 
 
-async def test_limit_one_a_then_b_runs_a1_b1_a2_a3():
-    q = queue(max_concurrent_runs=1)
-    ws = {n: Waiter(q, n[0].upper()) for n in ("a1", "a2", "a3", "b1")}
+async def test_limit_one_serves_the_least_recently_served_client_first(mk):
+    q = mk(max_concurrent_runs=1)
+    a1, a2, a3, b1 = await q.add("A"), await q.add("A"), await q.add("A"), await q.add("B")
+    assert await q.claim_all() == [a1]
+    assert [await q.position(r) for r in (b1, a2, a3)] == [1, 2, 3]  # positions follow the same order
+    c1 = await q.add("C")  # joins later, never served
+    assert [await q.position(r) for r in (b1, c1, a2, a3)] == [1, 2, 3, 4]
+    order = [a1]
+    for want in (b1, c1, a2, a3):
+        await q.end(order[-1])
+        assert await q.claim_all() == [want]
+        order.append(want)
+    assert order == [a1, b1, c1, a2, a3]
+
+
+async def test_limit_one_a_then_b_runs_a1_b1_a2_a3(mk):
+    q = mk(max_concurrent_runs=1)
+    a1, a2, a3, b1 = await q.add("A"), await q.add("A"), await q.add("A"), await q.add("B")
     ran = []
     for _ in range(4):
-        await settle()
-        w = next(n for n, x in ws.items() if x.running)
-        ran.append(w)
-        ws[w].t.release()
-    assert ran == ["a1", "b1", "a2", "a3"]
+        (rid,) = await q.claim_all()
+        ran.append(rid)
+        await q.end(rid)
+    assert ran == [a1, b1, a2, a3]
 
 
-async def test_positions_follow_the_fair_order_and_move_up():
-    q = queue(max_concurrent_runs=1)
-    a1, a2, a3, b1 = Waiter(q, "A"), Waiter(q, "A"), Waiter(q, "A"), Waiter(q, "B")
-    await settle()
-    # A is at its running limit: B goes before A's 2nd and 3rd
-    assert (b1.positions[-1], a2.positions[-1], a3.positions[-1]) == (1, 2, 3)
-    b1.task.cancel()  # B gives up while waiting
-    await settle()
-    assert a2.positions[-1] == 1 and a3.positions[-1] == 2
-    assert q.status()["research"]["queued"] == 2
+async def test_a_cancelled_waiter_moves_the_others_up(mk):
+    q = mk(max_concurrent_runs=1)
+    await q.add("A")
+    a2, a3, b1 = await q.add("A"), await q.add("A"), await q.add("B")
+    await q.claim_all()
+    assert (await q.position(b1), await q.position(a2), await q.position(a3)) == (1, 2, 3)  # A is at its limit: B first
+    await q.end(b1, "stopped")  # B gives up while waiting
+    assert (await q.position(a2), await q.position(a3)) == (1, 2)
+    assert (await q.q.status())["research"]["queued"] == 2
 
 
-async def test_closing_acquire_early_takes_no_slot():
-    q = queue(max_concurrent_runs=1)
-    a = Waiter(q, "A")
-    await settle()
-    b = q.ticket("b", "B", "research")
-    it = b.acquire()
-    assert await anext(it) == 1
-    await it.aclose()
-    assert b.state == "closed" and q.status()["research"] == {"running": 1, "limit": 1, "queued": 0}
-    a.t.release()
-    assert q.status()["research"]["running"] == 0
+async def test_two_queues_never_exceed_the_global_limit(mk):
+    a, b = mk(max_concurrent_runs=1), mk(max_concurrent_runs=1)  # two processes
+    for c in ("A", "B", "C"):
+        await a.add(c)
+    got = [x for x in [await a.claim(), await b.claim(), await a.claim()] if x]
+    assert len(got) == 1
 
 
-async def test_eta_uses_default_then_average_of_finished_runs():
-    q = queue(max_concurrent_runs=2, sandbox_max_concurrent=3)
-    assert q.eta("research", 1) == 180 and q.eta("research", 3) == 2 * 180 and q.eta("analysis", 4) == 2 * 60
-    w = Waiter(q, "A")
-    await settle()
-    w.t.started_at -= 100  # it ran for 100 s
-    w.t.release()
-    q.record(w.t)  # the run service records it once the run ended done/error
-    assert q.eta("research", 1) == 100 and q.eta("research", 2) == 100 and q.eta("analysis", 1) == 60  # pools are separate
+async def test_eta_uses_default_then_average_of_finished_runs(mk):
+    q = mk(max_concurrent_runs=2, sandbox_max_concurrent=3)
+    assert await q.eta("research", 1) == 180 and await q.eta("research", 3) == 2 * 180 and await q.eta("analysis", 4) == 2 * 60
+    r = await q.add("A")
+    await q.claim()
+    await q.end(r, "done", 100)  # it ran for 100 s
+    assert await q.eta("research", 1) == 100 and await q.eta("research", 2) == 100 and await q.eta("analysis", 1) == 60  # pools are separate
 
 
-async def test_ticket_eta_reaches_the_pipeline_gate_interface():
-    q = queue(max_concurrent_runs=1)
-    a, b = Waiter(q, "A"), Waiter(q, "B")
-    await settle()
-    assert b.t.position == 1 and b.t.eta(b.t.position) == 180 and getattr(b.t, "eta")(1) == 180
+async def test_eta_ignores_short_and_non_done_runs(mk):
+    q = mk(max_concurrent_runs=1)
+    for secs, status in ((2, "done"), (100, "stopped"), (100, "refused")):  # too short; stopped; refused
+        await q.add("A")
+        rid = await q.claim()
+        await q.end(rid, status, secs)
+    assert await q.eta("research", 1) == 180
 
 
-async def test_caps_client_busy_and_queue_full():
-    q = queue(max_concurrent_runs=1, run_queue_max=3)
-    ws = []
+async def test_caps_client_busy_and_queue_full(mk):
+    q = mk(max_concurrent_runs=1, run_queue_max=3)
+    ids = []
     for _ in range(3):  # 1 running + 2 queued is the most one client may have
-        q.admit("A")
-        ws.append(Waiter(q, "A"))
+        await q.q.admit("A")
+        ids.append(await q.add("A"))
     with pytest.raises(Rejected) as e:
-        q.admit("A")
+        await q.q.admit("A")
     assert e.value.code == "client_busy"
-    await settle()
-    q.admit("B")  # 2 queued so far (A's), room for one more
-    ws.append(Waiter(q, "B"))
-    await settle()
+    await q.claim()
+    await q.q.admit("B")  # 2 queued so far (A's), room for one more
+    await q.add("B")
     with pytest.raises(Rejected) as e:
-        q.admit("C")
+        await q.q.admit("C")
     assert e.value.code == "queue_full"
-    ws[0].t.release()  # a slot frees: the queue shrinks, D fits again
-    await settle()
-    q.admit("C")
+    await q.end(ids[0])  # a slot frees...
+    await q.claim()  # ...the next one runs: the queue shrinks, C fits again
+    await q.q.admit("C")
 
 
-async def test_a_ticket_that_never_waits_still_counts_against_the_client():
-    q = queue()
-    for _ in range(3):
-        q.admit("A")
-        q.ticket("x", "A", "research")  # created, not acquiring yet (scope check running)
-    with pytest.raises(Rejected):
-        q.admit("A")
-
-
-async def test_eta_ignores_short_and_non_done_runs():
-    q = queue(max_concurrent_runs=1)
-    for secs, counts in ((2, True), (100, False)):  # too short; stopped/refused
-        w = Waiter(q, "A")
-        await settle()
-        w.t.started_at -= secs
-        w.t.release()
-        if counts:
-            q.record(w.t)
-    assert q.eta("research", 1) == 180
-
-
-async def test_default_limits_let_one_browser_run_several_sessions_side_by_side():
+async def test_default_limits_let_one_browser_run_several_sessions_side_by_side(mk):
     s = Settings(openrouter_api_key="k", model="m", fallback_model="f", hermes_source_path=".", hermes_revision="x")
     assert (s.max_running_per_client, s.max_queued_per_client) == (3, 1)
-    q = RunQueue(s)
-    ws = [Waiter(q, "A") for _ in range(4)]
-    await settle()
-    assert [w.running for w in ws] == [True, True, True, False]  # three at once; the fourth waits for one of them
-    ws[0].t.release()
-    await settle()
-    assert ws[3].running
+    q = mk(max_running_per_client=3, max_concurrent_runs=4)
+    ids = [await q.add("A") for _ in range(4)]
+    assert await q.claim_all() == ids[:3]  # three at once; the fourth waits for one of them
+    await q.end(ids[0])
+    assert await q.claim_all() == [ids[3]]
+
+
+async def test_a_granted_ticket_has_the_gate_interface_and_yields_no_position():
+    t = Ticket("r", "A", "research")
+    assert [p async for p in t.acquire()] == []
+    t.release()
+    assert t.state == "closed"

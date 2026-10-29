@@ -287,7 +287,7 @@ async def test_disconnecting_a_stream_does_not_cancel_and_reattach_replays_only_
         await gen.aclose()  # the viewer went away
         await asyncio.sleep(0.2)
         assert (await c.get(f"/v1/runs/{rid}")).json()["status"] == "running"
-        assert svc.live[rid].subs == set()
+        assert svc.live[rid].task and not svc.live[rid].task.done()  # the run goes on without its viewer
         # another viewer resumes after what it saw; the run is still going, so cancel it to end the stream
         gen = svc.events(rid, 2, 0.05)
         assert (await asyncio.wait_for(anext(gen), 10))[1] is None  # nothing newer yet: a ping
@@ -323,9 +323,8 @@ async def test_queued_run_shows_position_and_eta_and_sends_waiting_first(serve, 
         assert v["status"] == "queued" and v["position"] == 1 and v["eta_seconds"] == 180 and v["mine"] is True
         assert (await c.get(f"/v1/runs/{r2}", headers={"x-client-id": a})).json()["mine"] is False
         gen = c.app.state.runs.events(r2, 0, 0.05)
-        first = [x async for x in _take(gen, 2)]
-        assert first[0] == (1, {"type": "waiting", "position": 1, "eta_seconds": 180})  # the stored one
-        assert first[1] == (None, {"type": "waiting", "position": 1, "eta_seconds": 180})  # the live one: no id
+        first = [x async for x in _take(gen, 1)]
+        assert first[0] == (None, {"type": "waiting", "position": 1, "eta_seconds": 180})  # live from the queue rows: no id
         await gen.aclose()
         assert (await c.get("/v1/runs/status")).json() == {"research": {"running": 1, "limit": 1, "queued": 1},
                                                            "analysis": {"running": 0, "limit": 3, "queued": 0}}
@@ -360,7 +359,7 @@ async def test_cancel_is_owner_only_idempotent_and_stops_the_turn(serve, fake_co
         assert all(p.returncode is not None for p in procs)  # the bridge was killed
         assert (await c.post(f"/v1/runs/{rid}/cancel", headers={"x-client-id": owner})).json()["status"] == "stopped"
         assert (await c.post(f"/v1/runs/{u()}/cancel", headers={"x-client-id": owner})).status_code == 404
-        assert c.app.state.queue.status()["research"]["running"] == 0
+        assert (await c.app.state.queue.status())["research"]["running"] == 0
 
 
 # --- caps ----------------------------------------------------------------------------------------------------------------
@@ -407,25 +406,28 @@ async def test_client_id_validation_and_validation_errors(serve, fake_complete):
 
 
 # --- restart -----------------------------------------------------------------------------------------------------------------
-async def test_restart_marks_runs_and_turns_interrupted(serve, fake_complete, newdb):  # noqa: F811
+async def test_shutdown_interrupts_its_runs_and_the_next_boot_sweeps_only_expired_leases(serve, fake_complete, newdb):  # noqa: F811
     fake_complete["strategy"] = strategy("slow")
     async with serve() as c:
         sid = await mk_session(c)
         b = body(sid)
         rid = (await post(c, b)).json()["run"]["id"]
         await until(c, rid, "running")
-        # a crashed process leaves rows behind: fake it with a second run that no task owns
-        sql(newdb, "insert into runs(id, client_id, session_id, turn_id, kind, status) values (%s,%s,%s,%s,'ask','running')",
-            ghost := u(), u(), sid, gt := u())
+        # a crashed process leaves rows behind: fake them with runs that no task owns (lease long gone)
+        ghost, gt = u(), u()
+        sql(newdb, "insert into runs(id, client_id, session_id, turn_id, kind, status, pool, attempt, lease_until) "
+            "values (%s,%s,%s,%s,'ask','running','research',2, now() - interval '1 minute')", ghost, u(), sid, gt)
         sql(newdb, "insert into turns(id, session_id, idx, question, status) values (%s,%s,9,'q','running')", gt, sid)
-    # leaving the app = shutdown: the live run is recorded as interrupted
-    r = sql(newdb, "select id::text, status from runs order by created_at")
-    assert dict(r)[rid] == "interrupted" and dict(r)[ghost] == "running"
-    assert sql(newdb, "select status from turns where id = %s", b["turn_id"]) == [("interrupted",)]
-    async with serve() as c:  # next boot
-        assert (await c.get(f"/v1/runs/{ghost}")).json()["status"] == "interrupted"
+        for _ in range(100):  # the scheduler's sweep ends the attempt-2 ghost
+            if (await c.get(f"/v1/runs/{ghost}")).json()["status"] == "interrupted":
+                break
+            await asyncio.sleep(0.05)
+        assert (await c.get(f"/v1/runs/{ghost}")).json()["status"] == "interrupted" and (await c.get(f"/v1/runs/{ghost}")).json()["finished_at"]
         assert (await turn_of(c, sid, gt))["status"] == "interrupted"
-        assert (await c.get(f"/v1/runs/{ghost}")).json()["finished_at"]
+    # leaving the app = shutdown: the live run is recorded as interrupted
+    r = dict(sql(newdb, "select id::text, status from runs order by created_at"))
+    assert r[rid] == "interrupted"
+    assert sql(newdb, "select status from turns where id = %s", b["turn_id"]) == [("interrupted",)]
 
 
 # --- old routes ---------------------------------------------------------------------------------------------------------------
@@ -566,7 +568,7 @@ async def test_turn_removed_mid_run_stops_the_run_and_nothing_is_written_after(s
         run = await until(c, rid, "stopped")
         assert run["finished_at"]
         assert sql(newdb, "select count(*) from turns where id = %s", b["turn_id"]) == [(0,)]  # not resurrected
-        assert c.app.state.queue.status()["research"]["running"] == 0
+        assert (await c.app.state.queue.status())["research"]["running"] == 0
 
 
 async def test_cancel_a_queued_run_frees_the_ticket_and_stops_the_turn(serve, fake_complete):
@@ -578,16 +580,16 @@ async def test_cancel_a_queued_run_frees_the_ticket_and_stops_the_turn(serve, fa
         tb = body(sid)
         r2 = (await post(c, tb, b_)).json()["run"]["id"]
         for _ in range(100):
-            if c.app.state.queue.status()["research"]["queued"] == 1 and c.app.state.runs.live[r2].ticket.state == "queued":
+            if (await c.app.state.queue.status())["research"]["queued"] == 1:
                 break
             await asyncio.sleep(0.05)
         assert (await c.post(f"/v1/runs/{r2}/cancel", headers={"x-client-id": b_})).json()["status"] == "stopped"
         assert (await turn_of(c, sid, tb["turn_id"]))["status"] == "stopped"
-        assert c.app.state.queue.status()["research"] == {"running": 1, "limit": 1, "queued": 0}
+        assert (await c.app.state.queue.status())["research"] == {"running": 1, "limit": 1, "queued": 0}
         await c.post(f"/v1/runs/{r1}/cancel", headers={"x-client-id": a})
 
 
-async def test_shutdown_while_queued_marks_interrupted(serve, fake_complete, newdb):  # noqa: F811
+async def test_shutdown_while_queued_leaves_it_queued_for_the_next_process(serve, fake_complete, newdb):  # noqa: F811
     fake_complete["strategy"] = strategy("slow")
     async with serve(MAX_CONCURRENT_RUNS=1) as c:
         sid = await mk_session(c)
@@ -596,36 +598,30 @@ async def test_shutdown_while_queued_marks_interrupted(serve, fake_complete, new
         tb = body(sid)
         r2 = (await post(c, tb)).json()["run"]["id"]
         await asyncio.sleep(0.3)
-    assert dict(sql(newdb, "select id::text, status from runs"))[r2] == "interrupted"
-    assert sql(newdb, "select status, progress->>'_err' from turns where id = %s", tb["turn_id"]) == [("interrupted", "interrupted")]
+    assert dict(sql(newdb, "select id::text, status from runs"))[r2] == "queued"  # another process (or the next boot) runs it
+    assert sql(newdb, "select status, progress->>'_err' from turns where id = %s", tb["turn_id"]) == [("running", None)]
 
 
-async def test_replay_live_handoff_delivers_each_event_once(serve, fake_complete):
-    """An event persisted and published between the viewer's subscribe and its replay query comes once."""
+async def test_stray_and_repeated_notifications_deliver_each_event_once(serve, fake_complete):
+    """The table is the source of truth: a notification only wakes the viewer."""
     fake_complete["strategy"] = strategy("slow")
     async with serve() as c:
         sid = await mk_session(c)
         rid = (await post(c, body(sid))).json()["run"]["id"]
         svc = c.app.state.runs
         await until(c, rid, "running")
-        while svc.live[rid].seq < 2:
-            await asyncio.sleep(0.02)
-        run = svc.live[rid]
         gen = svc.events(rid, 0, 0.05)
-        first = await asyncio.wait_for(anext(gen), 10)  # subscribed, replay read
-        # publish a duplicate of an already replayed seq (the race's effect) plus a new event
-        run.seq += 1
-        for q in run.subs:
-            q.put_nowait((1, {"type": "dup"}))
-            q.put_nowait((run.seq, {"type": "answer", "term": "x", "content": ""}))
-        got = [first]
-        while len(got) < 3:
+        got = []
+        while len(got) < 2:
             x = await asyncio.wait_for(anext(gen), 10)
             if x[1]:
                 got.append(x)
+        for payload in (f"{rid}:1", f"{rid}:1", f"{rid}:99"):  # repeated, and ahead of what is stored
+            await c.app.state.pgbus.notify("run_events", payload)
+        assert (await asyncio.wait_for(anext(gen), 10))[1] is None  # only pings follow
         await gen.aclose()
-        assert [g[0] for g in got] == [1, 2, run.seq] and "dup" not in [g[1]["type"] for g in got]
-        await c.post(f"/v1/runs/{rid}/cancel", headers={"x-client-id": run.row["client_id"]})
+        assert [g[0] for g in got] == [1, 2]
+        await c.post(f"/v1/runs/{rid}/cancel", headers={"x-client-id": svc.live[rid].row["client_id"]})
 
 
 async def test_trailing_progress_is_flushed_by_a_timer(serve, fake_complete, monkeypatch):
@@ -680,8 +676,8 @@ async def test_a_real_finished_run_teaches_the_eta(serve, fake_complete, monkeyp
         sid = await mk_session(c)
         r = await post(c, body(sid), cid="3f0c1d52-8a4e-4b1c-9d3a-2f6b7a8c9d01")
         await until(c, r.json()["run"]["id"], "done")
-        q = c.app.state.queue
-        assert len(q._durations["research"]) == 1 and q.eta("research", 1) < 180
+        async with c.app.state.data.db.session() as ses:
+            assert await c.app.state.queue.eta(ses, "research", 1) < 180
         await usage.drain()
 
 
@@ -792,3 +788,10 @@ async def test_submit_announces_the_new_turn_inside_the_create_transaction(serve
         b = chat(sid)
         await until(c, (await post(c, b)).json()["run"]["id"], "done")
         assert seen == [True]  # once, from inside the create transaction
+
+
+def test_restarted_resets_progress_but_keeps_the_picked_docs():
+    p = {"waiting": 2, "reasoning": "r", "searches": [1], "sources": {"a": 1}, "answered": ["a"], "writing": True, "phase": "writing", "_docs": [{"id": "d"}]}
+    assert reduce_progress(p, {"type": "restarted"}) == {"waiting": None, "reasoning": "", "searches": [], "sources": {}, "answered": [],
+                                                         "writing": False, "phase": "planning", "_docs": [{"id": "d"}]}
+    assert "_docs" not in reduce_progress({**p, "phase": "searching"} | {"_docs": None} and {k: v for k, v in p.items() if k != "_docs"}, {"type": "restarted"})
