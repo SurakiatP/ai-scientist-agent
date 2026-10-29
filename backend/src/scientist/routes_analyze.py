@@ -125,7 +125,7 @@ async def analyze(file_id: str, question: str, *, store, settings: Settings, nam
         return
     res = run.result
     yield AnalysisResult(quality=quality, tables=res["tables"], findings=res["findings"],
-                         timings=res["timings"], artifacts=arts, provenance=provenance.analysis(settings, SYSTEM))
+                         timings=res["timings"], artifacts=arts, provenance=provenance.analysis(settings, SYSTEM, data))
     yield Complete()
 
 

@@ -239,6 +239,13 @@ class ProvSettings(BaseModel):
     replan_min_papers: int
     replan_max_searches: int
     review_enabled: bool
+    strategy_max_tokens: int
+    synthesis_max_tokens: int
+    review_max_tokens: int
+
+
+class ProvAnalysisSettings(BaseModel):
+    analyze_max_tokens: int
 
 
 class Provenance(BaseModel):
@@ -252,8 +259,11 @@ class Provenance(BaseModel):
     prompts: dict[str, str]  # prompt name -> sha256 hex [:16] of the exact text sent
     hermes: ProvHermes | None = None
     sandbox_image: str | None = None
-    settings: ProvSettings | None = None
+    settings: ProvSettings | ProvAnalysisSettings | None = None
     rounds: list[ProvRound] | None = None
+    plan_source: Literal["strategy", "given"] | None = None  # research: "strategy" = this run's model planned round 1; "given" = the client supplied the plan (e.g. after plan review, possibly edited; no strategy prompt was used)
+    input_sha256: str | None = None  # analysis only: sha256 hex of the analysed file's bytes
+    history_turns: int = 0  # earlier turns sent to the model as history
     phase_seconds: dict[str, float]
     usage: RunUsage | None = None
 

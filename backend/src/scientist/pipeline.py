@@ -366,7 +366,8 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
                  "review": REVIEW}
         names = {"branch"} | used | ({"strategy"} if not given else set()) | ({"replan"} if replan_sent else set())
         return provenance.research(settings, {k: texts[k] for k in texts if k in names and texts[k]},
-                                   provenance.rounds_of(plan, replans))
+                                   provenance.rounds_of(plan, replans), given=bool(given),
+                                   history_turns=len(history))
 
     if not answers:  # papers but no branch summary: say so plainly; never synthesise a comparison from titles alone
         yield FinalAnswer(content=f"Found {len(refs)} paper(s), but the search did not finish summarising them. "

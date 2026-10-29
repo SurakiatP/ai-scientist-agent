@@ -100,7 +100,6 @@ class Settings(BaseSettings):
     app_version: str | None = None  # e.g. the image tag; recorded in each answer's provenance
     contact_email: str = ""  # sent as mailto in the citation-check User-Agent (Crossref/NCBI polite pool)
 
-
     @field_validator("app_version")
     @classmethod
     def _blank_is_none(cls, v: str | None) -> str | None:

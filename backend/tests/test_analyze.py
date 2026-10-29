@@ -351,6 +351,8 @@ async def test_analysis_result_carries_provenance(c, store, fakes):
     from scientist.routes_analyze import SYSTEM
     p = [e for e in await analyze(c, store) if e["type"] == "analysis_result"][0]["provenance"]
     assert p["schema"] == 1 and p["prompts"] == {"analyze": digest(SYSTEM)} and p["sandbox_image"]
-    assert p["hermes"] is None and p["rounds"] is None and p["settings"] is None
+    assert p["hermes"] is None and p["rounds"] is None and p["settings"] == {"analyze_max_tokens": 3000}
+    assert p["input_sha256"] == __import__("hashlib").sha256(b"a,b\n1,2\n").hexdigest()
+    assert p["history_turns"] == 0 and p["plan_source"] is None
     assert p["models"]["main"]
     assert not [v for v in SECRETS.values() if v in json.dumps(p)]

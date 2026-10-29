@@ -8,7 +8,7 @@ from scientist.events import FinalAnswer, Provenance
 from scientist.hermes import SANDBOX_IMAGE, SKILLS_REVISION
 from scientist.provenance import digest
 from scientist.runs import _outcome
-from test_pipeline import Plan, Q, answer, crossref, paper, replan_reply, runner, settings, start, strategy  # noqa: F401
+from test_pipeline import Plan, Q, Turn, answer, apaper, review_reply, crossref, paper, replan_reply, runner, settings, start, strategy  # noqa: F401
 
 
 SECRET_FIELDS = ("openrouter_api_key", "minio_access_key", "minio_secret_key", "minio_access_key_file", "minio_secret_key_file",
@@ -49,6 +49,9 @@ async def test_replanned_run_lists_rounds_in_order(settings, tmp_path, fake_comp
     assert p.app_version == "v9" and p.models.main == "m" and p.models.fallback == "small"
     assert p.hermes.revision == "x" and p.hermes.skills_revision == SKILLS_REVISION and p.hermes.branch_image == SANDBOX_IMAGE
     assert p.settings.replan_rounds == 1 and p.settings.review_enabled is True
+    assert (p.settings.strategy_max_tokens, p.settings.synthesis_max_tokens, p.settings.review_max_tokens) == (
+        settings.strategy_max_tokens, settings.synthesis_max_tokens, settings.review_max_tokens)
+    assert p.plan_source == "strategy" and p.history_turns == 0 and p.input_sha256 is None
     assert set(p.prompts) == {"strategy", "replan", "branch", "synthesis"}  # no abstracts: no review call
     assert p.prompts["branch"] == digest(rt.system) and p.prompts["synthesis"] == digest(pipeline.SYNTHESIS)
     assert p.phase_seconds.get("synthesis", 0) >= 0 and "synthesis" in p.phase_seconds
@@ -62,6 +65,13 @@ async def test_given_plan_has_no_strategy_hash_or_replan(settings, tmp_path, fak
     p = (await final(Q, rt, settings, plan=[Plan("a"), Plan("b")])).provenance
     assert [(r.round, [s.term for s in r.searches]) for r in p.rounds] == [(1, ["a", "b"])]
     assert "strategy" not in p.prompts and "replan" not in p.prompts and p.app_version is None
+    assert p.plan_source == "given"
+
+
+async def test_history_turns_counts_earlier_turns(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    rt = runner(settings, tmp_path, {"*": [paper("P", "10.1/p"), answer("ok")]})
+    assert (await final(Q, rt, settings, history=[Turn("q1", "a1"), Turn("q2", "a2")])).provenance.history_turns == 2
 
 
 async def test_prompt_hash_follows_the_text(settings, tmp_path, fake_complete, monkeypatch):
@@ -142,3 +152,12 @@ async def test_review_hashed_only_when_a_call_was_sent(settings, tmp_path, fake_
     rt = runner(settings, tmp_path, {"*": [paper("P", "10.1/p"), answer("ok")]})
     p = (await final(Q, rt, settings)).provenance
     assert "review" not in p.prompts and not any(c["system"] == pipeline.REVIEW for c in fake_complete["calls"])
+
+
+async def test_failed_review_call_still_hashes_review(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    fake_complete["synthesis"] = "Editors are efficient [1]."
+    fake_complete["review"] = RuntimeError("down")
+    rt = runner(settings, tmp_path, {"a": [apaper("P", "10.1/p"), answer("ok")]})
+    p = (await final(Q, rt, settings)).provenance
+    assert "review" in p.prompts and any(c["system"] == pipeline.REVIEW for c in fake_complete["calls"])
