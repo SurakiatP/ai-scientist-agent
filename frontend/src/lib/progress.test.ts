@@ -14,3 +14,15 @@ describe("reduce replan", () => {
     expect(p.reasoning).toBe("r");
   });
 });
+
+describe("reduce restarted", () => {
+  it("starts over, remembers it, and the next events build on the empty state", () => {
+    const a = { term: "a", instructions: "i" };
+    const p = [
+      { type: "strategy", reasoning: "r", searches: [a] }, { type: "sources", term: "a", papers: [] }, { type: "answer", term: "a", content: "x" },
+      { type: "restarted" }, { type: "waiting", position: 1 },
+    ].reduce((x, e) => reduce(x, e as never), emptyProgress);
+    expect(p).toEqual({ ...emptyProgress, waiting: 1, eta: null, phase: "waiting", restarted: true });
+    expect(reduce({ ...emptyProgress, phase: "writing", writing: true, answered: ["a"] }, { type: "restarted" })).toEqual({ ...emptyProgress, restarted: true });
+  });
+});

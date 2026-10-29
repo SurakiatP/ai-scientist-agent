@@ -13,6 +13,7 @@ export type Progress = {
   answered: string[]; // terms summarised
   writing: boolean;
   indexing?: string; // docs mode, live only: name of the PDF being read for the first time
+  restarted?: boolean; // the run started over after its server process died; the card says so
   phase: "waiting" | "planning" | "searching" | "writing" | "done";
 };
 
@@ -34,6 +35,7 @@ export function reduce(p0: Progress, e: AskEvent): Progress {
     case "sources": return { ...p, sources: { ...p.sources, [e.term]: (p.sources[e.term] ?? 0) + e.papers.length }, phase: p.phase === "writing" ? p.phase : "searching", ...seenPatch(p, (e.papers ?? []).map((x) => x.source)) };
     case "records": return { ...p, ...seenPatch(p, (e.records ?? []).map((r) => r.database)) };
     case "answer": return { ...p, answered: [...p.answered, e.term], writing: true, phase: "writing" };
+    case "restarted": return { ...emptyProgress, restarted: true };
     case "docs_indexing": return { ...p, indexing: e.file_name, phase: "searching" };
     case "final_answer": case "complete": return ({ ...p, writing: false, phase: "done" });
     default: return p;

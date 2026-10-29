@@ -7,8 +7,8 @@ ID_RE = r"[0-9a-f]{32}"
 
 
 class PreviewStore:
-    # ponytail: in-process dict, so previews live in one worker only (the app already runs a single worker, see
-    # create_app). Ceiling: several workers/replicas; then keep previews in Redis/MinIO with the same TTL.
+    # ponytail: in-process dict, so a preview lives in the worker that rendered it. Ceiling: with several workers the
+    # GET can land on another one (404, the user renders again); then keep previews in Redis/MinIO with the same TTL.
     def __init__(self, max_entries: int, ttl: float, max_bytes: int = 5 << 20, clock=time.monotonic):
         self.max_entries, self.ttl, self.max_bytes, self.clock = max_entries, ttl, max_bytes, clock
         self._d: OrderedDict[str, tuple[float, bytes]] = OrderedDict()

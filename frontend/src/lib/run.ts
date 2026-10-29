@@ -170,7 +170,7 @@ async function follow(sessionId: string, base: Turn, runId: string, c: AbortCont
         if (e._seq !== undefined) seq = e._seq;
         if (isAnalysis) {
           if (analysis) analysis = reduceAnalysis(analysis, e as AnalyzeEvent);
-          progress = e.type === "waiting" ? reduce(progress, e as AskEvent) : progress.phase === "waiting" ? emptyProgress : progress;
+          progress = e.type === "waiting" || e.type === "restarted" ? reduce(progress, e as AskEvent) : progress.phase === "waiting" ? { ...emptyProgress, ...(progress.restarted ? { restarted: true } : {}) } : progress;
           outcome = analysisOutcome(e as AnalyzeEvent, outcome);
           patch({ progress, ...(analysis ? { analysis } : {}) });
         } else {

@@ -793,5 +793,5 @@ async def test_submit_announces_the_new_turn_inside_the_create_transaction(serve
 def test_restarted_resets_progress_but_keeps_the_picked_docs():
     p = {"waiting": 2, "reasoning": "r", "searches": [1], "sources": {"a": 1}, "answered": ["a"], "writing": True, "phase": "writing", "_docs": [{"id": "d"}]}
     assert reduce_progress(p, {"type": "restarted"}) == {"waiting": None, "reasoning": "", "searches": [], "sources": {}, "answered": [],
-                                                         "writing": False, "phase": "planning", "_docs": [{"id": "d"}]}
+                                                         "writing": False, "phase": "planning", "restarted": True, "_docs": [{"id": "d"}]}
     assert "_docs" not in reduce_progress({k: v for k, v in p.items() if k != "_docs"}, {"type": "restarted"})

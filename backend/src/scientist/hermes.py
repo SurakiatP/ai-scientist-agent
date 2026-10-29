@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import time
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from pathlib import Path
@@ -113,11 +114,15 @@ def _check_pinned(path: Path, revision: str) -> None:
         raise RuntimeError(f"{path} is not a clean checkout of {revision} (see infra/hermes/setup.md)")
 
 
+PROC = uuid.uuid4().hex[:12]  # per-process label value, so one worker never removes another worker's live branches
+
+
 def sweep_containers() -> None:
-    """Remove branch sandbox containers (label set in _prepare) left by a crashed or killed backend.
-    Run at startup and shutdown; assumes one backend process per Docker host. No Docker: nothing to do."""
+    """Remove this process's branch sandbox containers (label set in _prepare) at shutdown. Containers of a SIGKILLed
+    process are not found (ponytail: no startup sweep with several workers; add an age-based one if they pile up).
+    No Docker: nothing to do."""
     try:
-        ids = subprocess.run(["docker", "ps", "-aq", "--filter", "label=scientist.branch=1"], capture_output=True,
+        ids = subprocess.run(["docker", "ps", "-aq", "--filter", f"label=scientist.branch={PROC}"], capture_output=True,
                              text=True, timeout=30).stdout.split()
         if ids:
             subprocess.run(["docker", "rm", "-f", *ids], capture_output=True, timeout=60)
@@ -141,7 +146,7 @@ class HermesRuntime(BranchRunner):
         source = self.settings.hermes_source_path.expanduser()
         _check_pinned(source, self.settings.hermes_revision)
         _check_pinned(SKILLS_SOURCE, SKILLS_REVISION)
-        home = self.settings.hermes_runtime_dir  # rebuilt per runtime: one HermesRuntime per machine (single backend process)
+        home = self.settings.hermes_runtime_dir / PROC  # rebuilt per runtime, one dir per backend process (removed in close)
         shutil.rmtree(home, ignore_errors=True)
         (home / "skills").mkdir(parents=True)
         (home / "process-home").mkdir()
@@ -161,7 +166,7 @@ class HermesRuntime(BranchRunner):
             "TERMINAL_CONTAINER_PERSISTENT": "false", "TERMINAL_DOCKER_PERSIST_ACROSS_PROCESSES": "false",
             "TERMINAL_CONTAINER_CPU": "1", "TERMINAL_CONTAINER_MEMORY": "512",
             "TERMINAL_DOCKER_EXTRA_ARGS": json.dumps(["--cap-drop=ALL", "--security-opt=no-new-privileges",
-                                                      "--pids-limit=128", "--label", "scientist.branch=1"]),
+                                                      "--pids-limit=128", "--label", f"scientist.branch={PROC}"]),
         }
 
     async def run(self, term: str, instructions: str) -> AsyncIterator[BranchItem]:
@@ -267,3 +272,5 @@ class HermesRuntime(BranchRunner):
 
     async def close(self) -> None:
         await asyncio.gather(*(self._stop(p) for p in list(self.procs)))
+        if self.env:
+            shutil.rmtree(self.env["HERMES_HOME"], ignore_errors=True)

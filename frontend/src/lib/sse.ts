@@ -46,6 +46,7 @@ export type AskEvent =
   | { type: "answer"; term: string; content: string }
   | { type: "docs_indexing"; file_id: string; file_name: string } // live only: the server is reading this PDF for the first time
   | { type: "final_answer"; content: string; references: Reference[]; records?: DataRecord[]; doc_refs?: DocRef[]; empty_files?: EmptyFile[]; usage?: RunUsage | null; provenance?: Provenance | null }
+  | { type: "restarted" } // the run was put back in the queue after its process died; nothing so far counts
   | { type: "complete" }
   | StreamError;
 

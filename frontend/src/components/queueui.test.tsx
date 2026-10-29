@@ -34,6 +34,16 @@ describe("queue copy", () => {
     render(<ProgressCard turn={waiting(1)} />);
     expect(screen.queryByText(strings.th.otherDevice)).toBeNull();
   });
+  it("a restarted run says so, quietly, in both languages", () => {
+    const turn = { ...waiting(1), progress: { ...emptyProgress, phase: "searching" as const, restarted: true } };
+    render(<ProgressCard turn={turn} />);
+    expect(screen.getByText(strings.th.restartedNote)).toBeInTheDocument();
+    expect(strings.en.restartedNote).toBe("Restarted after an interruption");
+    expect(strings.th.restartedNote).toBe("เริ่มใหม่หลังระบบขัดข้อง");
+    cleanup();
+    render(<ProgressCard turn={waiting(1)} />);
+    expect(screen.queryByText(strings.th.restartedNote)).toBeNull();
+  });
   it("server error codes are localised at render time, with the English text as fallback", () => {
     const sid = useChatStore.getState().newSession();
     const mk = (extra: Partial<Turn>): Turn => ({ id: "e", question: "q", createdAt: 1, status: "error", progress: emptyProgress, error: "Run failed", ...extra });

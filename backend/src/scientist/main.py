@@ -39,13 +39,12 @@ log = logging.getLogger(__name__)
 def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient | None = None,
                store: ObjectStore | None = None, db: Database | None = None) -> FastAPI:
     """runner/client/store replace the real Hermes runtime, citation-check client and MinIO store (tests).
-    Run a single worker: the runtime owns ~/.cache/scientist/hermes-home and the run cap is per process."""
+    Several workers are fine: each runtime owns its own hermes-home/<process> dir and branch container label."""
     settings = get_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         if runner is None:
-            sweep_containers()
             await asyncio.to_thread(sandbox.sweep_stale_runs, settings)
         rt = runner or HermesRuntime(settings)
         async with client or httpx.AsyncClient() as c, mcp_server.running(mcp):  # /mcp's session manager lives as long as the app

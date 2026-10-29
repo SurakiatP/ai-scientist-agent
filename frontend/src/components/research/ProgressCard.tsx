@@ -169,6 +169,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
           </Stack>
         )}
         {other && <Typography sx={{ mt: -1, fontSize: "0.8125rem", color: "text.secondary" }}>{t.otherDevice}</Typography>}
+        {running && p.restarted && <Typography sx={{ mt: -1, fontSize: "0.8125rem", color: "text.secondary" }}>{t.restartedNote}</Typography>}
         {/* >= lg the right-hand ProgressPanel already carries the stage list */}
         <Box sx={{ display: { xs: "block", lg: "none" } }}><Stages p={p} running={running} /></Box>
         <SourcesUsed ids={p.seen} />

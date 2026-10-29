@@ -66,7 +66,7 @@ def reduce_progress(p: dict, e: dict) -> dict:
     if t in ("final_answer", "complete"):
         return {**p, "writing": False, "phase": "done"}
     if t == "restarted":  # the run starts over after its process died: nothing so far counts (the docs picked stay)
-        return {**EMPTY_PROGRESS, **({"_docs": p["_docs"]} if "_docs" in p else {})}
+        return {**EMPTY_PROGRESS, "restarted": True, **({"_docs": p["_docs"]} if "_docs" in p else {})}
     return p
 
 

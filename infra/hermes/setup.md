@@ -149,12 +149,11 @@ backend's `llm.complete` fallback covers strategy and synthesis only).
 cd backend && uv run uvicorn --factory scientist.main:create_app --host 127.0.0.1 --port 8000
 ```
 
-Run exactly one process (no `--workers`). At startup the app builds one `HermesRuntime`,
-which rebuilds the shared `~/.cache/scientist/hermes-home`, and the cap on simultaneous
-runs (`MAX_CONCURRENT_RUNS`) is per process. A second process would clobber the first's
-Hermes home and double the cap. Startup and shutdown also remove any Docker container
-labelled `scientist.branch=1`, which a crashed earlier run may have left behind. This
-assumes no other backend shares the Docker host.
+Several processes may run (`--workers`). At startup each builds its own `HermesRuntime`, which rebuilds
+`~/.cache/scientist/hermes-home/<process id>` (removed on shutdown), and labels its branch containers
+`scientist.branch=<process id>`; shutdown removes only that process's containers. The run caps
+(`MAX_CONCURRENT_RUNS`) are global when a database is configured. Containers a SIGKILLed process left behind
+are not removed automatically.
 
 A missing or dirty Hermes checkout (`HERMES_SOURCE_PATH`, `HERMES_REVISION`) makes startup fail, so uvicorn
 exits and `/v1/health` never answers. Missing Docker does not stop startup: the app comes up and each branch

@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from scientist.config import Settings
 from scientist.events import HTTP_URL, BranchAnswer, Paper
 from scientist.events import DataRecord
+import scientist.hermes as h
 from scientist.hermes import BranchFailed, HermesRuntime, InvalidPaper, InvalidRecord, sweep_containers
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -163,7 +164,7 @@ def test_sweep_removes_only_labelled_containers(tmp_path, monkeypatch):
     docker.chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path))
     sweep_containers()
-    assert log.read_text().splitlines() == ["ps -aq --filter label=scientist.branch=1", "rm -f c1 c2"]
+    assert log.read_text().splitlines() == [f"ps -aq --filter label=scientist.branch={h.PROC}", "rm -f c1 c2"]
 
 
 def test_sweep_without_docker_is_a_no_op(tmp_path, monkeypatch):
@@ -180,8 +181,8 @@ def test_prepare_writes_only_to_runtime_dir(settings, tmp_path, monkeypatch):
     monkeypatch.setattr(h, "_check_pinned", lambda *a: None)
     s = settings.model_copy(update={"hermes_runtime_dir": tmp_path / "rw/hermes-home", "enabled_skills": []})
     env = HermesRuntime(s)._prepare()
-    assert (tmp_path / "rw/hermes-home/config.yaml").is_file() and not (cache / "hermes-home").exists()
-    assert env["HERMES_HOME"] == str(tmp_path / "rw/hermes-home")
+    assert (tmp_path / "rw/hermes-home" / h.PROC / "config.yaml").is_file() and not (cache / "hermes-home").exists()
+    assert env["HERMES_HOME"] == str(tmp_path / "rw/hermes-home" / h.PROC)
 
 
 async def test_stop_cancelled_twice_still_untracks_the_process(settings, tmp_path):
