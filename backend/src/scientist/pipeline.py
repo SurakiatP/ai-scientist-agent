@@ -1,6 +1,7 @@
 """Ask pipeline: scope check, search strategy, parallel Hermes branches, synthesis."""
 import asyncio
 import json
+import logging
 import re
 import unicodedata
 from collections.abc import AsyncIterator
@@ -20,6 +21,7 @@ from scientist.guardrail import guard
 from scientist.hermes import BranchFailed, BranchRunner, BranchUsage, InvalidPaper, InvalidRecord
 from scientist.sources import DATA_SOURCES
 
+log = logging.getLogger(__name__)
 PROMPTS = Path(__file__).parent / "prompts"
 STRATEGY = (PROMPTS / "strategy.md").read_text()
 REPLAN = (PROMPTS / "replan.md").read_text()
@@ -76,7 +78,8 @@ async def _replan(question: str, thin: list[tuple[str, int]], tried: list[str], 
         found = [Search(term=str(s.get("term") or "").strip(), instructions=str(s.get("instructions") or "").strip())
                  for s in data["searches"]]
         reasoning = str(data.get("reasoning") or "")
-    except Exception:
+    except Exception as e:
+        log.warning("replan skipped: %r", e)
         return None
     seen = {_norm(t) for t in tried}
     searches = []
@@ -145,7 +148,8 @@ async def _review(text: str, refs: list[Reference], settings: Settings) -> list[
             raw = json.loads(r.text)["checks"]
         if not isinstance(raw, list):
             return None
-    except Exception:  # includes TimeoutError
+    except Exception as e:  # includes TimeoutError
+        log.warning("review skipped: %r", e)
         return None
     checks: dict[str, list[Check]] = {}
     total = 0
@@ -368,8 +372,8 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     if settings.review_enabled and mode in ("deep", "quick") and (reviewed := await _review(text, refs, settings)):
         refs = reviewed
         if ids := "".join(f"[{x.id}]" for x in refs if any(c.support == "unsupported" for c in x.checks)):
-            note += (f"\n\nNote: the reviewer found that reference(s) {ids} do not support the claim they are cited for. "
-                     "Treat those claims with caution.")
+            note += (f"\n\nNote: the abstract of reference(s) {ids} does not state the claim it is cited for "
+                     "(the reviewer checks abstracts only). Check the full paper before relying on those claims.")
     yield FinalAnswer(content=text + note, references=_trim(text, refs), records=final_records, usage=usage.snapshot())
     yield Complete()
 

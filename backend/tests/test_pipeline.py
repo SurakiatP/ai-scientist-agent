@@ -787,7 +787,7 @@ async def test_exact_quote_kept_whitespace_collapsed_case_sensitive(settings, tm
     assert [(x.support, x.quote) for x in c] == [("supported", "reach 60% efficiency in HEK293 cells."),
                                                  ("no_quote", None), ("unsupported", None)]
     assert final.references[0].paper.abstract == ABS.strip()
-    assert "reference(s) [1] do not support the claim" in final.content
+    assert "the abstract of reference(s) [1] does not state the claim it is cited for" in final.content
 
 
 async def test_paraphrase_or_changed_number_is_not_a_quote(settings, tmp_path, fake_complete):
