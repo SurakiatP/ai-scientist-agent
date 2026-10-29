@@ -98,3 +98,9 @@ async def test_docker_reachable_caches(monkeypatch):
     monkeypatch.setattr(sandbox, "_reach", [0.0, False])
     monkeypatch.setattr(asyncio, "create_subprocess_exec", missing)
     assert await sandbox.docker_reachable() is False
+
+
+def test_sandbox_init_pulls_the_hermes_image_verbatim():
+    from scientist.hermes import SANDBOX_IMAGE
+    init = Path(__file__).resolve().parents[2] / "infra/deploy/sandbox-init.sh"
+    assert SANDBOX_IMAGE in init.read_text()

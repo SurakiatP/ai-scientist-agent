@@ -37,7 +37,7 @@ services:
       # Pinned Hermes + skills checkout built by bootstrap.sh (outside the repo).
       - ${SCIENTIST_CACHE_DIR:-/var/lib/ai-scientist/cache}:/home/app/.cache/scientist:ro
       - sandbox-share:/srv/sandbox-share
-      - sandbox-certs:/certs:ro
+      - sandbox-client:/certs/client:ro  # a copy made by sandbox-init, NOT dind's own cert dir (see sandbox-init)
     read_only: true
     # /tmp holds Starlette's multipart spool: must exceed the largest upload cap (100 MB csv/parquet). RAM-backed.
     tmpfs:
@@ -46,7 +46,7 @@ services:
     depends_on:
       minio: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
-      sandbox-init: { condition: service_completed_successfully }
+      sandbox-init: { condition: service_completed_successfully }  # fail fast: the stack needs the sandbox runner; deploy.sh rolls back if health fails
     # No host Docker socket on purpose. Research branches (hermes.py SANDBOX_IMAGE) and data analysis run as containers in
     # the nested daemon of `sandbox`, reached over mTLS (tcp://sandbox:2376); the shared volume carries their files.
 
@@ -58,19 +58,23 @@ services:
   # Limits, worst case: MAX_CONCURRENT_RUNS (4) x MAX_BRANCHES (5) = 20 branch containers x (1 CPU, 512 MB) = 20 CPU / 10 GB,
   # plus SANDBOX_MAX_CONCURRENT (3) analyses x 2 GB = 6 GB, so 16 GB and about 23 CPUs at the theoretical maximum. The defaults
   # below fit a modest VM (8 GB / 4 CPUs) and do NOT cover that maximum: under load runs slow down or get OOM-killed
-  # inside the sandbox instead of starving the host. Raise SANDBOX_MEM_LIMIT / SANDBOX_CPUS / SANDBOX_PIDS_LIMIT on a bigger VM.
+  # inside the sandbox instead of starving the host. Raise SANDBOX_MEM_LIMIT / SANDBOX_CPUS / SANDBOX_PIDS_LIMIT on a bigger VM;
+  # LOWER SANDBOX_CPUS on a host with fewer than 4 CPUs (Docker rejects cpus above the host CPU count).
   sandbox:
     image: docker:28.5.2-dind@sha256:2a232a42256f70d78e3cc5d2b5d6b3276710a0de0596c145f627ecfae90282ac
     runtime: sysbox-runc
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
-    # The dind entrypoint puts the container hostname (plus DOCKER_TLS_SAN) into the server cert's SAN. Compose's service
-    # name is only a network alias, so without this the cert names the container id and `tcp://sandbox:2376` fails to verify.
+    # The dind entrypoint puts the container hostname into the server cert's SAN. Compose's service name is only a
+    # network alias, so without this the cert names the container id and `tcp://sandbox:2376` fails to verify.
     hostname: sandbox
+    # Wrapper adds the egress filter: agent code in branch containers has internet egress, and the private ranges hold the
+    # backend (no login, full data access), the VM host and cloud metadata (169.254.169.254). See deploy/sandbox-entrypoint.sh.
+    entrypoint: ["sh", "/sandbox-entrypoint.sh"]
     environment:
       DOCKER_TLS_CERTDIR: /certs
-      DOCKER_TLS_SAN: DNS:sandbox
     volumes:
+      - ./deploy/sandbox-entrypoint.sh:/sandbox-entrypoint.sh:ro
       - sandbox-certs:/certs
       - sandbox-share:/srv/sandbox-share
       - sandbox-docker:/var/lib/docker
@@ -79,20 +83,23 @@ services:
     cpus: ${SANDBOX_CPUS:-4}
     pids_limit: ${SANDBOX_PIDS_LIMIT:-4096}
     healthcheck:
-      test: ["CMD-SHELL", "DOCKER_HOST=tcp://localhost:2376 DOCKER_TLS_VERIFY=1 DOCKER_CERT_PATH=/certs/client docker version"]
+      test: ["CMD-SHELL", "DOCKER_HOST=tcp://localhost:2376 DOCKER_TLS_VERIFY=1 DOCKER_CERT_PATH=/certs/client docker version && iptables -C DOCKER-USER -d 169.254.0.0/16 -j DROP"]
       interval: 5s
       timeout: 5s
       retries: 24
       start_period: 20s
 
-  # One-shot: hands the client cert to the backend user (uid 10001 only), creates the shared dirs and pre-pulls both images
+  # One-shot: copies the client cert into its own volume for the backend user (uid 10001 only), creates the shared dirs and pre-pulls both images
+  # dind re-chmods /certs/client/key.pem to 0644 on every start and keeps /certs/client at 1777, so the backend must never
+  # mount that dir; it gets the copy in `sandbox-client`. The CA key persists in `sandbox-certs`, so the copy stays valid
+  # across sandbox restarts; any `compose up` re-copies it.
   # (the sandbox network is internal, so pulls go through the daemon's own egress). Same docker:28.5.2-cli digest as backend/Dockerfile.
   sandbox-init:
     image: docker:28.5.2-cli@sha256:625d9431a9f54c5a2bc90f24f0e1c3d55b1349fd857dd85035f98c2c9acbdd4d
     restart: "no"
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
-    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]  # chown/chmod on the volumes; read the key after it is chowned
+    cap_add: [CHOWN, FOWNER]  # install -o 10001 / chown on the volumes; the dind certs are world-readable so no DAC_OVERRIDE
     entrypoint: ["sh", "/sandbox-init.sh"]
     environment:
       DOCKER_HOST: tcp://sandbox:2376
@@ -101,7 +108,8 @@ services:
       ANALYSIS_IMAGE: ghcr.io/surakiatp/ai-scientist-agent/sandbox:${IMAGE_TAG:-develop}
     volumes:
       - ./deploy/sandbox-init.sh:/sandbox-init.sh:ro
-      - sandbox-certs:/certs
+      - sandbox-certs:/certs:ro
+      - sandbox-client:/client-out
       - sandbox-share:/srv/sandbox-share
     networks: [sandbox]
     read_only: true
@@ -214,4 +222,5 @@ volumes:
   caddy_config:
   sandbox-certs:  # dind CA + server + client certs
   sandbox-share:  # hermes-home + analysis work dir, same path in backend and sandbox
+  sandbox-client:  # client ca/cert/key copy owned by uid 10001, mounted read-only in the backend
   sandbox-docker:  # nested daemon's images and layers
