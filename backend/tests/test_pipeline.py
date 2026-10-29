@@ -9,7 +9,7 @@ import pytest
 
 from scientist import llm
 from scientist.config import Settings
-from scientist.events import Error, FinalAnswer, Refused, Strategy, Waiting, to_sse
+from scientist.events import BranchAnswer, Error, Paper, FinalAnswer, Refused, Strategy, Waiting, to_sse
 from scientist.gate import RunGate
 from scientist.hermes import HermesRuntime
 from scientist.pipeline import REPLAN, ask
@@ -916,3 +916,62 @@ async def test_thai_quote_only_cut_at_spaces(settings, tmp_path, fake_complete):
         ("1", "a", "supported", "การศึกษานี้พบว่าเบสเอดิเตอร์ม"),  # ends before a combining vowel
         ("1", "b", "supported", "การศึกษานี้พบว่าเบสเอดิเตอร์มีประสิทธิภาพสูง")), papers=[apaper("P", "10.1/p", th)])
     assert [x.support for x in final.references[0].checks] == ["no_quote", "supported"]
+
+
+# --- domain packs ---
+
+PACK_HINT = "Field focus (Cheminformatics): prefer pubmed, europepmc, crossref for literature and pubchem, chembl, chebi, bindingdb, zinc for database facts."
+PACK_BASE = "Field focus (Cheminformatics): prefer pubmed, europepmc, crossref for literature."
+
+
+class PackSpy:
+    """Branch runner that records the instructions it was given."""
+    system = "branch system"
+
+    def __init__(self):
+        self.seen = []
+
+    async def run(self, term, instructions):
+        self.seen.append((term, instructions))
+        yield Paper(title=term, authors=["A"], year=2024, doi=f"10.1/{term}", url="https://x.org")
+        yield BranchAnswer(term=term, content="ok")
+
+
+def pack_strat(fc):
+    return next(c["user"] for c in fc["calls"] if c["json_mode"])
+
+
+async def go_pack(settings, fake_complete, *, pack, skills=("database-lookup",), plan=None, rounds=0):
+    settings.enabled_skills, settings.replan_rounds = list(skills), rounds
+    fake_complete["strategy"] = strategy("a")
+    spy = PackSpy()
+    events = [e async for e in ask(Q, spy, settings=settings, client=crossref(), gate=RunGate(4), pack=pack, plan=plan)]
+    return spy, events
+
+
+async def test_general_prompts_are_byte_identical(settings, fake_complete):
+    spy, events = await go_pack(settings, fake_complete, pack=None)
+    assert spy.seen == [("a", "extract a")]
+    assert pack_strat(fake_complete) == f"Question:\n{Q}"
+    assert next(e for e in events if e.type == "final_answer").provenance.pack is None
+
+
+async def test_pack_hint_reaches_strategy_branch_and_provenance(settings, fake_complete):
+    spy, events = await go_pack(settings, fake_complete, pack="chem")
+    assert pack_strat(fake_complete) == f"Question:\n{Q}\n\n{PACK_HINT}"
+    assert spy.seen == [("a", f"extract a\n{PACK_HINT}")]
+    p = next(e for e in events if e.type == "final_answer").provenance
+    assert p.pack == "chem" and p.rounds[0].searches[0].instructions == "extract a"  # provenance keeps the model's own text
+
+
+async def test_databases_part_omitted_without_the_skill_and_given_plan_still_hinted(settings, fake_complete):
+    spy, _ = await go_pack(settings, fake_complete, pack="chem", skills=(), plan=[Plan("p")])
+    assert spy.seen == [("p", PACK_BASE)]
+    assert not any(c["json_mode"] for c in fake_complete["calls"])  # given plan: no strategy call
+
+
+async def test_replan_searches_get_the_hint(settings, fake_complete):
+    fake_complete["replan"] = replan_reply("wider")
+    settings.replan_min_papers = 5  # one paper is thin
+    spy, _ = await go_pack(settings, fake_complete, pack="chem", rounds=1)
+    assert ("wider", f"extract wider\n{PACK_HINT}") in spy.seen

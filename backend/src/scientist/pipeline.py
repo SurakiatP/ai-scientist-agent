@@ -238,7 +238,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
 
     async def branch(queue: asyncio.Queue, s: Search) -> None:
         try:
-            async for item in runner.run(s.term, f"{s.instructions}\n{focus}".strip() if focus else s.instructions):
+            async for item in runner.run(s.term, "\n".join(filter(None, (s.instructions, focus)))):
                 await queue.put((s.term, item))
         except Exception as e:  # a runner bug in one branch must not stop the others
             await queue.put((s.term, BranchFailed(term=s.term, reason=type(e).__name__)))

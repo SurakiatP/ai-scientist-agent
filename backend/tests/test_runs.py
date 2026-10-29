@@ -732,3 +732,26 @@ async def test_pack_is_validated_carried_to_the_turn_and_old_turns_have_none(ser
         fa = next(e["data"] for e in sse((await c.get(f"/v1/runs/{t['run_id']}/events")).text) if e["data"]["type"] == "final_answer")
         assert fa["provenance"]["pack"] == "chem"
         await usage.drain()
+
+
+async def test_approved_plan_run_takes_over_the_turns_pack(serve, fake_complete):
+    fake_complete["strategy"] = strategy("never used")
+    async with serve() as c:
+        sid, tid = await mk_session(c), u()
+        t = {"idx": 0, "question": Q, "mode": "deep", "status": "awaiting_plan", "plan": [{"term": "x", "instructions": ""}], "pack": "med"}
+        assert (await c.put(f"/v1/store/sessions/{sid}/turns/{tid}", json=t)).status_code == 200
+        r = await post(c, {"session_id": sid, "turn_id": tid, "kind": "ask", "question": Q, "pack": "chem",
+                           "plan": [{"term": "x", "instructions": ""}]})
+        assert r.status_code == 202 and r.json()["turn"]["pack"] == "chem"
+        await until(c, r.json()["run"]["id"], "done")
+        assert (await turn_of(c, sid, tid))["pack"] == "chem"
+
+
+async def test_chat_turn_has_no_pack(serve, fake_complete):
+    async with serve() as c:
+        sid = await mk_session(c)
+        b = chat(sid, pack="chem")
+        r = await post(c, b)
+        assert r.status_code == 202 and r.json()["turn"]["pack"] is None
+        await until(c, r.json()["run"]["id"], "done", "error", "refused")
+        assert (await turn_of(c, sid, b["turn_id"]))["pack"] is None

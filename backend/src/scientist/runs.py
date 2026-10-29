@@ -144,7 +144,7 @@ class RunService:
                     raise TooMany("session is full")
                 fname = (body.file_name or file_name)[:120]
                 vals = {"id": body.turn_id, "session_id": body.session_id, "idx": top + 1, "question": body.question[:4000],
-                        "mode": "analysis" if analyze else body.mode, "pack": None if analyze else body.pack, "status": "running", "progress": EMPTY_PROGRESS,
+                        "mode": "analysis" if analyze else body.mode, "pack": None if analyze or body.mode == "chat" else body.pack, "status": "running", "progress": EMPTY_PROGRESS,
                         "plan": plan, "run_id": rid, "version": 1,
                         "analysis": {"fileId": body.file_id, **({"fileName": fname} if fname else {}), "steps": []}
                         if analyze else None}
@@ -153,7 +153,7 @@ class RunService:
                 raise Conflict("turn belongs to another session")
             elif t.status == "awaiting_plan" and not analyze:
                 turn = _row((await s.execute(sa.update(m.turns).where(m.turns.c.id == body.turn_id).values(
-                    status="running", progress=EMPTY_PROGRESS, plan=plan or t.plan, run_id=rid, version=t.version + 1,
+                    status="running", progress=EMPTY_PROGRESS, plan=plan or t.plan, run_id=rid, pack=body.pack, version=t.version + 1,
                     updated_at=sa.func.now()).returning(m.turns))).one())
             else:
                 raise Conflict("turn already exists")

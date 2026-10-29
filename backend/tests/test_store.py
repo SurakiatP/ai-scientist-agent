@@ -651,3 +651,12 @@ async def test_turn_pack_round_trips_and_is_optional(api):
     assert (await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(1))).status_code == 200
     ts = next(s for s in (await api.get("/v1/store/snapshot")).json()["sessions"] if s["id"] == sid)["turns"]
     assert [t["pack"] for t in sorted(ts, key=lambda t: t["idx"])] == ["med", None]
+
+
+async def test_import_keeps_a_turn_whose_pack_is_unknown_or_too_long(api):
+    sid = u()
+    t = lambda p: {"question": "q", "status": "done", "mode": "deep", "pack": p, "answer": {"content": "a"}}  # noqa: E731
+    body = {"sessions": [{"id": sid, "title": "t", "turns": [t("chem"), t("alchemy"), t("x" * 50), t(["bio"])]}]}
+    assert (await api.post("/v1/store/import", json=body)).json()["turns"] == 4
+    ts = next(s for s in (await api.get("/v1/store/snapshot")).json()["sessions"] if s["id"] == sid)["turns"]
+    assert [x["pack"] for x in sorted(ts, key=lambda x: x["idx"])] == ["chem", None, None, None]
