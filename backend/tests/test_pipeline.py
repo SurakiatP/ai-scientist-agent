@@ -907,7 +907,7 @@ async def test_quick_mode_also_reviews(settings, tmp_path, fake_complete):
     rt = runner(settings, tmp_path, {"a": [apaper("P", "10.1/p"), answer("ok")]})
     events = [e async for e in ask(Q, rt, settings=settings, client=crossref(), gate=RunGate(4), mode="quick")]
     assert len(review_calls(fake_complete)) == 1
-    assert "do not support" in next(e for e in events if isinstance(e, FinalAnswer)).content
+    assert "does not state the claim" in next(e for e in events if isinstance(e, FinalAnswer)).content
 
 
 async def test_thai_quote_only_cut_at_spaces(settings, tmp_path, fake_complete):
