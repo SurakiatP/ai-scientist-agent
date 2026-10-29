@@ -2,7 +2,7 @@
 its own client id per key (`key:<id>`), so keys and browsers cannot cancel or crowd out each other. Runs live in the shared
 store (project "API"); any key may read any key's run, only the creating key may cancel it."""
 import uuid
-from contextlib import aclosing
+from contextlib import aclosing, suppress
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
@@ -29,9 +29,21 @@ from scientist.store import UUID_RE, _row
 from scientist.usage import track
 
 PREFIX = "/v1/api"
-API_PROJECT = uuid.UUID("5c1e2b64-0a7d-5e0b-9d54-a91b6f0d4a10")  # the one project every API session goes into
+API_PROJECT = uuid.UUID("5c1e2b64-0a7d-4e0b-9d54-a91b6f0d4a10")  # the one project every API session goes into
 Rid = Annotated[str, Path(pattern=UUID_RE)]
+
+
+class ErrorOut(BaseModel):
+    detail: str
+    code: str | None = Field(None, description="Machine-readable reason when there is one (client_busy, queue_full, busy, no_plan, or a refusal code).")
+
+
+def errs(**codes: str) -> dict:
+    return {int(c[1:]): {"model": ErrorOut, "description": d} for c, d in codes.items()}
+
+
 UNAUTH = {401: {"description": "Missing, malformed, unknown or revoked API key (always the same body)"}}
+GONE = errs(c404="No such API run (browser runs are not part of this API)")
 
 router = APIRouter(prefix=PREFIX, tags=["public"], dependencies=[Depends(require_key)], responses=UNAUTH)
 spec_router = APIRouter(prefix=PREFIX)  # the description of the API is public; it is not part of the API itself
@@ -131,9 +143,12 @@ def shape(row: dict, turn: dict | None) -> dict:
 
 
 async def api_session(svc: RunService, title: str) -> str:
-    """A new session in the project "API", created on first use."""
+    """A new session in the project "API", created on first use (and brought back if a user trashed it)."""
+    ins = pg_insert(m.projects).values(id=str(API_PROJECT), name="API")
     async with svc.data.tx() as s:
-        r = (await s.execute(pg_insert(m.projects).values(id=str(API_PROJECT), name="API").on_conflict_do_nothing().returning(m.projects))).first()
+        r = (await s.execute(ins.on_conflict_do_update(
+            index_elements=["id"], where=m.projects.c.deleted_at.is_not(None),
+            set_={"deleted_at": None, "version": m.projects.c.version + 1, "updated_at": sa.func.now()}).returning(m.projects))).first()
     if r:
         svc.data._changed("project", _row(r))
     sid = str(uuid.uuid4())
@@ -141,7 +156,8 @@ async def api_session(svc: RunService, title: str) -> str:
     return sid
 
 
-@router.post("/research", status_code=202, response_model=Accepted, summary="Start a research run")
+@router.post("/research", status_code=202, response_model=Accepted, summary="Start a research run",
+             responses=errs(c429="client_busy / queue_full / rate limit"))
 async def research(body: ResearchIn, key: ApiKey = Depends(require_key), svc: RunService = Depends(service)):
     run_in = valid(RunIn, session_id=str(uuid.uuid4()), turn_id=str(uuid.uuid4()), kind="ask", question=body.question,
                    mode="docs" if body.doc_ids else body.mode, doc_ids=body.doc_ids or [], pack=body.pack, plan=body.plan)
@@ -152,20 +168,26 @@ async def research(body: ResearchIn, key: ApiKey = Depends(require_key), svc: Ru
         try:
             out = await guarded(svc.submit(run_in, key.client_id))
         except BaseException:
-            await svc.data.soft_delete("session", sid)  # a refused submit leaves no empty session behind
-            await svc.data.delete_permanent("session", sid)
+            with suppress(Exception):  # a refused submit leaves no empty session behind; the original error is what surfaces
+                await svc.data.soft_delete("session", sid)
+                await svc.data.delete_permanent("session", sid)
             raise
     except Rejected as e:
         return JSONResponse({"detail": e.message, "code": e.code}, status_code=429)
     return {"run_id": out["run"]["id"], "session_id": sid, "turn_id": run_in.turn_id, "status": out["run"]["status"]}
 
 
-@router.post("/plan", response_model=PlanOut, summary="Plan the searches for a question (no run is started)")
+@router.post("/plan", response_model=PlanOut, summary="Plan the searches for a question (no run is started)",
+             responses=errs(c422="The question was refused (code says why) or the body is invalid", c429="The server is busy (code busy) or the rate limit is hit",
+                            c502="No plan could be made (code no_plan)"))
 async def plan(body: PlanIn, request: Request, svc: RunService = Depends(service)):
     q = valid(AskRequest, question=body.question, mode=body.mode, pack=body.pack, plan_only=True)
     st = request.app.state
+    if st.gate.free == 0 and len(st.gate.queue) >= st.settings.analyze_max_queue:  # the browser plan_only path's bound
+        return JSONResponse({"detail": "too many requests queued; try again shortly", "code": "busy"}, status_code=429)
     events = track(ask(q.question, st.runner, settings=st.settings, client=st.client, gate=st.gate, mode=q.mode, plan_only=True,
                        pack=q.pack), mode="plan", db=st.db)
+    message = "no plan was produced"
     async with aclosing(events) as evs:
         async for e in evs:
             if isinstance(e, Strategy):
@@ -173,8 +195,9 @@ async def plan(body: PlanIn, request: Request, svc: RunService = Depends(service
             if isinstance(e, Refused):
                 return JSONResponse({"detail": e.reason, "code": e.code}, status_code=422)
             if isinstance(e, Error):
+                message = e.message
                 break
-    raise HTTPException(502, e.message if isinstance(e, Error) else "no plan was produced")
+    return JSONResponse({"detail": message, "code": "no_plan"}, status_code=502)
 
 
 @router.get("/packs", response_model=list[PackOut], summary="The research packs")
@@ -182,21 +205,22 @@ async def packs():
     return [{"id": k, "th": p.name_th, "en": p.name_en} for k, p in PACKS.items()]
 
 
-@router.get("/runs/{run_id}", response_model=RunOut, summary="Status, progress and the answer of a run")
+@router.get("/runs/{run_id}", response_model=RunOut, summary="Status, progress and the answer of a run", responses=GONE)
 async def get_run(run_id: Rid, svc: RunService = Depends(service)):
     row = await own(svc, run_id)
     return shape(row, await turn_of(svc, row))
 
 
 @router.get("/runs/{run_id}/events", summary="Server-sent events of a run (resume with Last-Event-ID or ?after=)",
-            responses={200: {"content": {"text/event-stream": {}}}})
+            responses={200: {"content": {"text/event-stream": {}}}, **GONE})
 async def events(run_id: Rid, request: Request, after: Annotated[int | None, Query(ge=0)] = None,
                  last_event_id: Annotated[str | None, Header()] = None, svc: RunService = Depends(service)):
     await own(svc, run_id)
     return await routes_runs.events(run_id, request, after, last_event_id, svc)
 
 
-@router.post("/runs/{run_id}/cancel", response_model=RunOut, summary="Stop a run (only the key that started it)")
+@router.post("/runs/{run_id}/cancel", response_model=RunOut, summary="Stop a run (only the key that started it)",
+             responses={**GONE, **errs(c403="The run was started by another key")})
 async def cancel(run_id: Rid, key: ApiKey = Depends(require_key), svc: RunService = Depends(service)):
     await own(svc, run_id)
     try:
@@ -219,7 +243,8 @@ def provenance_file(turn: dict, answer: dict) -> dict:
 
 
 @router.get("/runs/{run_id}/artifacts/{kind}", summary="provenance (JSON), bibtex or ris of a finished run",
-            responses={200: {"content": {"application/json": {}, "application/x-bibtex": {}, "application/x-research-info-systems": {}}}})
+            responses={200: {"content": {"application/json": {}, "application/x-bibtex": {}, "application/x-research-info-systems": {}}},
+                       **GONE, **errs(c409="The run has not finished")})
 async def artifact(run_id: Rid, kind: Literal["provenance", "bibtex", "ris"], svc: RunService = Depends(service)):
     row = await own(svc, run_id)
     if row["status"] in ("queued", "running"):

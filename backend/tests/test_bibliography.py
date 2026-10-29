@@ -10,7 +10,7 @@ FIX = sorted((Path(__file__).parent / "fixtures" / "bibliography").glob("*.json"
 
 
 def test_fixtures_exist():
-    assert len(FIX) >= 8
+    assert len(FIX) >= 13
 
 
 @pytest.mark.parametrize("path", FIX, ids=lambda p: p.stem)

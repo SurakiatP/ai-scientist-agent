@@ -1,0 +1,21 @@
+{
+  "references": [
+    {
+      "id": "1",
+      "status": "verified",
+      "paper": {
+        "title": "ab\u001cc\u001dd",
+        "authors": [
+          "Ann\u001cLee",
+          "CyWu"
+        ],
+        "year": 2020,
+        "doi": null,
+        "pmid": null,
+        "url": "https://x"
+      }
+    }
+  ],
+  "bibtex": "@article{annlee2020,\n  title = {ab\u001cc\u001dd},\n  author = {Ann\u001cLee and CyWu},\n  year = {2020},\n  url = {https://x}\n}\n",
+  "ris": "TY  - JOUR\r\nTI  - ab\u001cc\u001dd\r\nAU  - Ann\u001cLee\r\nAU  - CyWu\r\nPY  - 2020\r\nUR  - https://x\r\nER  - \r\n"
+}

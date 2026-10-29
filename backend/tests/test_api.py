@@ -112,7 +112,7 @@ async def test_plan_returns_the_strategy_without_a_run(serve, fake_complete):
         assert r.status_code == 200
         j = r.json()
         assert set(j) == {"reasoning", "searches"} and j["reasoning"] == "plan"
-        assert [s["term"] for s in j["searches"]] == ["base editing", "prime editing"] or len(j["searches"]) <= 3
+        assert [s["term"] for s in j["searches"]] == ["base editing", "prime editing"]
         assert set(j["searches"][0]) == {"term", "instructions"}
         assert (await c.get("/v1/runs/status")).json()["research"]["running"] == 0
         r = await c.post(f"{API}/plan", json={"question": Q, "mode": "docs"}, headers=h)
@@ -266,3 +266,48 @@ async def test_per_key_queue_caps_do_not_touch_other_keys_or_browsers(serve, fak
             await c.post(f"{API}/runs/{rid}/cancel", headers=a)
         await c.post(f"{API}/runs/{ids_b[0]}/cancel", headers=b)
         await c.post(f"/v1/runs/{r.json()['run']['id']}/cancel", headers={"x-client-id": cid})
+
+
+async def test_plan_is_429_when_the_gate_is_saturated_and_502_when_the_pipeline_is_silent(serve, fake_complete, monkeypatch):
+    fake_complete["strategy"] = strategy("a")
+    async with serve(ANALYZE_MAX_QUEUE=1) as c:
+        _, h = await key(c)
+        g = c.app.state.gate
+        g.free, g.queue = 0, [object()]
+        r = await c.post(f"{API}/plan", json={"question": Q}, headers=h)
+        assert r.status_code == 429 and r.json()["code"] == "busy" and r.json()["detail"]
+        g.free, g.queue = 1, []
+        from scientist import routes_api
+
+        async def silent(*a, **k):
+            return
+            yield
+        monkeypatch.setattr(routes_api, "ask", silent)
+        r = await c.post(f"{API}/plan", json={"question": Q}, headers=h)
+        assert r.status_code == 502 and r.json()["code"] == "no_plan"
+
+
+async def test_a_trashed_api_project_is_revived(serve, fake_complete):
+    fake_complete["strategy"] = strategy("base editing")
+    async with serve() as c:
+        _, h = await key(c)
+        first = await start(c, h, mode="quick")
+        pid = next(p["id"] for p in (await c.get("/v1/store/snapshot")).json()["projects"] if p["name"] == "API")
+        assert (await c.request("DELETE", f"/v1/store/projects/{pid}", json={})).status_code == 200
+        assert not [p for p in (await c.get("/v1/store/snapshot")).json()["projects"] if p["name"] == "API"]
+        second = await start(c, h, mode="quick")
+        live = [p for p in (await c.get("/v1/store/snapshot")).json()["projects"] if p["name"] == "API"]
+        assert len(live) == 1 and live[0]["id"] == pid
+        for r in (first, second):
+            await until(c, h, r["run_id"], "done")
+        await usage.drain()
+
+
+async def test_openapi_documents_the_error_responses(serve, fake_complete):
+    async with serve() as c:
+        ops = (await c.get(f"{API}/openapi.json")).json()["paths"]
+        has = lambda p, m, code: str(code) in ops[API + p][m]["responses"]  # noqa: E731
+        assert has("/research", "post", 429) and has("/plan", "post", 429) and has("/plan", "post", 502) and has("/plan", "post", 422)
+        assert has("/runs/{run_id}", "get", 404) and has("/runs/{run_id}/events", "get", 404)
+        assert has("/runs/{run_id}/cancel", "post", 403) and has("/runs/{run_id}/cancel", "post", 404)
+        assert has("/runs/{run_id}/artifacts/{kind}", "get", 409) and has("/runs/{run_id}/artifacts/{kind}", "get", 404)

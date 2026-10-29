@@ -1,0 +1,22 @@
+{
+  "references": [
+    {
+      "id": "1",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "Bob} and @x{",
+          "Al AND Bo",
+          "Cy and"
+        ],
+        "year": 2020,
+        "doi": null,
+        "pmid": null,
+        "url": "https://x"
+      }
+    }
+  ],
+  "bibtex": "@article{x2020,\n  title = {T},\n  author = {{Bob\\textbraceright{} and @x\\textbraceleft{}} and {Al AND Bo} and Cy and},\n  year = {2020},\n  url = {https://x}\n}\n",
+  "ris": "TY  - JOUR\r\nTI  - T\r\nAU  - Bob} and @x{\r\nAU  - Al AND Bo\r\nAU  - Cy and\r\nPY  - 2020\r\nUR  - https://x\r\nER  - \r\n"
+}

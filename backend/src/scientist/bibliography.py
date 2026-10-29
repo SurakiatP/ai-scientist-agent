@@ -3,7 +3,7 @@ Both are asserted against the same fixtures (tests/fixtures/bibliography), so ch
 import re
 import unicodedata
 
-WS = r"[\t\n\v\f\r    -     　﻿]"  # JS \s (Python's \s differs)
+WS = r"[\t\n\v\f\r    -     　﻿]"  # JS \s, spelled in escapes (Python's \s differs)
 TEX = {"\\": "\\textbackslash{}", "^": "\\^{}", "~": "\\~{}", "{": "\\textbraceleft{}", "}": "\\textbraceright{}"}
 RAW = {"{": "%7B", "}": "%7D", "\\": "%5C", " ": "%20"}
 

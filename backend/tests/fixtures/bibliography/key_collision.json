@@ -1,0 +1,62 @@
+{
+  "references": [
+    {
+      "id": "1",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "Ann Lee"
+        ],
+        "year": 2001,
+        "doi": null,
+        "pmid": null,
+        "url": "https://x"
+      }
+    },
+    {
+      "id": "2",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "Bo Lee"
+        ],
+        "year": 2001,
+        "doi": null,
+        "pmid": null,
+        "url": "https://x"
+      }
+    },
+    {
+      "id": "3",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "Cy Lee"
+        ],
+        "year": 2001,
+        "doi": null,
+        "pmid": null,
+        "url": "https://x"
+      }
+    },
+    {
+      "id": "4",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "Ann Lee"
+        ],
+        "year": 2001,
+        "doi": null,
+        "pmid": null,
+        "url": "https://x"
+      }
+    }
+  ],
+  "bibtex": "@article{lee2001,\n  title = {T},\n  author = {Ann Lee},\n  year = {2001},\n  url = {https://x}\n}\n\n@article{lee2001a,\n  title = {T},\n  author = {Bo Lee},\n  year = {2001},\n  url = {https://x}\n}\n\n@article{lee2001b,\n  title = {T},\n  author = {Cy Lee},\n  year = {2001},\n  url = {https://x}\n}\n\n@article{lee2001c,\n  title = {T},\n  author = {Ann Lee},\n  year = {2001},\n  url = {https://x}\n}\n",
+  "ris": "TY  - JOUR\r\nTI  - T\r\nAU  - Ann Lee\r\nPY  - 2001\r\nUR  - https://x\r\nER  - \r\nTY  - JOUR\r\nTI  - T\r\nAU  - Bo Lee\r\nPY  - 2001\r\nUR  - https://x\r\nER  - \r\nTY  - JOUR\r\nTI  - T\r\nAU  - Cy Lee\r\nPY  - 2001\r\nUR  - https://x\r\nER  - \r\nTY  - JOUR\r\nTI  - T\r\nAU  - Ann Lee\r\nPY  - 2001\r\nUR  - https://x\r\nER  - \r\n"
+}

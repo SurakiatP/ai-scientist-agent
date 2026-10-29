@@ -1,0 +1,34 @@
+{
+  "references": [
+    {
+      "id": "1",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "Jane Smith"
+        ],
+        "year": 2020,
+        "doi": "10.1/a_b%c#d",
+        "pmid": "abc",
+        "url": "https://x/a_b%20c#frag"
+      }
+    },
+    {
+      "id": "2",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "Jane Smith"
+        ],
+        "year": 2020,
+        "doi": "10.1/_%#",
+        "pmid": "PMID 42x",
+        "url": "https://x"
+      }
+    }
+  ],
+  "bibtex": "@article{smith2020,\n  title = {T},\n  author = {Jane Smith},\n  year = {2020},\n  doi = {10.1/a_b%c#d},\n  url = {https://x/a_b%20c#frag}\n}\n\n@article{smith2020a,\n  title = {T},\n  author = {Jane Smith},\n  year = {2020},\n  doi = {10.1/_%#},\n  note = {PMID: 42},\n  url = {https://x}\n}\n",
+  "ris": "TY  - JOUR\r\nTI  - T\r\nAU  - Jane Smith\r\nPY  - 2020\r\nDO  - 10.1/a_b%c#d\r\nUR  - https://x/a_b%20c#frag\r\nN1  - PMID: abc\r\nER  - \r\nTY  - JOUR\r\nTI  - T\r\nAU  - Jane Smith\r\nPY  - 2020\r\nDO  - 10.1/_%#\r\nUR  - https://x\r\nN1  - PMID: PMID 42x\r\nER  - \r\n"
+}

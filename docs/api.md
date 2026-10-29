@@ -77,6 +77,7 @@ _Placeholder: the MCP server (Streamable HTTP at `/mcp`, same bearer key) and cl
 
 - Each key may make `STORE_WRITE_RATE_PER_MIN` requests per minute (shared with the app's write budget); over it: `429 {"detail":"rate limit exceeded; slow down"}`.
 - Failed authentication is counted per client IP against the same budget, so key guessing is throttled.
+- `POST /plan` is also refused with `429 {"detail", "code": "busy"}` while the server's research slots are all taken and `ANALYZE_MAX_QUEUE` requests already wait (the same bound as the app's plan review). If no plan can be made: `502 {"detail", "code": "no_plan"}`.
 - A key has its own run queue identity: at most `MAX_RUNNING_PER_CLIENT` running plus `MAX_QUEUED_PER_CLIENT` waiting runs (`429 {"detail", "code": "client_busy"}`; `queue_full` when the whole queue is full). Browsers and other keys are not affected.
 
 ## Data visibility
