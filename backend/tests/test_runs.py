@@ -714,3 +714,21 @@ def test_outcome_carries_usage_and_old_final_answer_has_none():
     assert _outcome(None, {"type": "final_answer", "content": "c", "references": [], "usage": u})["answer"]["usage"] == u
     assert "usage" not in _outcome(None, {"type": "final_answer", "content": "c", "references": [], "usage": None})["answer"]
     assert "usage" not in _outcome(None, {"type": "final_answer", "content": "c", "references": []})["answer"]
+
+
+async def test_pack_is_validated_carried_to_the_turn_and_old_turns_have_none(serve, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    async with serve() as c:
+        sid = await mk_session(c)
+        assert (await post(c, body(sid, pack="alchemy"))).status_code == 422
+        old, new = body(sid), body(sid, pack="chem")
+        for b in (old, new):
+            r = await post(c, b)
+            assert r.status_code == 202
+            await until(c, r.json()["run"]["id"], "done")
+        assert (await turn_of(c, sid, old["turn_id"]))["pack"] is None
+        t = await turn_of(c, sid, new["turn_id"])
+        assert t["pack"] == "chem"
+        fa = next(e["data"] for e in sse((await c.get(f"/v1/runs/{t['run_id']}/events")).text) if e["data"]["type"] == "final_answer")
+        assert fa["provenance"]["pack"] == "chem"
+        await usage.drain()

@@ -144,7 +144,7 @@ class RunService:
                     raise TooMany("session is full")
                 fname = (body.file_name or file_name)[:120]
                 vals = {"id": body.turn_id, "session_id": body.session_id, "idx": top + 1, "question": body.question[:4000],
-                        "mode": "analysis" if analyze else body.mode, "status": "running", "progress": EMPTY_PROGRESS,
+                        "mode": "analysis" if analyze else body.mode, "pack": None if analyze else body.pack, "status": "running", "progress": EMPTY_PROGRESS,
                         "plan": plan, "run_id": rid, "version": 1,
                         "analysis": {"fileId": body.file_id, **({"fileName": fname} if fname else {}), "steps": []}
                         if analyze else None}
@@ -173,7 +173,8 @@ class RunService:
                                  name=run.file_name, ext=run.ext), "analysis"
         else:
             events, mode = ask(body.question, st.runner, settings=st.settings, client=st.client, gate=run.ticket,
-                               mode=body.mode, history=body.history, plan=body.plan, memory=body.memory), body.mode
+                               mode=body.mode, history=body.history, plan=body.plan, memory=body.memory,
+                               pack=body.pack), body.mode
         return track(events, mode=mode, db=st.db, session_id=body.session_id, turn_id=body.turn_id)
 
     async def _run(self, run: Run) -> None:

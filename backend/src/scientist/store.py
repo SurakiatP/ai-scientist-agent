@@ -89,6 +89,7 @@ class TurnIn(BaseModel):
     idx: int = Field(ge=0, le=MAX_IDX)
     question: str = Field(max_length=4000)
     mode: Mode | None = None
+    pack: str | None = Field(None, max_length=20)  # a packs.PACKS id; the client drops unknown ones, the server keeps text
     status: Status
     answer: Answer | None = None
     progress: dict | list | None = None

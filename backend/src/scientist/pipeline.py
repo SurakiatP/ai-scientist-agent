@@ -18,6 +18,7 @@ from scientist.events import (BranchAnswer, Check, Complete, DataRecord, Error, 
                               Replan, Search, Sources, Strategy, Waiting, arxiv_id, paper_key)
 from scientist.gate import RunGate
 from scientist.guardrail import guard
+from scientist.packs import hint as pack_hint
 from scientist.hermes import BranchFailed, BranchRunner, BranchUsage, InvalidPaper, InvalidRecord
 from scientist.sources import DATA_SOURCES
 
@@ -44,9 +45,13 @@ def _history_block(history: list) -> str:
     return "<history>\n" + json.dumps(turns, ensure_ascii=False, indent=1).replace("<", "\\u003c") + "\n</history>\n\n"
 
 
-async def _strategy(question: str, settings: Settings, history: list = ()) -> Strategy | None:
+def _hint(pack: str | None, settings: Settings) -> str:
+    return pack_hint(pack, "database-lookup" in settings.enabled_skills)
+
+
+async def _strategy(question: str, settings: Settings, history: list = (), pack: str | None = None) -> Strategy | None:
     try:
-        r = await llm.complete(STRATEGY, f"{_history_block(history)}Question:\n{question}", max_tokens=settings.strategy_max_tokens,
+        r = await llm.complete(STRATEGY, f"{_history_block(history)}Question:\n{question}" + (f"\n\n{h}" if (h := _hint(pack, settings)) else ""), max_tokens=settings.strategy_max_tokens,
                                json_mode=True, settings=settings)
         data = json.loads(r.text)
         searches = [Search(term=str(s.get("term") or "").strip(), instructions=str(s.get("instructions") or "").strip())
@@ -178,11 +183,12 @@ def _ids(refs: list[Reference], status: str) -> str:
     return "".join(f"[{r.id}]" for r in refs if r.status == status)
 
 
-async def _plan(question: str, settings: Settings, mode: str, history: list, plan: list | None) -> Strategy | None:
+async def _plan(question: str, settings: Settings, mode: str, history: list, plan: list | None,
+                pack: str | None = None) -> Strategy | None:
     """The caller's plan as-is (no model call), else the model's; quick mode keeps only the first searches."""
     if plan:
         strategy = Strategy(reasoning="", searches=[Search(term=p.term, instructions=p.instructions) for p in plan])
-    elif not (strategy := await _strategy(question, settings, history)):
+    elif not (strategy := await _strategy(question, settings, history, pack)):
         return None
     if mode == "quick":
         strategy.searches = strategy.searches[:QUICK_SEARCHES]
@@ -191,7 +197,7 @@ async def _plan(question: str, settings: Settings, mode: str, history: list, pla
 
 async def ask(question: str, runner: BranchRunner, *, settings: Settings, client: httpx.AsyncClient,
               gate: RunGate, mode: str = "deep", history: list = (), plan: list | None = None,
-              plan_only: bool = False, memory: list = ()) -> AsyncIterator[Event]:
+              plan_only: bool = False, memory: list = (), pack: str | None = None) -> AsyncIterator[Event]:
     """Scope check, then, holding a gate slot: strategy, branches, citation check (via client), synthesis.
     plan_only stops after the strategy, with no gate slot."""
     if mode == "chat":
@@ -203,7 +209,7 @@ async def ask(question: str, runner: BranchRunner, *, settings: Settings, client
         yield Refused(reason=verdict.reason, code=verdict.code)  # refusals never queue or take a slot
         return
     if plan_only:
-        if strategy := await _plan(question, settings, mode, history, plan):
+        if strategy := await _plan(question, settings, mode, history, plan, pack):
             yield strategy
             yield Complete()
         else:
@@ -214,7 +220,7 @@ async def ask(question: str, runner: BranchRunner, *, settings: Settings, client
             yield Waiting(position=position, eta_seconds=getattr(gate, "eta", lambda _: None)(position))
     try:
         # aclosing: when our consumer goes away, _run's cleanup (killing the bridges) runs now, not at GC
-        async with aclosing(_run(question, runner, settings, client, mode, history, plan)) as events:
+        async with aclosing(_run(question, runner, settings, client, mode, history, plan, pack)) as events:
             async for e in events:
                 yield e
     finally:
@@ -222,8 +228,9 @@ async def ask(question: str, runner: BranchRunner, *, settings: Settings, client
 
 
 async def _run(question: str, runner: BranchRunner, settings: Settings, client: httpx.AsyncClient, mode: str,
-               history: list, given: list | None) -> AsyncIterator[Event]:
-    plan = await _plan(question, settings, mode, history, given)
+               history: list, given: list | None, pack: str | None = None) -> AsyncIterator[Event]:
+    plan = await _plan(question, settings, mode, history, given, pack)
+    focus = _hint(pack, settings)  # "" for General: instructions go to the runner untouched
     if plan is None:
         yield Error(message=PLAN_ERROR)
         return
@@ -231,7 +238,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
 
     async def branch(queue: asyncio.Queue, s: Search) -> None:
         try:
-            async for item in runner.run(s.term, s.instructions):
+            async for item in runner.run(s.term, f"{s.instructions}\n{focus}".strip() if focus else s.instructions):
                 await queue.put((s.term, item))
         except Exception as e:  # a runner bug in one branch must not stop the others
             await queue.put((s.term, BranchFailed(term=s.term, reason=type(e).__name__)))
@@ -367,7 +374,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
         names = {"branch"} | used | ({"strategy"} if not given else set()) | ({"replan"} if replan_sent else set())
         return provenance.research(settings, {k: texts[k] for k in texts if k in names and texts[k]},
                                    provenance.rounds_of(plan, replans), given=bool(given),
-                                   history_turns=len(history))
+                                   history_turns=len(history), pack=pack)
 
     if not answers:  # papers but no branch summary: say so plainly; never synthesise a comparison from titles alone
         yield FinalAnswer(content=f"Found {len(refs)} paper(s), but the search did not finish summarising them. "

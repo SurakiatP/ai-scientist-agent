@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from scientist.config import get_settings
+from scientist.packs import PACKS
 from scientist.events import Error, Event, to_sse
 from scientist.pipeline import THAI, ask
 from scientist.usage import track
@@ -56,6 +57,7 @@ class AskRequest(BaseModel):
     history: list[HistoryTurn] = Field(default=[], max_length=20)
     plan: list[PlanSearch] | None = Field(default=None, max_length=20)
     plan_only: bool = False
+    pack: str | None = None  # a key of packs.PACKS; None = General
 
     @field_validator("question")
     @classmethod
@@ -65,6 +67,13 @@ class AskRequest(BaseModel):
             raise ValueError("question is empty")
         if len(v) > (limit := get_settings().max_question_chars):
             raise ValueError(f"question is longer than {limit} characters")
+        return v
+
+    @field_validator("pack")
+    @classmethod
+    def _pack(cls, v: str | None) -> str | None:
+        if v is not None and v not in PACKS:
+            raise ValueError("unknown pack")
         return v
 
     @field_validator("history")
@@ -131,7 +140,8 @@ async def ask_route(body: AskRequest, request: Request) -> StreamingResponse:
     if (body.plan_only or body.mode == "chat") and st.gate.free == 0 and len(st.gate.queue) >= st.settings.analyze_max_queue:  # same cap as analyze
         raise HTTPException(429, "too many requests queued; try again shortly")
     events = ask(body.question, st.runner, settings=st.settings, client=st.client, gate=st.gate, mode=body.mode,
-                 history=body.history, plan=body.plan, plan_only=body.plan_only, memory=body.memory)
+                 history=body.history, plan=body.plan, plan_only=body.plan_only, memory=body.memory,
+                 pack=body.pack)
     if st.db is not None:
         events = track(events, mode="plan" if body.plan_only else body.mode, db=st.db)
     return StreamingResponse(_sse(events, st.settings.sse_ping_seconds), media_type="text/event-stream",

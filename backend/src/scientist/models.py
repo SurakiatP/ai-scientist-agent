@@ -25,7 +25,7 @@ turns = sa.Table(
     "turns", md, sa.Column("id", UUID, primary_key=True),
     sa.Column("session_id", UUID, sa.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False),
     sa.Column("idx", sa.Integer, nullable=False), sa.Column("question", sa.Text, nullable=False),
-    sa.Column("mode", sa.Text), sa.Column("status", sa.Text, nullable=False), sa.Column("answer", pg.JSONB),
+    sa.Column("mode", sa.Text), sa.Column("pack", sa.Text), sa.Column("status", sa.Text, nullable=False), sa.Column("answer", pg.JSONB),
     sa.Column("progress", pg.JSONB), sa.Column("plan", pg.JSONB), sa.Column("analysis", pg.JSONB),
     sa.Column("refused", sa.Text), sa.Column("error", sa.Text),
     _ts("created_at", nullable=False, server_default=NOW), _ts("updated_at", nullable=False, server_default=NOW),

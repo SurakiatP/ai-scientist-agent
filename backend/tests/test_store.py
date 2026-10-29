@@ -643,3 +643,11 @@ async def test_turn_answer_keeps_provenance_and_old_turns_load(api):
     assert r.status_code == 200
     s = next(x for x in (await api.get("/v1/store/snapshot")).json()["sessions"] if x["id"] == sid)
     assert s["turns"][0]["answer"]["provenance"] == pv and "provenance" not in s["turns"][1]["answer"]
+
+
+async def test_turn_pack_round_trips_and_is_optional(api):
+    sid = await mk_session(api)
+    assert (await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(0, pack="med"))).status_code == 200
+    assert (await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(1))).status_code == 200
+    ts = next(s for s in (await api.get("/v1/store/snapshot")).json()["sessions"] if s["id"] == sid)["turns"]
+    assert [t["pack"] for t in sorted(ts, key=lambda t: t["idx"])] == ["med", None]
