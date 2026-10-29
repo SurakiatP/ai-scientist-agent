@@ -50,20 +50,31 @@ unreachable() { ! branch "$PROBE" "$1" "$2" >/dev/null 2>&1; }
 TLS='import urllib.request as u,ssl,sys
 c = ssl.create_default_context(); c.check_hostname = False; c.verify_mode = ssl.CERT_NONE
 try: u.urlopen("https://" + sys.argv[1] + ":2376/version", timeout=6, context=c)
-except Exception as x: print("refused:", type(x).__name__); sys.exit(0)
-sys.exit(1)'
+except Exception as x:
+    r = getattr(x, "reason", x)  # URLError wraps the socket/ssl error
+    t = str(x).upper()  # TLS 1.3 reports the missing client cert as an alert string on read
+    if isinstance(r, (ssl.SSLError, ConnectionResetError)) or "CERTIFICATE_REQUIRED" in t or "HANDSHAKE_FAILURE" in t or "BAD_CERTIFICATE" in t: print("TLS refused:", type(r).__name__); sys.exit(0)  # RemoteDisconnected is a ConnectionResetError
+    print("other failure (not a TLS refusal):", type(r).__name__, r); sys.exit(1)
+print("daemon answered without a client cert"); sys.exit(1)'
 SBX_IP="$(getent hosts sandbox | awk '{print $1; exit}')"
-d() { [ -n "$SBX_IP" ] && branch "$TLS" "$SBX_IP" && branch "$TLS" sandbox; }
-check "(d) branch container cannot reach sandbox:2376" d
+d() { [ -n "$SBX_IP" ] && branch "$TLS" "$SBX_IP"; }
+check "(d) branch container cannot use sandbox:2376 (TLS refused without cert)" d
 
 # (e) egress filter: no route to the backend or the metadata address, public HTTPS works.
 # Stand-in listener on :8000 (a refused connection would look "blocked" too); every non-loopback IP of this container counts as "the backend".
 python -m http.server 8000 --bind 0.0.0.0 --directory /tmp >/dev/null 2>&1 &
 LISTENER=$!; trap 'kill $LISTENER 2>/dev/null' EXIT; sleep 1
-e1() { for ip in ${SMOKE_BACKEND_IP:-} $(hostname -i); do
-         case "$ip" in 127.*|"") continue;; esac
-         unreachable "$ip" 8000 || { echo "reached $ip:8000"; return 1; }
-       done; }
+e1() {
+  # positive control: the listener must answer locally, otherwise "unreachable" below proves nothing
+  python -c 'import socket; socket.create_connection(("127.0.0.1", 8000), 3).close()' || { echo "listener not running"; return 1; }
+  n=0
+  for ip in ${SMOKE_BACKEND_IP:-} $(hostname -i); do
+    case "$ip" in 127.*|""|*:*) continue;; esac
+    n=$((n + 1))
+    unreachable "$ip" 8000 || { echo "reached $ip:8000"; return 1; }
+  done
+  [ "$n" -gt 0 ] || { echo "no non-loopback IPv4 address to probe"; return 1; }
+}
 check "(e1) branch container cannot reach backend:8000" e1
 check "(e2) branch container cannot reach 169.254.169.254:80" unreachable 169.254.169.254 80
 check "(e3) branch container reaches https://api.crossref.org/" branch "$HTTPS" https://api.crossref.org/

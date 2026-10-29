@@ -16,10 +16,17 @@ done
 SYSBOX_VERSION=0.7.1
 SYSBOX_SHA256=9d6d5484f980d0a17f86c492c1262015c2afb66280bdb97215b79fde6a0261c5
 if ! docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q sysbox-runc; then
+  # The sysbox .deb installer refuses to configure (half-installed package) while docker runs containers and /etc/docker/daemon.json has
+  # no bip/default-address-pools; on an empty host it WRITES bip 172.20.0.1/16 + default-address-pools 172.25.0.0/16 there and restarts docker.
+  if [ -n "$(docker ps -aq 2>/dev/null)" ]; then
+    echo "sysbox is not installed and containers exist. Stop the stack first (docker compose -f infra/compose.yaml --env-file /etc/ai-scientist/private/app.env down; data volumes stay)," >&2
+    echo "or set bip and default-address-pools in /etc/docker/daemon.json yourself, then re-run this script." >&2
+    exit 1
+  fi
   T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
   curl -fsSL -o "$T/sysbox.deb" "https://github.com/nestybox/sysbox/releases/download/v${SYSBOX_VERSION}/sysbox-ce_${SYSBOX_VERSION}.linux_amd64.deb"
   echo "$SYSBOX_SHA256  $T/sysbox.deb" | sha256sum -c - || { echo "sysbox .deb checksum mismatch" >&2; exit 1; }
-  apt-get install -y "$T/sysbox.deb"  # the package registers the runtime and restarts docker
+  apt-get install -y "$T/sysbox.deb"  # registers the runtime; sets bip/default-address-pools in daemon.json and restarts (or SIGHUPs) docker
   docker info --format '{{json .Runtimes}}' | grep -q sysbox-runc || { echo "sysbox-runc is not listed by docker info" >&2; exit 1; }
 fi
 # Cache must be readable by the backend (uid 10001) but not writable by it.
