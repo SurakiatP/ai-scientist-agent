@@ -1,4 +1,5 @@
 """The fair queue over the runs table: admission, claim order, position, ETA (needs the throwaway Postgres)."""
+import asyncio
 import uuid
 
 import pytest
@@ -135,11 +136,19 @@ async def test_a_cancelled_waiter_moves_the_others_up(mk):
 
 
 async def test_two_queues_never_exceed_the_global_limit(mk):
-    a, b = mk(max_concurrent_runs=1), mk(max_concurrent_runs=1)  # two processes
+    a, b = mk(max_concurrent_runs=1), mk(max_concurrent_runs=1)  # two processes, two engines
     for c in ("A", "B", "C"):
         await a.add(c)
-    got = [x for x in [await a.claim(), await b.claim(), await a.claim()] if x]
+    got = [x for x in await asyncio.gather(a.claim(), b.claim(), a.claim(), b.claim()) if x]
     assert len(got) == 1
+
+
+async def test_the_per_client_cap_is_exact_across_pools_under_concurrent_claims(mk):
+    a, b = mk(max_concurrent_runs=2, sandbox_max_concurrent=2), mk(max_concurrent_runs=2, sandbox_max_concurrent=2)
+    await a.add("A")
+    await a.add("A", "analysis")
+    got = [x for x in await asyncio.gather(a.claim("research"), b.claim("analysis")) if x]
+    assert len(got) == 1  # one browser, one running (the cap is across both pools)
 
 
 async def test_eta_uses_default_then_average_of_finished_runs(mk):

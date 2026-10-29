@@ -424,10 +424,9 @@ async def test_shutdown_interrupts_its_runs_and_the_next_boot_sweeps_only_expire
             await asyncio.sleep(0.05)
         assert (await c.get(f"/v1/runs/{ghost}")).json()["status"] == "interrupted" and (await c.get(f"/v1/runs/{ghost}")).json()["finished_at"]
         assert (await turn_of(c, sid, gt))["status"] == "interrupted"
-    # leaving the app = shutdown: the live run is recorded as interrupted
-    r = dict(sql(newdb, "select id::text, status from runs order by created_at"))
-    assert r[rid] == "interrupted"
-    assert sql(newdb, "select status from turns where id = %s", b["turn_id"]) == [("interrupted",)]
+    # leaving the app = graceful shutdown: the live run goes back to the queue for another process
+    assert sql(newdb, "select status, attempt, worker from runs where id = %s", rid) == [("queued", 2, None)]
+    assert sql(newdb, "select status from turns where id = %s", b["turn_id"]) == [("running",)]
 
 
 # --- old routes ---------------------------------------------------------------------------------------------------------------
@@ -528,7 +527,7 @@ async def test_cancel_racing_a_natural_finish_ends_in_one_terminal_state(serve, 
         assert (await turn_of(c, sid, b["turn_id"]))["status"] == run["status"]
 
 
-async def test_shutdown_after_user_cancel_stays_stopped_and_shutdown_streams_get_interrupted(serve, fake_complete, newdb):  # noqa: F811
+async def test_shutdown_after_user_cancel_stays_stopped_and_a_shutdown_releases_the_other_run_to_the_queue(serve, fake_complete, newdb):  # noqa: F811
     fake_complete["strategy"] = strategy("slow")
     async with serve() as c:
         sid, a, b_ = await mk_session(c), u(), u()
@@ -548,12 +547,13 @@ async def test_shutdown_after_user_cancel_stays_stopped_and_shutdown_streams_get
         w = asyncio.create_task(watch())
         await asyncio.sleep(0.3)
         await c.app.state.runs.shutdown()
-        await asyncio.wait_for(w, 10)
-        assert seen[-1] == {"type": "error", "message": "interrupted", "code": "interrupted"} and r2_running
+        await asyncio.sleep(0.5)
+        w.cancel()  # a released run is queued again: its stream goes on, waiting for whichever process runs it
+        assert {"type": "restarted"} in seen and r2_running
     rows = dict(sql(newdb, "select id::text, status from runs"))
-    assert rows[r1] == "stopped" and rows[r2] == "interrupted"
+    assert rows[r1] == "stopped" and rows[r2] == "queued"
     st = dict(sql(newdb, "select id::text, status from turns"))
-    assert st[t1["turn_id"]] == "stopped" and st[t2["turn_id"]] == "interrupted"
+    assert st[t1["turn_id"]] == "stopped" and st[t2["turn_id"]] == "running"
 
 
 async def test_turn_removed_mid_run_stops_the_run_and_nothing_is_written_after(serve, fake_complete, newdb):  # noqa: F811
@@ -794,4 +794,4 @@ def test_restarted_resets_progress_but_keeps_the_picked_docs():
     p = {"waiting": 2, "reasoning": "r", "searches": [1], "sources": {"a": 1}, "answered": ["a"], "writing": True, "phase": "writing", "_docs": [{"id": "d"}]}
     assert reduce_progress(p, {"type": "restarted"}) == {"waiting": None, "reasoning": "", "searches": [], "sources": {}, "answered": [],
                                                          "writing": False, "phase": "planning", "_docs": [{"id": "d"}]}
-    assert "_docs" not in reduce_progress({**p, "phase": "searching"} | {"_docs": None} and {k: v for k, v in p.items() if k != "_docs"}, {"type": "restarted"})
+    assert "_docs" not in reduce_progress({k: v for k, v in p.items() if k != "_docs"}, {"type": "restarted"})

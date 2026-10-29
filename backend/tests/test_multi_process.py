@@ -38,17 +38,20 @@ class Fake:
     def __init__(self, n=0, pause=0.0):
         self.gates, self.ran, self.cancelled, self.n, self.pause = defaultdict(asyncio.Event), [], [], n, pause
 
-    def release(self, rid):
-        self.gates[rid].set()
+    def release(self, rid, pid=None):
+        for (p, r), e in list(self.gates.items()):
+            if r == rid and pid in (None, p):
+                e.set()
 
     async def script(self, svc, run):
         self.ran.append((svc.pid, run.id))
+        gate = self.gates[(svc.pid, run.id)]
         try:
             yield Strategy(reasoning="r", searches=[])
             for i in range(self.n):
                 await asyncio.sleep(self.pause)
                 yield Sources(term=f"t{i}", papers=[])
-            await self.gates[run.id].wait()
+            await gate.wait()
             yield FinalAnswer(content="a", references=[])
             yield Complete()
         except asyncio.CancelledError:
@@ -223,3 +226,86 @@ async def test_admission_caps_are_counted_across_processes(cluster):
         await submit(cluster, a, sid, "c3")
     assert e.value.code == "queue_full"
     assert sql(cluster.db, "select count(*) from runs") == [(3,)]  # a refused submit leaves no row
+
+
+def events_of(fake, rid):
+    return [(r[0], r[1]) for r in sql(fake.db, "select seq, event->>'type' from run_events where run_id = %s order by seq", rid)]
+
+
+async def test_a_run_reclaimed_by_its_own_process_is_fenced_from_the_stale_copy(cluster):
+    fake = cluster
+    a = await fake.make(max_concurrent_runs=1)
+
+    async def no_renew():
+        return None
+    a._renew_once = no_renew  # the lease lapses although the loop is alive
+    rid = await submit(fake, a, u(), "c1")
+    await until(ran(fake, 2), 20)  # swept, restarted and claimed again by the same process
+    fake.release(rid)
+    await until(is_status(fake, rid, "done"))
+    assert events_of(fake, rid) == [(1, "strategy"), (2, "restarted"), (3, "strategy"), (4, "final_answer"), (5, "complete")]
+    assert fake.cancelled == [rid] and sql(fake.db, "select attempt from runs where id = %s", rid) == [(2,)]
+
+
+async def test_a_lost_lease_owner_writes_nothing_more(cluster):
+    fake = cluster
+    a = await fake.make(max_concurrent_runs=1)
+    rid = await submit(fake, a, u(), "c1")
+    await until(ran(fake, 1))
+    for t in a._loops:  # A stalls: no renewal, no scheduling, but its run task lives on
+        t.cancel()
+    b = await fake.make(max_concurrent_runs=1)
+    await until(ran(fake, 2), 20)
+    assert fake.ran[1][0] == b.pid
+    tid = sql(fake.db, "select turn_id::text from runs where id = %s", rid)[0][0]
+    fake.release(rid, a.pid)  # the stale copy now answers and completes
+    await asyncio.sleep(1.0)
+    assert events_of(fake, rid) == [(1, "strategy"), (2, "restarted"), (3, "strategy")]
+    assert sql(fake.db, "select status, attempt, worker from runs where id = %s", rid) == [("running", 2, b.pid)]
+    assert sql(fake.db, "select status from turns where id = %s", tid) == [("running",)]
+    fake.release(rid, b.pid)
+    await until(is_status(fake, rid, "done"))
+    assert sql(fake.db, "select status from turns where id = %s", tid) == [("done",)]
+
+
+async def test_graceful_shutdown_releases_runs_to_the_queue_then_interrupts_at_max_attempts(cluster):
+    fake = cluster
+    a = await fake.make(max_concurrent_runs=1)
+    rid = await submit(fake, a, u(), "c1")
+    await until(ran(fake, 1))
+    await a.shutdown()
+    assert sql(fake.db, "select status, attempt, worker from runs where id = %s", rid) == [("queued", 2, None)]
+    assert events_of(fake, rid) == [(1, "strategy"), (2, "restarted")]
+    tid = sql(fake.db, "select turn_id::text from runs where id = %s", rid)[0][0]
+    assert sql(fake.db, "select status from turns where id = %s", tid) == [("running",)]
+    b = await fake.make(max_concurrent_runs=1)  # another process takes it over
+    await until(ran(fake, 2))
+    assert fake.ran[1][0] == b.pid
+    await b.shutdown()  # attempt 2 is the last
+    assert sql(fake.db, "select status, attempt from runs where id = %s", rid) == [("interrupted", 2)]
+    assert sql(fake.db, "select status, progress->>'_err' from turns where id = %s", tid) == [("interrupted", "interrupted")]
+
+
+async def test_a_cancel_requested_run_of_a_dead_process_is_stopped_not_restarted(cluster):
+    fake = cluster
+    a = await fake.make(max_concurrent_runs=1)
+    rid = await submit(fake, a, u(), "c1")
+    await until(ran(fake, 1))
+    sql(fake.db, "update runs set cancel_requested = true where id = %s", rid)
+    await die(a)
+    await fake.make(max_concurrent_runs=1)
+    await until(is_status(fake, rid, "stopped"), 20)
+    assert len(fake.ran) == 1
+    tid = sql(fake.db, "select turn_id::text from runs where id = %s", rid)[0][0]
+    assert sql(fake.db, "select status from turns where id = %s", tid) == [("stopped",)]
+
+
+async def test_a_run_that_cannot_be_started_ends_in_error_at_once(cluster):
+    fake = cluster
+    sid, tid, rid = u(), u(), u()
+    sql(fake.db, "insert into sessions(id, title) values (%s, 't')", sid)
+    sql(fake.db, "insert into turns(id, session_id, idx, question, status) values (%s,%s,0,'q','running')", tid, sid)
+    sql(fake.db, "insert into runs(id, client_id, session_id, turn_id, kind, status, pool, request) values (%s,'c',%s,%s,'ask','queued','research','{}')", rid, sid, tid)
+    await fake.make(max_concurrent_runs=1)
+    await until(is_status(fake, rid, "error"), 5)
+    assert sql(fake.db, "select status from turns where id = %s", tid) == [("error",)]

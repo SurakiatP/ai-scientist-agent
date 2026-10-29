@@ -13,8 +13,8 @@ from scientist.config import Settings
 
 MIN_COUNTED_SECONDS = 5  # shorter runs (refusals, instant errors) would drag the ETA average down
 DEFAULT_SECONDS = {"research": 180, "analysis": 60}  # ETA average before any run has finished in this pool
-LOCK_ADMIT = 7300  # advisory lock keys: admission, then one per pool
-LOCKS = {"research": 7301, "analysis": 7302}
+LOCK_ADMIT = 7300  # advisory lock keys: admission, claims
+LOCKS = {"research": 7301, "analysis": 7301}  # one claim lock: the per-client cap spans both pools
 NEVER = datetime.min.replace(tzinfo=timezone.utc)
 
 

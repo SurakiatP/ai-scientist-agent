@@ -61,6 +61,10 @@ class Conflict(Exception):
         self.current = current
 
 
+class LostLease(Exception):
+    """A run's owner tried to write after another process took the run over."""
+
+
 # --- input models ----------------------------------------------------------------------------------------------------
 class ProjectIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
@@ -370,19 +374,26 @@ class Store:
             await self._changed(s, "turn", out, session_id=sid)
         return out
 
-    async def write_turn_server(self, tid: str, **fields: Any) -> dict | None:
+    async def write_turn_server(self, tid: str, _fence=None, **fields: Any) -> dict | None:
         """The run service's write: no client version check, always bumps the version and broadcasts. None = the turn
-        (or its session) is gone."""
+        (or its session) is gone. `_fence`: a condition on runs that must still hold (its row is locked for the write),
+        else LostLease: the writer no longer owns the run."""
         async with self.tx() as s:
-            r = await self._get(s, m.turns, tid)
-            if r is None:
-                return None
-            out = _row((await s.execute(sa.update(m.turns).where(m.turns.c.id == tid)
-                                        .values(**fields, version=r.version + 1, updated_at=sa.func.now())
-                                        .returning(m.turns))).one())
-            await s.execute(sa.update(m.sessions).where(m.sessions.c.id == r.session_id)
-                            .values(updated_at=sa.func.now(), sort_ts=sa.func.now()))
-            await self._changed(s, "turn", out, session_id=str(out["session_id"]))
+            if _fence is not None and (await s.execute(sa.select(m.runs.c.id).where(_fence).with_for_update())).first() is None:
+                raise LostLease
+            return await self.write_turn_in(s, tid, **fields)
+
+    async def write_turn_in(self, s, tid: str, **fields: Any) -> dict | None:
+        """write_turn_server inside the caller's transaction."""
+        r = await self._get(s, m.turns, tid)
+        if r is None:
+            return None
+        out = _row((await s.execute(sa.update(m.turns).where(m.turns.c.id == tid)
+                                    .values(**fields, version=r.version + 1, updated_at=sa.func.now())
+                                    .returning(m.turns))).one())
+        await s.execute(sa.update(m.sessions).where(m.sessions.c.id == r.session_id)
+                        .values(updated_at=sa.func.now(), sort_ts=sa.func.now()))
+        await self._changed(s, "turn", out, session_id=str(out["session_id"]))
         return out
 
     async def truncate_turns(self, sid: str, from_idx: int) -> dict:
