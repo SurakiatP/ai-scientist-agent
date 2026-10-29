@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import time
 import uuid
+from datetime import datetime
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from pathlib import Path
@@ -119,13 +120,40 @@ PROC = uuid.uuid4().hex[:12]  # per-process label value, so one worker never rem
 
 def sweep_containers() -> None:
     """Remove this process's branch sandbox containers (label set in _prepare) at shutdown. Containers of a SIGKILLed
-    process are not found (ponytail: no startup sweep with several workers; add an age-based one if they pile up).
-    No Docker: nothing to do."""
+    process are removed later by sweep_orphans. No Docker: nothing to do."""
     try:
         ids = subprocess.run(["docker", "ps", "-aq", "--filter", f"label=scientist.branch={PROC}"], capture_output=True,
                              text=True, timeout=30).stdout.split()
         if ids:
             subprocess.run(["docker", "rm", "-f", *ids], capture_output=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+ORPHAN_AGE_S = BRANCH_TIMEOUT_S + 600  # a branch ends within BRANCH_TIMEOUT_S; anything older belongs to a dead process
+
+
+def sweep_orphans(root: Path) -> None:
+    """Every process, at startup and every 10 minutes: remove branch containers and hermes-home/<process> dirs older
+    than ORPHAN_AGE_S (left by a killed process). This process's own home is touched so it never looks old."""
+    now = time.time()
+    with suppress(OSError):
+        os.utime(root / PROC)
+    for d in root.glob("*") if root.is_dir() else ():
+        with suppress(OSError):
+            if d.is_dir() and d.name != PROC and now - d.stat().st_mtime > ORPHAN_AGE_S:
+                shutil.rmtree(d, ignore_errors=True)
+    try:
+        out = subprocess.run(["docker", "ps", "-a", "--filter", "label=scientist.branch", "--format", "{{.ID}}\t{{.CreatedAt}}"],
+                             capture_output=True, text=True, timeout=30).stdout.splitlines()
+        old = []
+        for line in out:
+            cid, _, created = line.partition("\t")
+            with suppress(ValueError):  # "2026-10-29 23:06:50 +0700 +07": the zone name is ignored
+                if now - datetime.strptime(" ".join(created.split()[:3]), "%Y-%m-%d %H:%M:%S %z").timestamp() > ORPHAN_AGE_S:
+                    old.append(cid)
+        if old:
+            subprocess.run(["docker", "rm", "-f", *old], capture_output=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired):
         pass
 

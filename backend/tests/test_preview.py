@@ -75,7 +75,11 @@ async def test_disconnect_cancels_render_and_frees_slot(monkeypatch):
 
     monkeypatch.setattr(report_render, "render_pdf", slow)
     gate = RunGate(1)
-    gen = _events(ExportRequest(**body()), gate, PreviewStore(5, 60))
+    mem = PreviewStore(5, 60)
+
+    async def put(pdf):
+        return mem.put(pdf)
+    gen = _events(ExportRequest(**body()), gate, put)
     got = [(await anext(gen)).stage for _ in range(3)]
     assert got == ["queued", "preparing", "rendering"] and gate.free == 0
     await asyncio.to_thread(started.wait, 5)
@@ -95,3 +99,34 @@ def test_store_ttl_and_lru():
     now[0] = 11
     assert s.get(a) is None and s.get(c) is None  # expired
     assert len(a) == 32
+
+
+async def test_a_preview_made_on_one_worker_is_served_by_another_and_expires(app):
+    import time
+    from test_routes_files import MemStore
+    shared = MemStore()
+    a, b = create_app(store=shared), create_app(store=shared)
+    r = await call(a, "POST", "/v1/async/reports/preview", json=body())
+    ready = events(r.text)[-1]
+    k = f"previews/{ready['id']}"
+    assert k in shared.objs
+    g = await call(b, "GET", f"/v1/reports/preview/{ready['id']}")
+    assert g.status_code == 200 and g.content.startswith(b"%PDF") and g.headers["content-type"] == "application/pdf"
+    shared.objs[k] = (shared.objs[k][0], {**shared.objs[k][1], "expires": str(time.time() - 1)})
+    assert (await call(b, "GET", f"/v1/reports/preview/{ready['id']}")).status_code == 404
+    assert k not in shared.objs  # deleted on the expired read
+
+
+async def test_the_purge_removes_expired_previews_only():
+    import time
+    from scientist.preview_store import purge_previews
+    from test_routes_files import MemStore
+    s = MemStore()
+    now = time.time()
+    s.objs = {"previews/old": (b"x", {"expires": str(now - 5)}), "previews/new": (b"x", {"expires": str(now + 5)}), "files/keep": (b"x", {})}
+
+    async def lst(prefix):
+        return [k for k in s.objs if k.startswith(prefix)]
+    s.list_keys = lst
+    await purge_previews(s)
+    assert sorted(s.objs) == ["files/keep", "previews/new"]

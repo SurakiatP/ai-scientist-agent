@@ -20,13 +20,13 @@ from scientist.routes_api import router as api_router, spec_router as api_spec_r
 from scientist.object_store import ObjectStore, create_store
 from scientist import sandbox
 from scientist.sandbox import sweep_sandboxes
-from scientist.hermes import BranchRunner, HermesRuntime, sweep_containers
+from scientist.hermes import BranchRunner, HermesRuntime, sweep_containers, sweep_orphans
 from scientist.routes_ask import router as ask_router
 from scientist.routes_analyze import router as analyze_router
 from scientist.routes_files import router as files_router
 from scientist.routes_reports import router as reports_router
 from scientist.routes_preview import router as preview_router
-from scientist.preview_store import PreviewStore
+from scientist.preview_store import PreviewStore, purge_previews
 from scientist.db import Database, open_database
 from scientist.routes_store import RateLimited, router as store_router
 from scientist.store import Bus, Store
@@ -47,6 +47,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
         if runner is None:
             await asyncio.to_thread(sandbox.sweep_stale_runs, settings)
         rt = runner or HermesRuntime(settings)
+        orphans = asyncio.create_task(_sweep_orphans()) if runner is None else None
         async with client or httpx.AsyncClient() as c, mcp_server.running(mcp):  # /mcp's session manager lives as long as the app
             app.state.runner, app.state.client = rt, c
             app.state.store = store
@@ -55,7 +56,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                     app.state.store = await asyncio.to_thread(create_store, settings)
                 except Exception:
                     log.exception("object store unavailable")
-            purger = asyncio.create_task(_purge_hourly(app)) if app.state.data else None
+            purger = asyncio.create_task(_purge_hourly(app)) if app.state.data or app.state.store else None
             if app.state.db and settings.database_url:
                 app.state.pgbus = PgBus(settings, app.state.db)
                 await app.state.pgbus.start()
@@ -75,10 +76,11 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                     if app.state.data:
                         await app.state.data.stop_feed()
                     await app.state.pgbus.stop()
-                if purger:
-                    purger.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await purger
+                for t in (purger, orphans):
+                    if t:
+                        t.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await t
                 await rt.close()
                 await usage.drain()  # in-flight usage rows land before the pool closes
                 if app.state.db:
@@ -87,13 +89,24 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                     sweep_containers()
                 sweep_sandboxes()
 
+    async def _sweep_orphans() -> None:
+        while True:  # leftovers of a killed worker: containers and hermes-home dirs older than a branch can live
+            try:
+                await asyncio.to_thread(sweep_orphans, settings.hermes_runtime_dir)
+            except Exception:
+                log.exception("orphan sweep failed")
+            await asyncio.sleep(600)
+
     async def _purge_hourly(app: FastAPI) -> None:
         while True:
             await asyncio.sleep(3600)
             try:
-                await app.state.data.purge()
-                await app.state.data.purge_usage()
-                await app.state.data.purge_runs()
+                if app.state.data:
+                    await app.state.data.purge()
+                    await app.state.data.purge_usage()
+                    await app.state.data.purge_runs()
+                if app.state.store:
+                    await purge_previews(app.state.store)
             except Exception:
                 log.exception("trash purge failed")
 

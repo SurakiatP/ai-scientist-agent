@@ -795,3 +795,9 @@ def test_restarted_resets_progress_but_keeps_the_picked_docs():
     assert reduce_progress(p, {"type": "restarted"}) == {"waiting": None, "reasoning": "", "searches": [], "sources": {}, "answered": [],
                                                          "writing": False, "phase": "planning", "restarted": True, "_docs": [{"id": "d"}]}
     assert "_docs" not in reduce_progress({k: v for k, v in p.items() if k != "_docs"}, {"type": "restarted"})
+
+
+def test_restarted_resets_the_analysis_steps_but_keeps_the_file():
+    a = {"fileId": "f", "fileName": "n", "steps": ["profiling", "running"], "script": "x", "quality": {"rows": 1}}
+    assert reduce_analysis(a, {"type": "restarted"}) == {"fileId": "f", "fileName": "n", "steps": []}
+    assert reduce_analysis({"fileId": "f", "steps": ["profiling"]}, {"type": "restarted"}) == {"fileId": "f", "steps": []}

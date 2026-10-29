@@ -407,8 +407,9 @@ export function cancelPlan(sessionId: string, turnId: string): void {
 
 const analysisFrom = (fileId: string, fileName?: string): TurnAnalysis => ({ fileId, ...(fileName ? { fileName } : {}), steps: [] });
 
-function reduceAnalysis(a: TurnAnalysis, e: AnalyzeEvent): TurnAnalysis {
+export function reduceAnalysis(a: TurnAnalysis, e: AnalyzeEvent): TurnAnalysis {
   switch (e.type) {
+    case "restarted": return analysisFrom(a.fileId, a.fileName); // attempt 1's steps and script do not count
     case "analysis_step": return a.steps.includes(e.step) ? a : { ...a, steps: [...a.steps, e.step] };
     case "analysis_script": return { ...a, script: e.code };
     case "analysis_result": {

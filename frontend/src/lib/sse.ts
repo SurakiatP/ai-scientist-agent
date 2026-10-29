@@ -72,6 +72,7 @@ export type AnalyzeEvent =
   | { type: "analysis_step"; step: AnalysisStep }
   | { type: "analysis_script"; code: string }
   | ({ type: "analysis_result" } & AnalysisResult)
+  | { type: "restarted" }
   | { type: "complete" }
   | StreamError;
 

@@ -68,6 +68,17 @@ class ObjectStore:
             Bucket=self.bucket, Key=key, CopySource={"Bucket": self.bucket, "Key": key},
             MetadataDirective="REPLACE", ContentType=content_type, Metadata=metadata))
 
+    async def list_keys(self, prefix: str) -> list[str]:
+        def read():
+            keys, token = [], None
+            while True:
+                r = self.client.list_objects_v2(Bucket=self.bucket, Prefix=prefix, **({"ContinuationToken": token} if token else {}))
+                keys += [o["Key"] for o in r.get("Contents", [])]
+                if not r.get("IsTruncated"):
+                    return keys
+                token = r["NextContinuationToken"]
+        return await asyncio.to_thread(read)
+
     async def delete(self, key: str) -> None:
         await asyncio.to_thread(self.client.delete_object, Bucket=self.bucket, Key=key)
 
@@ -101,5 +112,9 @@ def create_store(settings) -> ObjectStore:
     except ClientError as e:
         if e.response.get("Error", {}).get("Code") not in MISSING:
             raise
-        client.create_bucket(Bucket=settings.minio_bucket)
+        try:
+            client.create_bucket(Bucket=settings.minio_bucket)
+        except ClientError as e2:  # another backend process created it first (first boot with several workers)
+            if e2.response.get("Error", {}).get("Code") not in ("BucketAlreadyOwnedByYou", "BucketAlreadyExists"):
+                raise
     return ObjectStore(client, settings.minio_bucket, public)

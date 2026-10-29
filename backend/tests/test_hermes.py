@@ -461,3 +461,35 @@ def test_bridge_keeps_paper_abstract():
     assert b.clean_paper({"title": "T", "url": "https://x.org", "abstract": " Text. "})[0]["abstract"] == "Text."
     assert "abstract" not in b.clean_paper({"title": "T", "url": "https://x.org", "abstract": 5})[0]
     assert "abstract" in b.PAPER_SCHEMA["parameters"]["properties"]
+
+
+async def test_close_removes_this_process_home_only(settings, tmp_path, monkeypatch):
+    cache = tmp_path / "ro"
+    (cache / "upstream/scientific-agent-skills/skills").mkdir(parents=True)
+    monkeypatch.setattr(h, "CACHE", cache)
+    monkeypatch.setattr(h, "SKILLS_SOURCE", cache / "upstream/scientific-agent-skills")
+    monkeypatch.setattr(h, "_check_pinned", lambda *a: None)
+    root = tmp_path / "rw/hermes-home"
+    (root / "other").mkdir(parents=True)
+    rt = HermesRuntime(settings.model_copy(update={"hermes_runtime_dir": root, "enabled_skills": []}))
+    assert (root / h.PROC).is_dir()
+    await rt.close()
+    assert not (root / h.PROC).exists() and (root / "other").is_dir()
+
+
+def test_orphan_sweep_removes_old_foreign_containers_and_homes(settings, tmp_path, monkeypatch):
+    import os, time
+    from scientist.hermes import sweep_orphans
+    log, docker = tmp_path / "docker.log", tmp_path / "docker"
+    old = time.strftime("%Y-%m-%d %H:%M:%S +0000 UTC", time.gmtime(time.time() - 3600))
+    new = time.strftime("%Y-%m-%d %H:%M:%S +0000 UTC", time.gmtime(time.time() - 60))
+    docker.write_text(f'#!/bin/sh\necho "$@" >> {log}\n[ "$1" = ps ] && printf "old\\t{old}\\nnew\\t{new}\\n"\nexit 0\n')
+    docker.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    root = tmp_path / "hermes-home"
+    for name, age in (("dead", 3600), ("live", 60), (h.PROC, 3600)):
+        (root / name).mkdir(parents=True)
+        os.utime(root / name, (time.time() - age,) * 2)
+    sweep_orphans(root)
+    assert log.read_text().splitlines()[-1] == "rm -f old"
+    assert sorted(p.name for p in root.iterdir()) == sorted(["live", h.PROC])

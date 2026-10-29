@@ -11,7 +11,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from scientist import report_render
-from scientist.preview_store import ID_RE, PreviewStore
+from scientist.preview_store import ID_RE, get_preview, put_preview
 from scientist.routes_ask import HEADERS, _sse
 from scientist.routes_reports import TIMEOUT_S, ExportRequest
 from scientist.routes_store import require_json
@@ -37,7 +37,7 @@ class PreviewError(BaseModel):
     message: str
 
 
-async def _events(req: ExportRequest, gate, store: PreviewStore) -> AsyncIterator[BaseModel]:
+async def _events(req: ExportRequest, gate, put) -> AsyncIterator[BaseModel]:
     yield PreviewStatus(stage="queued")
     async with aclosing(gate.acquire()) as waits:  # ends holding a slot; closing early takes none
         async for _ in waits:
@@ -53,7 +53,12 @@ async def _events(req: ExportRequest, gate, store: PreviewStore) -> AsyncIterato
         except (TimeoutError, ImportError):
             yield PreviewError(message="preview unavailable")
             return
-        if (key := store.put(pdf)) is None:
+        try:
+            key = await put(pdf)
+        except Exception:
+            yield PreviewError(message="preview unavailable")
+            return
+        if key is None:
             yield PreviewError(message="preview is too large")
             return
         # fpdf2 writes each page as its own plain object; no page callback exists, so pages are counted after writing
@@ -70,13 +75,13 @@ async def preview(body: ExportRequest, request: Request) -> StreamingResponse:
     st = request.app.state
     if st.preview_gate.free == 0 and len(st.preview_gate.queue) >= MAX_QUEUE:
         raise HTTPException(429, "too many previews queued; try again shortly")
-    return StreamingResponse(_sse(_events(body, st.preview_gate, st.previews), st.settings.sse_ping_seconds),
+    return StreamingResponse(_sse(_events(body, st.preview_gate, lambda pdf: put_preview(st, pdf)), st.settings.sse_ping_seconds),
                              media_type="text/event-stream", headers=HEADERS)
 
 
 @router.get("/v1/reports/preview/{key}")
 async def preview_pdf(key: str, request: Request) -> Response:
-    data = request.app.state.previews.get(key) if re.fullmatch(ID_RE, key) else None
+    data = await get_preview(request.app.state, key) if re.fullmatch(ID_RE, key) else None
     if data is None:
         raise HTTPException(404, "preview not found")
     return Response(data, media_type="application/pdf", headers={

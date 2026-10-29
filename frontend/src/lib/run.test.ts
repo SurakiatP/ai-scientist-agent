@@ -27,6 +27,14 @@ const last = (chat: Awaited<ReturnType<typeof setup>>["chat"]) => chat.getState(
 const turnOf = (chat: Awaited<ReturnType<typeof setup>>["chat"], sid: string) =>
   chat.getState().sessions.find((s) => s.id === sid)!.turns.at(-1)!;
 
+describe("reduceAnalysis restarted", () => {
+  it("clears what attempt 1 produced and keeps the file", async () => {
+    const { run } = await setup();
+    const a = { fileId: "f", fileName: "n", steps: ["profiling", "running"], script: "x", findings: ["y"] } as never;
+    expect(run.reduceAnalysis(a, { type: "restarted" } as never)).toEqual({ fileId: "f", fileName: "n", steps: [] });
+  });
+});
+
 beforeEach(() => { script = gen([]); analyzeScript = agen([]); asks = []; analyzes = []; });
 
 describe("run controller", () => {

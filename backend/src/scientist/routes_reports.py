@@ -141,7 +141,7 @@ log = logging.getLogger(__name__)
 PROMPT = (Path(__file__).parent / "prompts" / "translate.md").read_text()
 T_TIMEOUT_S, BATCH_CHARS, PARALLEL, T_MAX_QUEUE, CACHE_SIZE = 90, 6000, 3, 10, 512
 T_MAX_SEGMENTS, T_MAX_SEGMENT, T_MAX_TOTAL = 2000, 12000, 200_000
-CACHE: OrderedDict[str, str] = OrderedDict()  # ponytail: in-process LRU, lost on restart; Redis only if several workers
+CACHE: OrderedDict[str, str] = OrderedDict()  # ponytail: in-process LRU, lost on restart; each worker keeps its own
 
 
 class TranslateRequest(BaseModel):

@@ -152,8 +152,8 @@ cd backend && uv run uvicorn --factory scientist.main:create_app --host 127.0.0.
 Several processes may run (`--workers`). At startup each builds its own `HermesRuntime`, which rebuilds
 `~/.cache/scientist/hermes-home/<process id>` (removed on shutdown), and labels its branch containers
 `scientist.branch=<process id>`; shutdown removes only that process's containers. The run caps
-(`MAX_CONCURRENT_RUNS`) are global when a database is configured. Containers a SIGKILLed process left behind
-are not removed automatically.
+(`MAX_CONCURRENT_RUNS`) are global when a database is configured. Containers and home dirs a SIGKILLed process
+left behind are removed by every process's 10 minute sweep once older than the branch timeout plus 10 minutes.
 
 A missing or dirty Hermes checkout (`HERMES_SOURCE_PATH`, `HERMES_REVISION`) makes startup fail, so uvicorn
 exits and `/v1/health` never answers. Missing Docker does not stop startup: the app comes up and each branch

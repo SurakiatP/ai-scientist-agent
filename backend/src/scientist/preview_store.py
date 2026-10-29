@@ -1,9 +1,52 @@
 """Rendered preview PDFs kept briefly so the browser can fetch what an SSE stream announced."""
+import io
 import secrets
 import time
 from collections import OrderedDict
+from contextlib import suppress
+
+from scientist.object_store import ObjectMissing
 
 ID_RE = r"[0-9a-f]{32}"
+
+
+PREFIX = "previews/"
+
+
+async def put_preview(st, pdf: bytes) -> str | None:
+    """Id of the stored PDF, or None over the size limit. With an object store every worker can serve it."""
+    if st.store is None:
+        return st.previews.put(pdf)
+    if len(pdf) > st.previews.max_bytes:
+        return None
+    key = secrets.token_hex(16)
+    await st.store.put(PREFIX + key, io.BytesIO(pdf), content_type="application/pdf",
+                       metadata={"expires": str(time.time() + st.previews.ttl)})
+    return key
+
+
+async def get_preview(st, key: str) -> bytes | None:
+    if st.store is None:
+        return st.previews.get(key)
+    try:
+        data, meta = await st.store.get(PREFIX + key)
+    except ObjectMissing:
+        return None
+    if float(meta.get("expires", 0)) < time.time():
+        with suppress(Exception):
+            await st.store.delete(PREFIX + key)
+        return None
+    return data
+
+
+async def purge_previews(store) -> None:
+    """Hourly: delete expired preview objects nobody fetched again."""
+    for k in await store.list_keys(PREFIX):
+        try:
+            if float((await store.head(k)).get("expires", 0)) < time.time():
+                await store.delete(k)
+        except ObjectMissing:
+            pass
 
 
 class PreviewStore:

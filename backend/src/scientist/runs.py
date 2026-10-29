@@ -73,6 +73,8 @@ def reduce_progress(p: dict, e: dict) -> dict:
 def reduce_analysis(a: dict, e: dict) -> dict:
     """Port of reduceAnalysis in frontend/src/lib/run.ts."""
     t = e["type"]
+    if t == "restarted":  # attempt 1's steps do not count; the file stays
+        return {**{k: a[k] for k in ("fileId", "fileName") if k in a}, "steps": []}
     if t == "analysis_step":
         return a if e["step"] in a["steps"] else {**a, "steps": [*a["steps"], e["step"]]}
     if t == "analysis_script":
@@ -472,6 +474,18 @@ class RunService:
                 await self._end_turns(s, [row["turn_id"]], "stopped", "The run was stopped.", "stopped")
         return True
 
+    async def _restart_turns(self, s, ids: list) -> None:
+        """Still-running turns of restarted runs: progress back to the restarted state (the picked docs stay) and the
+        analysis steps cleared, written as the stream's `restarted` event says."""
+        t = m.turns.c
+        for r in await s.execute(sa.select(t.id, t.progress, t.analysis).where(t.id.in_(ids), t.status == "running")):
+            vals = {"progress": reduce_progress(r.progress or {}, {"type": "restarted"})}
+            if r.analysis:
+                vals["analysis"] = reduce_analysis(r.analysis, {"type": "restarted"})
+            row = (await s.execute(sa.update(m.turns).where(t.id == r.id).values(**vals, version=t.version + 1, updated_at=sa.func.now())
+                                   .returning(m.turns))).one()
+            await self.data._changed(s, "turn", _row(row), session_id=str(_row(row)["session_id"]))
+
     async def _end_turns(self, s, ids: list, status: str, error: str, err: str) -> None:
         """The still-running turns of ended runs get their final state, announced to every process."""
         turns = [_row(r) for r in await s.execute(
@@ -538,6 +552,8 @@ class RunService:
         run = Run(row, ticket, body, "", "")
         if prog and prog.get("_docs"):
             run.progress = {**run.progress, "_docs": prog["_docs"]}
+        if row["attempt"] > 1:  # a restart: the stream said so, so the stored turn must too
+            run.progress = reduce_progress(run.progress, {"type": "restarted"})
         if old := self.live.get(run.id):  # a stale copy of this run (its lease lapsed here): it must not write any more
             old.cancel_lost()
         self.live[run.id] = run
@@ -607,6 +623,8 @@ class RunService:
                                  .returning(c.id))).scalars().all()
         for rid in again:
             await self._event(s, str(rid), {"type": "restarted"})
+        if turns := [r[0] for r in await s.execute(sa.select(c.turn_id).where(c.id.in_(again), c.turn_id.is_not(None)))] if again else []:
+            await self._restart_turns(s, turns)
         if again:
             await self._notify("runs", "restarted", s)
         ended = list(await s.execute(sa.update(m.runs).where(pred, c.attempt >= st.run_max_attempts)

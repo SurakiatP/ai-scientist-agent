@@ -167,6 +167,8 @@ async def test_rf2_dead_owner_is_restarted_once_then_interrupted(cluster):
     async def third():
         return len(events_of(fake, rid)) >= 3
     await until(third)  # B's strategy is committed before B dies
+    tid0 = sql(fake.db, "select turn_id::text from runs where id = %s", rid)[0][0]
+    assert sql(fake.db, "select progress->>'restarted' from turns where id = %s", tid0) == [("true",)]  # the stored turn agrees with the stream
     await die(b)
     c = await fake.make(max_concurrent_runs=1)
     await until(is_status(fake, rid, "interrupted"), 20)
@@ -281,7 +283,7 @@ async def test_graceful_shutdown_releases_runs_to_the_queue_then_interrupts_at_m
     assert sql(fake.db, "select status, attempt, worker from runs where id = %s", rid) == [("queued", 2, None)]
     assert events_of(fake, rid) == [(1, "strategy"), (2, "restarted")]
     tid = sql(fake.db, "select turn_id::text from runs where id = %s", rid)[0][0]
-    assert sql(fake.db, "select status from turns where id = %s", tid) == [("running",)]
+    assert sql(fake.db, "select status, progress->>'restarted' from turns where id = %s", tid) == [("running", "true")]
     b = await fake.make(max_concurrent_runs=1)  # another process takes it over
     await until(ran(fake, 2))
     assert fake.ran[1][0] == b.pid

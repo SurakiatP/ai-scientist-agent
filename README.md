@@ -37,7 +37,7 @@ Needs `uv`, Node >= 20 with npm, and a running Docker.
 | `MODEL` | none, required | main model (`.env.example`: `openai/gpt-6-luna`) |
 | `FALLBACK_MODEL` | none, required | model used for the scope check and as fallback (`.env.example`: `openai/gpt-6-luna`). Equal to `MODEL` there, so a failed call is retried on the same model: worst case one run holds a slot about 13 minutes (240 s per call with fallback, plus the 315 s branch deadline) |
 | `MAX_BRANCHES` | 5 | search branches per question |
-| `MAX_CONCURRENT_RUNS` | 4 | simultaneous questions across all backend processes; extra ones queue |
+| `MAX_CONCURRENT_RUNS` | 4 | simultaneous questions; extra ones queue (across all backend processes with `DATABASE_URL`, else per process) |
 | `RUN_LEASE_SECONDS` | 30 | a running run's owner renews its lease; after this long without renewal another backend process may take the run over (needs `DATABASE_URL`) |
 | `RUN_MAX_ATTEMPTS` | 2 | a run lost to a dead process is restarted until it has had this many attempts, then marked interrupted |
 | `SCHEDULER_POLL_SECONDS` | 2.0 | how often each process looks for a queued run to claim (a notification wakes it sooner) |
@@ -112,7 +112,7 @@ answers stay in the browser (localStorage). The app binds to localhost and has n
 
 ## Known limits
 
-- Run exactly one backend process (no `--workers`): it owns the shared Hermes home and the run cap.
+- Several backend processes (`--workers`, compose `BACKEND_WORKERS`) are fine with `DATABASE_URL`: the run queue and its caps are global. Without a database the caps are per process, so run one process.
 - Docker is required: each branch's terminal runs in a sandbox container.
 - Citation check is existence only (Crossref, PubMed, arXiv). It does not check that a paper supports the claim.
 - Only `paper-lookup` is enabled by default: it needs just the standard library, which the sandbox image has.

@@ -32,6 +32,17 @@ beforeEach(() => {
   localStorage.clear();
   usePrefs.setState({ lang: "en" });
 });
+describe("restarted analysis", () => {
+  it("says so while running, and not after it ended or when it never restarted", () => {
+    const run = (status: Turn["status"], restarted?: boolean) => ({ ...base({ ...data, steps: ["profiling"] }, status), progress: { ...emptyProgress, ...(restarted ? { restarted } : {}) } });
+    const { rerender } = render(<AnalysisArtifact turn={run("running", true)} />);
+    expect(screen.getByText(strings.en.restartedNote)).toBeInTheDocument();
+    rerender(<AnalysisArtifact turn={run("done", true)} />);
+    expect(screen.queryByText(strings.en.restartedNote)).toBeNull();
+    rerender(<AnalysisArtifact turn={run("running")} />);
+    expect(screen.queryByText(strings.en.restartedNote)).toBeNull();
+  });
+});
 const tab = (name: string) => fireEvent.click(screen.getByRole("tab", { name }));
 
 describe("field caption", () => {
