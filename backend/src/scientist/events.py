@@ -205,12 +205,66 @@ class RunUsage(BaseModel):
     estimated: bool
 
 
+class ProvSearch(BaseModel):
+    term: str
+    instructions: str
+
+
+class ProvRound(BaseModel):
+    """Round 1 = the strategy or the approved plan (thin None); later rounds = re-plans with the terms that came back thin."""
+    round: int
+    searches: list[ProvSearch]
+    thin: list[str] | None = None
+
+
+class ProvModels(BaseModel):
+    main: str
+    fallback: str
+
+
+class ProvHermes(BaseModel):
+    revision: str
+    skills_revision: str
+    enabled_skills: list[str]
+    branch_image: str
+
+
+class ProvSettings(BaseModel):
+    max_branches: int
+    branch_max_rounds: int
+    branch_token_cap: int
+    max_papers_per_branch: int
+    max_records_per_branch: int
+    replan_rounds: int
+    replan_min_papers: int
+    replan_max_searches: int
+    review_enabled: bool
+
+
+class Provenance(BaseModel):
+    """How an answer was produced, frozen when it was made. No secrets, abstracts or question text.
+    Research runs fill hermes, settings and rounds; an analysis run leaves those None and fills sandbox_image."""
+    model_config = ConfigDict(populate_by_name=True, serialize_by_alias=True)
+    schema_: Literal[1] = Field(1, alias="schema")
+    created_at: str
+    app_version: str | None
+    models: ProvModels
+    prompts: dict[str, str]  # prompt name -> sha256 hex [:16] of the exact text sent
+    hermes: ProvHermes | None = None
+    sandbox_image: str | None = None
+    settings: ProvSettings | None = None
+    rounds: list[ProvRound] | None = None
+    phase_seconds: dict[str, float]
+    usage: RunUsage | None = None
+
+
 class FinalAnswer(BaseModel):
     type: Literal["final_answer"] = "final_answer"
     content: str
     references: list[Reference]
     records: list[DataRecord] = []
     usage: RunUsage | None = None
+    provenance: Provenance | None = None
 
 
 class Complete(BaseModel):
@@ -254,6 +308,7 @@ class AnalysisResult(BaseModel):
     findings: list[str]
     timings: dict
     artifacts: list[Artifact]
+    provenance: Provenance | None = None
 
 
 Event = Annotated[Refused | Waiting | Strategy | Replan | Sources | BranchAnswer | FinalAnswer | Complete | Error

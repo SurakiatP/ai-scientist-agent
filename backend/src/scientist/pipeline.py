@@ -11,7 +11,7 @@ from pathlib import Path
 import httpx
 from pydantic import ValidationError
 
-from scientist import llm, usage
+from scientist import llm, provenance, usage
 from scientist.citations import verify_references
 from scientist.config import Settings
 from scientist.events import (BranchAnswer, Check, Complete, DataRecord, Error, Event, FinalAnswer, Paper, Records, Reference, Refused,
@@ -255,6 +255,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     rec_capped = 0
     gated: set[str] = set()  # names of key-gated databases the model tried to use
     rec_invalid: set = set()  # database:id of rejected records, or a unique marker when unidentified
+    replans: list[Replan] = []
     searches = plan.searches
     tried = [s.term for s in searches]
     extra_rounds = settings.replan_rounds if mode == "deep" else 0
@@ -311,6 +312,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
         if not thin or not (replan := await _replan(question, thin, tried, settings, history)):
             break
         yield replan
+        replans.append(replan)
         searches = replan.searches
         tried += [s.term for s in searches]
 
@@ -353,11 +355,20 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
                  "be checked. Treat claims that cite only them as unconfirmed.")
     if ids := _ids(refs, "unknown"):
         note += f"\n\nNote: reference(s) {ids} could not be checked (the lookup service did not answer)."
+
+    def prov(used: set[str]):
+        """Hashes of the exact prompts this run sent (strategy only when the model planned; replan only when one ran)."""
+        texts = {"strategy": STRATEGY, "replan": REPLAN, "branch": getattr(runner, "system", None), "synthesis": SYNTHESIS,
+                 "review": REVIEW}
+        names = {"branch"} | used | ({"strategy"} if not given else set()) | ({"replan"} if replans else set())
+        return provenance.research(settings, {k: texts[k] for k in texts if k in names and texts[k]},
+                                   provenance.rounds_of(plan, replans))
+
     if not answers:  # papers but no branch summary: say so plainly; never synthesise a comparison from titles alone
         yield FinalAnswer(content=f"Found {len(refs)} paper(s), but the search did not finish summarising them. "
                                   "The references below were found and checked; try again or narrow the question."
                                   + note, references=_trim("", refs), records=final_records,
-                          usage=usage.snapshot())
+                          usage=usage.snapshot(), provenance=prov(set()))
         yield Complete()
         return
     user = (_history_block(history) + _data_block(refs, answers, final_records)
@@ -369,12 +380,14 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
         yield Error(message="Could not write the answer. Please try again.")
         return
     text = r.text.strip()
-    if settings.review_enabled and mode in ("deep", "quick") and (reviewed := await _review(text, refs, settings)):
+    reviewing = settings.review_enabled and mode in ("deep", "quick")
+    if reviewing and (reviewed := await _review(text, refs, settings)):
         refs = reviewed
         if ids := "".join(f"[{x.id}]" for x in refs if any(c.support == "unsupported" for c in x.checks)):
             note += (f"\n\nNote: the abstract of reference(s) {ids} does not state the claim it is cited for "
                      "(the reviewer checks abstracts only). Check the full paper before relying on those claims.")
-    yield FinalAnswer(content=text + note, references=_trim(text, refs), records=final_records, usage=usage.snapshot())
+    yield FinalAnswer(content=text + note, references=_trim(text, refs), records=final_records, usage=usage.snapshot(),
+                      provenance=prov({"synthesis"} | ({"review"} if reviewing else set())))
     yield Complete()
 
 

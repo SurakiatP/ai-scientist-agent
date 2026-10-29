@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, field_validator
 
-from scientist import llm, sandbox
+from scientist import llm, provenance, sandbox
 from scientist.config import Settings, get_settings
 from scientist.events import AnalysisResult, AnalysisScript, AnalysisStep, Artifact, Complete, Error, Event, Refused, Waiting
 from scientist.guardrail import guard
@@ -125,7 +125,7 @@ async def analyze(file_id: str, question: str, *, store, settings: Settings, nam
         return
     res = run.result
     yield AnalysisResult(quality=quality, tables=res["tables"], findings=res["findings"],
-                         timings=res["timings"], artifacts=arts)
+                         timings=res["timings"], artifacts=arts, provenance=provenance.analysis(settings, SYSTEM))
     yield Complete()
 
 

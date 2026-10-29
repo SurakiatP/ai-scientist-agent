@@ -24,6 +24,9 @@ class Acc:
         self.calls, self.prompt, self.completion, self.cost = 0, 0, 0, None
         self.papers = 0
         self.estimated = False  # a part of the run had no known cost
+        self.phases: dict[str, float] = {}  # set by track
+        self.last = time.monotonic()
+        self.current: str | None = None
 
 
 def note(prompt_tokens: int, completion_tokens: int, cost: float | None, estimated: bool = False) -> None:
@@ -44,11 +47,22 @@ def snapshot() -> RunUsage | None:
     return RunUsage(prompt_tokens=a.prompt, completion_tokens=a.completion, cost_usd=a.cost, estimated=a.estimated)
 
 
+def phase_seconds(running: str) -> dict[str, float]:
+    """Seconds per phase so far, plus the time since the last event under `running` (the phase now ending: its event is not out yet)."""
+    if (a := CURRENT.get()) is None:
+        return {}
+    d = dict(a.phases)
+    k = a.current or running  # an analysis step announced earlier is still the running phase
+    d[k] = d.get(k, 0) + time.monotonic() - a.last
+    return {k: round(v, 3) for k, v in d.items()}
+
+
 async def track(events: AsyncIterator[Event], *, mode: str, db, session_id: str | None = None,
                 turn_id: str | None = None) -> AsyncIterator[Event]:
     """Pass events through unchanged while timing phases and counting model calls; writes the row at the end."""
-    acc, phases, ok = Acc(), defaultdict(float), False
-    last, current = time.monotonic(), None  # current: a phase an AnalysisStep announced and is still running
+    acc, ok = Acc(), False
+    phases = acc.phases = defaultdict(float)
+    last, current = acc.last, None  # current: a phase an AnalysisStep announced and is still running
     it = events.__aiter__()
     try:
         while True:
@@ -61,7 +75,8 @@ async def track(events: AsyncIterator[Event], *, mode: str, db, session_id: str 
                 CURRENT.reset(tok)
             now = time.monotonic()
             phases[current or END_LABEL.get(type(e), "other")] += now - last
-            last, current = now, (e.step if isinstance(e, AnalysisStep) else None)
+            last = acc.last = now
+            current = acc.current = e.step if isinstance(e, AnalysisStep) else None
             if isinstance(e, Sources):
                 acc.papers += len(e.papers)
             if isinstance(e, (Complete, Refused, AnalysisResult)):

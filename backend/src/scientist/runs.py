@@ -68,7 +68,8 @@ def reduce_analysis(a: dict, e: dict) -> dict:
     if t == "analysis_script":
         return {**a, "script": e["code"]}
     if t == "analysis_result":
-        return {**a, **{k: e[k] for k in ("quality", "tables", "findings", "timings", "artifacts")}}
+        return {**a, **{k: e[k] for k in ("quality", "tables", "findings", "timings", "artifacts")},
+                **({"provenance": e["provenance"]} if e.get("provenance") else {})}
     return a
 
 
@@ -410,7 +411,8 @@ def _outcome(out: dict | None, d: dict) -> dict | None:
     t = d["type"]
     if t == "final_answer":
         return {"status": "done", "answer": {"content": d["content"], "references": d["references"], "records": d.get("records", []),
-                                                         **({"usage": d["usage"]} if d.get("usage") else {})}}
+                                                         **({"usage": d["usage"]} if d.get("usage") else {}),
+                                                         **({"provenance": d["provenance"]} if d.get("provenance") else {})}}
     if t == "refused":
         code = d.get("code")
         return {"status": "refused", "refused": d["reason"][:4000], **({"_code": code} if code in REFUSAL_CODES else {})}
