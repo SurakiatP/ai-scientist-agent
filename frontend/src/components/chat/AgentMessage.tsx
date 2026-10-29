@@ -11,7 +11,7 @@ import SearchOffRoundedIcon from "@mui/icons-material/SearchOffRounded";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import { AnswerView } from "@/components/AnswerView";
 import { SourcesUsed } from "@/components/research/SourcesUsed";
-import { answerSourceIds } from "@/lib/sources";
+import { answerSourceIds, sourceNames } from "@/lib/sources";
 import { DataRecords } from "@/components/DataRecords";
 import { ReferenceList } from "@/components/ReferenceList";
 import { AnalysisArtifact } from "@/components/research/AnalysisArtifact";
@@ -64,6 +64,8 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const errText = turn.errCode === "cut_off" ? t.cutOff : turn.errCode === "failed" ? t.runFailed : turn.errCode === "interrupted" ? t.interrupted : turn.errCode === "stopped" ? t.stoppedHelp : undefined; // the server's neutral English `error` is the fallback
   const text = status === "refused" ? (coded ? t[coded] : t === strings.th ? t.refused : turn.refused) : status === "error" ? errText ?? turn.error : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
   const refs = turn.answer?.references ?? [];
+  const ids = turn.answer ? answerSourceIds(turn.answer) : [];
+  const sourceIds = sourceNames(ids) ? ids : null; // no wrapper at all when no known source is to be named
   const [tab, setTab] = useState<"answer" | "sources">("answer");
   const openInspector = useInspector((x) => x.open);
   return (
@@ -135,8 +137,8 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
               <ReferenceList references={refs} t={t} scope={scope} />
             </Box>
           )}
-          <Box sx={{ mt: 1.5 }}><SourcesUsed ids={answerSourceIds(turn.answer)} /></Box>
-          <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 1, flexWrap: "wrap" }}>
+          {sourceIds && <Box sx={{ mt: 1.5 }}><SourcesUsed ids={sourceIds} /></Box>}
+          <Stack direction="row" spacing={1} useFlexGap sx={{ mt: sourceIds ? 1 : 2, flexWrap: "wrap" }}>
             <Button variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={() => { useMode.getState().set("chat"); focusComposer(); }}>{t.askFollowUp}</Button>
             <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={refs.length === 0} sx={{ borderColor: "divider" }}
               onClick={(e) => openInspector({ ...scope, refId: refs[0].id }, e.currentTarget)}>{t.openEvidence}</Button>

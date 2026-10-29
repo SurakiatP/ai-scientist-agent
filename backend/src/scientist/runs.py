@@ -30,6 +30,13 @@ FAILED = "Something went wrong. Please try again."
 TERMINAL = ("done", "refused", "error", "stopped", "interrupted")
 
 
+def _seen(p: dict, ids: list) -> dict:
+    """`seen` of progress.ts: source ids in first-seen order, max 100; the key is added only when something is new."""
+    cur = p.get("seen", [])
+    nxt = list(dict.fromkeys([*cur, *(i for i in ids if isinstance(i, str) and i)]))[:100]
+    return p if len(nxt) == len(cur) else {**p, "seen": nxt}
+
+
 def reduce_progress(p: dict, e: dict) -> dict:
     """Port of frontend/src/lib/progress.ts reduce (events as JSON dicts)."""
     t = e["type"]
@@ -38,8 +45,11 @@ def reduce_progress(p: dict, e: dict) -> dict:
     if t == "strategy":
         return {**p, "reasoning": e["reasoning"], "searches": e["searches"], "phase": "searching"}
     if t == "sources":
-        return {**p, "sources": {**p["sources"], e["term"]: p["sources"].get(e["term"], 0) + len(e["papers"])},
-                "phase": p["phase"] if p["phase"] == "writing" else "searching"}
+        return _seen({**p, "sources": {**p["sources"], e["term"]: p["sources"].get(e["term"], 0) + len(e["papers"])},
+                      "phase": p["phase"] if p["phase"] == "writing" else "searching"},
+                     [x.get("source") for x in e["papers"] if isinstance(x, dict)])
+    if t == "records":
+        return _seen(p, [r.get("database") for r in e.get("records") or [] if isinstance(r, dict)])
     if t == "answer":
         return {**p, "answered": [*p["answered"], e["term"]], "writing": True, "phase": "writing"}
     if t in ("final_answer", "complete"):

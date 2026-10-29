@@ -93,6 +93,6 @@ Logs: `docker compose -f /opt/ai-scientist/current/infra/compose.yaml logs -f ba
 
 ## 8. Skills and prompt switches
 
-- `ENABLED_SKILLS` (app.env / `.env`) is the allowlist of K-Dense skills copied into the Hermes home when the backend starts; default `["paper-lookup"]`. Unknown names are rejected at start. Turn a skill off by removing it from the list and restarting the backend (the generated `hermes-home` is rebuilt each start).
+- `ENABLED_SKILLS` (app.env / `.env`) is the allowlist of K-Dense skills copied into the Hermes home when the backend starts; default `["paper-lookup"]`. Add `"database-lookup"` to your own `app.env` (`ENABLED_SKILLS=["paper-lookup","database-lookup"]`) to turn database records on; without it the branches only search papers and are not offered the `report_record` tool. Databases that need an API key are skipped (no keys are configured) and the answer says so. Unknown names are rejected at start. Turn a skill off by removing it from the list and restarting the backend (the generated `hermes-home` is rebuilt each start).
 - `literature-review` and `citation-management` were reviewed and NOT enabled: their scripts import `requests`, which the pinned branch sandbox image does not contain, and installing it at run time is forbidden by the branch prompt. Re-evaluate only with a sandbox image that bundles it.
 - `prompts/analyze.md` has one added rule (state small samples or many missing values in the finding). Revert by deleting that sentence.

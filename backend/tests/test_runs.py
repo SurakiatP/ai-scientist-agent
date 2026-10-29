@@ -133,6 +133,20 @@ def test_reduce_progress_matches_progress_ts():
                  "answered": ["a"], "writing": False, "phase": "done"}  # waiting is kept, as in progress.ts
 
 
+def test_reduce_progress_seen_matches_progress_ts():
+    p = {"waiting": None, "reasoning": "", "searches": [], "sources": {}, "answered": [], "writing": False, "phase": "planning"}
+    evs = [{"type": "sources", "term": "a", "papers": [{"source": "pubmed"}, {}, {"source": None}]},
+           {"type": "records", "term": "a", "records": [{"database": "uniprot"}, "junk", {"database": ""}, {"database": "pubmed"}]},
+           {"type": "sources", "term": "b", "papers": [{"source": "arxiv"}, {"source": "pubmed"}]},
+           {"type": "records", "term": "b"}, {"type": "records", "term": "b", "records": None}]
+    for e in evs:
+        p = reduce_progress(p, e)
+    assert p["seen"] == ["pubmed", "uniprot", "arxiv"] and p["sources"] == {"a": 3, "b": 2}
+    assert "seen" not in reduce_progress({k: v for k, v in p.items() if k != "seen"}, {"type": "records", "records": []})
+    many = reduce_progress(p, {"type": "records", "records": [{"database": f"d{i}"} for i in range(150)]})
+    assert len(many["seen"]) == 100 and many["seen"][:3] == ["pubmed", "uniprot", "arxiv"]
+
+
 def test_reduce_analysis_matches_run_ts():
     a = {"fileId": "f", "steps": []}
     for e in [{"type": "analysis_step", "step": "profiling"}, {"type": "analysis_step", "step": "profiling"},

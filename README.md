@@ -24,7 +24,7 @@ Needs `uv`, Node >= 20 with npm, and a running Docker.
 1. Pin and install Hermes, the skills checkout and the sandbox image under `~/.cache/scientist/`:
    follow section 1 of `infra/hermes/setup.md`.
 2. `cp .env.example .env` and set `OPENROUTER_API_KEY`. `.env` is read by pydantic-settings as plain
-   `KEY=VALUE` lines; list values must be JSON (`ENABLED_SKILLS=["paper-lookup"]`). Settings are in
+   `KEY=VALUE` lines; list values must be JSON (`ENABLED_SKILLS=["paper-lookup","database-lookup"]`). Settings are in
    `backend/src/scientist/config.py`; `.env.example` shows the starting values. A real environment variable
    overrides `.env`.
 3. `cd backend && uv sync` and `cd frontend && npm install`.
@@ -43,10 +43,11 @@ Needs `uv`, Node >= 20 with npm, and a running Docker.
 | `MAX_QUESTION_CHARS` | 2000 | longer questions get 422 |
 | `HERMES_SOURCE_PATH` | none, required | pinned Hermes checkout (`.env.example`: `~/.cache/scientist/upstream/hermes`) |
 | `HERMES_REVISION` | none, required | commit the checkout must be at |
-| `ENABLED_SKILLS` | `[]` | JSON list of skills copied into Hermes (`.env.example`: `["paper-lookup"]`) |
+| `ENABLED_SKILLS` | `[]` | JSON list of skills copied into Hermes (`.env.example`: `["paper-lookup","database-lookup"]`; `database-lookup` turns on database records, see `MAX_RECORDS_PER_BRANCH`) |
 | `CORS_ORIGINS` | `["http://localhost:3000"]` | JSON list of allowed browser origins |
 | `SSE_PING_SECONDS` | 15 | heartbeat interval while a run waits |
 | `MAX_PAPERS_PER_BRANCH` | 30 | papers a branch may report; extra ones are ignored and counted in the final note |
+| `MAX_RECORDS_PER_BRANCH` | 20 | database records a branch may report (only with `database-lookup` enabled); extra ones are ignored and counted in the final note |
 | `GUARDRAIL_MAX_TOKENS` | 256 | `max_tokens` for the scope-check call (reasoning models spend part of it thinking; too small comes back blank) |
 | `STRATEGY_MAX_TOKENS` | 1500 | `max_tokens` for the search-plan call |
 | `SYNTHESIS_MAX_TOKENS` | 4000 | `max_tokens` for the final-answer call |

@@ -16,7 +16,7 @@ from pydantic import BaseModel, ValidationError
 from scientist.config import Settings
 from scientist.events import BranchAnswer, DataRecord, Paper, paper_key
 from scientist.proc import kill_and_reap
-from scientist.sources import DATA_SOURCES
+from scientist.sources import DATA_SOURCES, normalize_database
 
 ROOT = Path(__file__).resolve().parents[3]
 CACHE = Path.home() / ".cache/scientist"
@@ -25,7 +25,8 @@ SKILLS_REVISION = "593377bb048752abb0152deab9fbb1083a6087df"
 SANDBOX_IMAGE = ("ghcr.io/astral-sh/uv:0.11.6-python3.13-trixie"
                  "@sha256:b3c543b6c4f23a5f2df22866bd7857e5d304b67a564f4feab6ac22044dde719b")
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
-SYSTEM = (Path(__file__).parent / "prompts/branch.md").read_text()
+PROMPTS = Path(__file__).parent / "prompts"
+DB_SKILL = "database-lookup"
 BRANCH_TIMEOUT_S = 300
 
 
@@ -50,18 +51,22 @@ def _invalid(term: str, raw: object, reason: str) -> InvalidPaper:
 class InvalidRecord(BaseModel):
     """A database record rejected (unknown database, off-site url...); counted, never silently dropped."""
     term: str
-    key: str | None  # "database:id", None when either is unknown
+    key: str | None  # "database:id" with the canonical database id, None when either is unknown
     reason: str
+    code: str | None = None  # "needs_key": the database exists but needs an API key that is not configured here
 
 
-def _invalid_record(term: str, raw: object, reason: str) -> InvalidRecord:
+def _invalid_record(term: str, raw: object, reason: str, code: str | None = None) -> InvalidRecord:
     raw = raw if isinstance(raw, dict) else {}
     parts = [str(raw[k]).strip() for k in ("database", "id") if isinstance(raw.get(k), (str, int)) and str(raw[k]).strip()]
-    return InvalidRecord(term=term, key=":".join(parts) if len(parts) == 2 else None, reason=reason[:300])
+    if len(parts) == 2:
+        parts[0] = normalize_database(parts[0]) or parts[0]  # same key as an accepted record, so a corrected retry matches
+    return InvalidRecord(term=term, key=":".join(parts) if len(parts) == 2 else None, reason=reason[:300], code=code)
 
 
 # ids of the databases that need no API key, with their official hosts: all the bridge may accept (it has no keys)
 KEYLESS_SOURCES = {k: {"name": d.name, "hosts": list(d.hosts)} for k, d in DATA_SOURCES.items() if not d.needs_key}
+KEY_GATED_SOURCES = {k: d.name for k, d in DATA_SOURCES.items() if d.needs_key}  # named only so the bridge can say why it refuses them
 
 BranchItem = Paper | InvalidPaper | DataRecord | InvalidRecord | BranchAnswer | BranchFailed
 
@@ -99,6 +104,9 @@ class HermesRuntime(BranchRunner):
 
     def __init__(self, settings: Settings, *, command: list[str] | None = None):
         self.settings = settings
+        self.databases = DB_SKILL in settings.enabled_skills  # database records are offered only when the skill is installed
+        self.system = (PROMPTS / "branch.md").read_text().replace(
+            "{{database}}\n", (PROMPTS / "branch_database.md").read_text() if self.databases else "")
         self.command = command or [str(CACHE / "hermes-env/bin/python"), "-u", str(ROOT / "infra/hermes/native_bridge.py")]
         self.env = None if command else self._prepare()
         self.procs: set[asyncio.subprocess.Process] = set()
@@ -132,10 +140,11 @@ class HermesRuntime(BranchRunner):
 
     async def run(self, term: str, instructions: str) -> AsyncIterator[BranchItem]:
         s = self.settings
-        request = {"term": term, "instructions": instructions, "system": SYSTEM, "model": s.model,
+        request = {"term": term, "instructions": instructions, "system": self.system, "model": s.model,
                    "api_key": s.openrouter_api_key, "base_url": OPENROUTER_URL,
                    "max_iterations": s.branch_max_rounds, "max_tokens": s.branch_token_cap,
-                   "budget_seconds": BRANCH_TIMEOUT_S - 30, "data_sources": KEYLESS_SOURCES}
+                   "budget_seconds": BRANCH_TIMEOUT_S - 30, "data_sources": KEYLESS_SOURCES if self.databases else {},
+                   "key_gated_sources": KEY_GATED_SOURCES if self.databases else {}}
         proc = await asyncio.create_subprocess_exec(
             *self.command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL, env=self.env, limit=1024 * 1024)
@@ -164,7 +173,8 @@ class HermesRuntime(BranchRunner):
                             err = e.errors()[0]
                             item = _invalid_record(term, msg.get("record"), f"{'.'.join(map(str, err['loc'])) or 'record'}: {err['msg']}")
                     elif event == "record_rejected":
-                        item = _invalid_record(term, msg.get("record"), str(msg.get("reason") or "rejected"))
+                        item = _invalid_record(term, msg.get("record"), str(msg.get("reason") or "rejected"),
+                                               "needs_key" if msg.get("code") == "needs_key" else None)
                     elif event == "answer":
                         item = BranchAnswer(term=term, content=str(msg["content"]))
                     elif event == "failed":

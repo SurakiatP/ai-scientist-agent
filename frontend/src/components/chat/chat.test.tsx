@@ -245,6 +245,14 @@ describe("Thread", () => {
     expect(screen.queryByRole("heading", { name: t.recordsTitle })).toBeNull();
     expect(screen.queryByText(/Sources used|แหล่งที่ใช้/)).toBeNull();
   });
+  it("a finished turn without sources has no empty sources wrapper; the action row keeps its old top margin", () => {
+    const old = { id: "1", status: "verified" as const, paper: { title: "Old paper", authors: [], year: null, doi: null, pmid: null, url: "https://example.com" } };
+    const tn = turn("done", { answer: { content: "old answer", references: [old] } });
+    render(<AgentMessage sessionId="s" turn={tn} />);
+    const row = screen.getByRole("button", { name: t.askFollowUp }).parentElement as HTMLElement;
+    expect(row.previousElementSibling?.id).toBe(`panel-sources-${tn.id}`);
+    expect(getComputedStyle(row).marginTop).toBe("16px");
+  });
   it("a finished research answer lists the sources it used (references and records); an analysis turn never does", () => {
     const r = { id: "1", status: "verified" as const, paper: { title: "P", authors: [], year: null, doi: null, pmid: null, url: "https://example.com", source: "europepmc" } };
     const rec = { database: "uniprot", id: "P1", title: "p53", url: "https://uniprot.org/P1", summary: "" };

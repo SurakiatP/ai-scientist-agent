@@ -68,7 +68,14 @@ loaded it.
 - `AIAgent(tool_start_callback=..., tool_complete_callback=(call_id, name, args, result))`
   also exposes every tool call and its result. The bridge does not forward them: raw
   tool output is untrusted third-party text.
-- The model sees only `terminal`, `skills_list`, `skill_view` and `report_paper`.
+- When the request carries a non-empty `data_sources` (only when `database-lookup` is in `ENABLED_SKILLS`), the bridge
+  also registers `report_record(database, id, title, url, summary)`. `data_sources` is `{database id: {"name", "hosts"}}`
+  for the keyless databases; the `database` enum of the tool is its keys. `clean_record` accepts the id or the display name
+  and requires an https url on one of the database's official hosts. A bad call returns an error to the model and emits
+  `{"event":"record_rejected","record":{database,id,url},"reason"}`. The request's `key_gated_sources`
+  (`{id: display name}`) lists databases that exist but need an API key: reporting one is refused with a reason that says
+  so and the event carries `"code":"needs_key"`; the pipeline adds a separate note for those and does not count them as invalid.
+- The model sees only `terminal`, `skills_list`, `skill_view`, `report_paper` and, with `data_sources`, `report_record`.
   `skill_manage` and `process_manage` are removed, and registry dispatch rejects
   every other name (the same approach as the reference bridge).
 - The skills run shell and Python (curl, bundled scripts). Following the spec ("no
@@ -91,8 +98,10 @@ response. Each call reaches the backend as soon as it is made.
 
 ## Wire protocol (`native_bridge.py`)
 
-stdin, one line: `{"term","instructions","system","model","api_key","base_url","max_iterations","max_tokens"}`.
-stdout, JSON lines: `{"event":"paper","paper":{...}}` and `{"event":"rejected",...}` (zero or more), then exactly one of
+stdin, one line: `{"term","instructions","system","model","api_key","base_url","max_iterations","max_tokens","budget_seconds","data_sources","key_gated_sources"}`
+(`data_sources` is `{}` unless `database-lookup` is enabled; then `report_record` is not registered).
+stdout, JSON lines: `{"event":"paper","paper":{...}}`, `{"event":"rejected",...}`, `{"event":"record","record":{...}}` and
+`{"event":"record_rejected","record":{...},"reason","code"?}` (zero or more), then exactly one of
 `{"event":"answer","content":str}` or `{"event":"failed","code":str}`. Then the process exits.
 SIGTERM stops the agent and removes the branch's container. If the process exits
 without a terminal line, the backend turns that into `BranchFailed`.
@@ -105,7 +114,8 @@ removed.
 
 ## Which skills to enable
 
-`ENABLED_SKILLS=["paper-lookup"]` is the default. Its scripts use only the standard
+`ENABLED_SKILLS=["paper-lookup"]` is the code default; `.env.example` also lists `database-lookup` (records from public
+databases, vetted in `docs/skills/vetting.md`). `paper-lookup` scripts use only the standard
 library, and it was run inside the sandbox. `literature-review` and
 `citation-management` need the Python `requests` package, which the sandbox image
 lacks. Enabling them means building an image that adds it. BGPT needs a remote

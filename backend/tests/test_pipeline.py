@@ -514,6 +514,23 @@ async def test_corrected_record_retry_is_not_noted_but_unfixed_one_is(settings, 
     assert "1 database record(s) were left out because their data was invalid" in final.content
 
 
+async def test_corrected_retry_with_a_display_name_is_not_noted(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    bad = {"event": "record_rejected", "record": {"database": "UniProt", "id": "P1", "url": "http://x"}, "reason": "bad url"}
+    rt = runner(settings, tmp_path, {"a": [bad, rec(1), paper("A0", "10.1000/a0"), answer("a")]})
+    final = next(e for e in await run(Q, rt, settings) if isinstance(e, FinalAnswer))
+    assert "database record(s)" not in final.content
+
+
+async def test_key_gated_database_gets_its_own_note_and_is_not_counted_as_invalid(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    gated = lambda db, i: {"event": "record_rejected", "record": {"database": db, "id": i}, "reason": "needs key", "code": "needs_key"}  # noqa: E731
+    rt = runner(settings, tmp_path, {"a": [gated("omim", "1"), gated("OMIM", "2"), gated("drugbank", "3"), paper("A0", "10.1000/a0"), answer("a")]})
+    final = next(e for e in await run(Q, rt, settings) if isinstance(e, FinalAnswer))
+    assert "Note: DrugBank, OMIM were skipped because they need an API key that is not configured." in final.content
+    assert "invalid" not in final.content
+
+
 async def test_duplicate_record_takes_no_cap_slot(settings, tmp_path, fake_complete):
     fake_complete["strategy"] = strategy("a")
     settings.max_records_per_branch = 20

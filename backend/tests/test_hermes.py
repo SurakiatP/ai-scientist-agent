@@ -219,10 +219,40 @@ UNIPROT = {"uniprot": {"name": "UniProt", "hosts": ["uniprot.org"]}}
 
 
 async def test_request_lists_keyless_databases_only(settings, tmp_path):
+    settings.enabled_skills = ["paper-lookup", "database-lookup"]
     rt = runtime(settings, tmp_path, [{"echo_request": True}])
     [answer] = await collect(rt)
-    sources = json.loads(answer.content)["data_sources"]
+    req = json.loads(answer.content)
+    sources = req["data_sources"]
     assert sources["uniprot"] == {"name": "UniProt", "hosts": ["uniprot.org"]} and "omim" not in sources
+    assert req["key_gated_sources"]["omim"] == "OMIM" and "uniprot" not in req["key_gated_sources"]
+    assert "database-lookup" in req["system"] and "report_record" in req["system"]
+
+
+async def test_without_the_database_skill_no_data_sources_and_no_database_prompt(settings, tmp_path):
+    settings.enabled_skills = ["paper-lookup"]
+    [answer] = await collect(runtime(settings, tmp_path, [{"echo_request": True}]))
+    req = json.loads(answer.content)
+    assert req["data_sources"] == {} and req["key_gated_sources"] == {}
+    assert "database-lookup" not in req["system"] and "report_record" not in req["system"] and "{{" not in req["system"]
+    assert "paper-lookup" in req["system"] and "skills_list" in req["system"]  # told not to start with it
+
+
+async def test_corrected_retry_with_display_name_has_the_same_key_as_the_accepted_record(settings, tmp_path):
+    rt = runtime(settings, tmp_path, [
+        {"event": "record_rejected", "record": {"database": "UniProt", "id": "P1", "url": "http://x"}, "reason": "bad url"},
+        {"event": "record", "record": {**RECORD, "id": "P1", "database": "uniprot"}}, {"event": "answer", "content": "d"}])
+    items = await collect(rt)
+    assert items[0].key == "uniprot:P1" and (items[1].database, items[1].id) == ("uniprot", "P1")
+
+
+async def test_needs_key_rejection_carries_a_code(settings, tmp_path):
+    rt = runtime(settings, tmp_path, [
+        {"event": "record_rejected", "record": {"database": "OMIM", "id": "1"}, "reason": "needs a key", "code": "needs_key"},
+        {"event": "record_rejected", "record": {"database": "uniprot", "id": "2"}, "reason": "no"},
+        {"event": "answer", "content": "d"}])
+    items = await collect(rt)
+    assert (items[0].key, items[0].code, items[1].code) == ("omim:1", "needs_key", None)
 
 
 def test_bridge_clean_record():
@@ -238,6 +268,16 @@ def test_bridge_clean_record():
         record, error = clean(bad, hosts)
         assert record is None and error
     assert clean("x", hosts)[0] is None
+
+
+def test_bridge_key_gated_database_is_refused_with_its_own_reason():
+    bridge = load_bridge()
+    gated = {"omim": "OMIM", "drugbank": "DrugBank"}
+    for name in ("omim", "OMIM", " DrugBank "):
+        record, error = bridge.clean_record({**RECORD, "database": name}, UNIPROT, gated)
+        assert record is None and "needs an API key that is not configured here" in error and bridge.NEEDS_KEY in error
+    assert "not available" in bridge.clean_record({**RECORD, "database": "nope"}, UNIPROT, gated)[1]
+    assert bridge.clean_record(RECORD, UNIPROT, gated) == (RECORD, None)
 
 
 def test_bridge_keeps_paper_source():
@@ -264,7 +304,7 @@ def test_bridge_and_backend_agree_on_record_urls():
         assert (record is not None) is ok, url
 
 
-def test_bridge_report_record_handler_payloads(monkeypatch):
+def boot_bridge(monkeypatch, request):
     import types
 
     bridge = load_bridge()
@@ -279,7 +319,7 @@ def test_bridge_report_record_handler_payloads(monkeypatch):
         mod = types.ModuleType(name)
         mod.__dict__.update(attrs)
         monkeypatch.setitem(sys.modules, name, mod)
-    monkeypatch.setattr(sys, "stdin", __import__("io").StringIO(json.dumps({"data_sources": UNIPROT}) + "\n"))
+    monkeypatch.setattr(sys, "stdin", __import__("io").StringIO(json.dumps(request) + "\n"))
     monkeypatch.setattr(bridge.signal, "signal", lambda *a: None)
     monkeypatch.setattr(bridge, "WIRE", sys.stdout)
     saved = sys.stdout
@@ -287,6 +327,24 @@ def test_bridge_report_record_handler_payloads(monkeypatch):
         bridge.main()
     finally:
         sys.stdout = saved
+    return wire, handlers
+
+
+def test_bridge_registers_report_record_only_with_data_sources(monkeypatch):
+    _, handlers = boot_bridge(monkeypatch, {"data_sources": {}})
+    assert "report_paper" in handlers and "report_record" not in handlers
+
+
+def test_bridge_key_gated_rejection_event_has_the_code(monkeypatch):
+    wire, handlers = boot_bridge(monkeypatch, {"data_sources": UNIPROT, "key_gated_sources": {"omim": "OMIM"}})
+    out = json.loads(handlers["report_record"]({**RECORD, "database": "OMIM", "id": "1"}))
+    assert "API key" in out["error"] and wire[-1]["code"] == "needs_key" and wire[-1]["record"]["database"] == "OMIM"
+    handlers["report_record"]({**RECORD, "url": "http://uniprot.org/x"})
+    assert "code" not in wire[-1]
+
+
+def test_bridge_report_record_handler_payloads(monkeypatch):
+    wire, handlers = boot_bridge(monkeypatch, {"data_sources": UNIPROT})
     out = json.loads(handlers["report_record"]({"database": "uniprot", "id": "9" * 900, "url": "http://uniprot.org/x"}))
     assert "record not recorded" in out["error"]
     event = wire[-1]

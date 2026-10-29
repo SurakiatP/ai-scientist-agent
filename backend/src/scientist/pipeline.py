@@ -17,6 +17,7 @@ from scientist.events import (BranchAnswer, Complete, DataRecord, Error, Event, 
 from scientist.gate import RunGate
 from scientist.guardrail import guard
 from scientist.hermes import BranchFailed, BranchRunner, InvalidPaper, InvalidRecord
+from scientist.sources import DATA_SOURCES
 
 PROMPTS = Path(__file__).parent / "prompts"
 STRATEGY = (PROMPTS / "strategy.md").read_text()
@@ -147,6 +148,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     records: dict[tuple[str, str], DataRecord] = {}
     rec_per_branch: dict[str, int] = {}
     rec_capped = 0
+    gated: set[str] = set()  # names of key-gated databases the model tried to use
     rec_invalid: set = set()  # database:id of rejected records, or a unique marker when unidentified
     try:
         while (msg := await queue.get()) is not DONE:
@@ -161,7 +163,11 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
             elif isinstance(item, BranchAnswer):
                 answers.append(item)  # held back so all sources events come before the answers
             elif isinstance(item, InvalidRecord):
-                rec_invalid.add(item.key or object())
+                if item.code == "needs_key":
+                    if (db := DATA_SOURCES.get((item.key or "").split(":", 1)[0])) is not None:
+                        gated.add(db.name)
+                else:
+                    rec_invalid.add(item.key or object())
             elif isinstance(item, DataRecord):
                 if (item.database, item.id) in records:  # the same entry again is one record and takes no slot
                     continue
@@ -203,6 +209,9 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     rec_dropped = sum(1 for k in rec_invalid if not isinstance(k, str) or tuple(k.split(":", 1)) not in records)  # a corrected retry is not a drop
     if rec_dropped:
         note += f"\n\nNote: {rec_dropped} database record(s) were left out because their data was invalid."
+    if gated:
+        names = ", ".join(sorted(gated))
+        note += f"\n\nNote: {names} {'was' if len(gated) == 1 else 'were'} skipped because {'it needs' if len(gated) == 1 else 'they need'} an API key that is not configured."
     if rec_capped:
         note += (f"\n\nNote: {rec_capped} database record(s) were left out because a search reported more than "
                  f"{settings.max_records_per_branch}.")

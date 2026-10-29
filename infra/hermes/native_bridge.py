@@ -17,6 +17,7 @@ WIRE = sys.stdout
 LOCK = threading.Lock()
 PAPER_SOURCES = ("pubmed", "pmc", "europepmc", "biorxiv", "medrxiv", "arxiv", "openalex", "crossref", "semanticscholar",
                  "core", "unpaywall", "opencitations", "pubtator3", "zenodo", "figshare", "ror", "biostudies", "doaj")
+NEEDS_KEY = "needs an API key that is not configured here"
 ALLOWED = {"terminal", "skills_list", "skill_view", "report_paper", "report_record"}
 HTTP_URL = re.compile(r"https?://(?:[^\s/?#@]+@)?[^\s/?#@]+[^\s]*", re.I)  # identical to scientist.events
 RECORD_URL = re.compile(r"https://[a-z0-9.-]+(?::[0-9]+)?(?:[/?#][^\s\\]*)?", re.I)  # no userinfo, backslash, %, whitespace in the authority
@@ -93,9 +94,10 @@ def squash(v):
     return re.sub(r"[^a-z0-9]", "", v.lower())  # same rule as scientist.sources._squash
 
 
-def clean_record(args, data_sources):
+def clean_record(args, data_sources, key_gated=None):
     """(record, None) or (None, error). data_sources: {database id: {"name": display name, "hosts": [official hosts]}}
     from the request, keyless only; the id may be written as the id or the display name, any case;
+    key_gated: {database id: display name} of databases that exist but need an API key: refused with NEEDS_KEY.
     the backend validates again (scientist.events.DataRecord), this just lets the model retry."""
     if not isinstance(args, dict):
         return None, "arguments must be an object"
@@ -115,6 +117,8 @@ def clean_record(args, data_sources):
     rec["database"] = aliases.get(squash(rec["database"]), rec["database"])
     hosts = data_sources.get(rec["database"], {}).get("hosts")
     if hosts is None:
+        if any(squash(rec["database"]) in (squash(k), squash(n)) for k, n in (key_gated or {}).items()):
+            return None, f"this database {NEEDS_KEY}; skip it"
         return None, "database is not available for this request; use one of: " + ", ".join(sorted(data_sources))
     if not RECORD_URL.fullmatch(rec["url"]):
         return None, "url must be an https link on the official site of the database: " + ", ".join(hosts)
@@ -157,10 +161,10 @@ def main():
         return json.dumps({"recorded": True})
 
     def report_record(args, **_):
-        record, error = clean_record(args, request.get("data_sources") or {})
+        record, error = clean_record(args, request.get("data_sources") or {}, request.get("key_gated_sources"))
         if error:
             ids = args if isinstance(args, dict) else {}
-            emit({"event": "record_rejected", "reason": error, "record": {
+            emit({"event": "record_rejected", "reason": error, **({"code": "needs_key"} if NEEDS_KEY in error else {}), "record": {
                 k: str(v)[:500] for k in ("database", "id", "url")
                 if isinstance(v := ids.get(k), (str, int)) and not isinstance(v, bool)}})
             return json.dumps({"error": f"record not recorded: {error}. Fix the arguments and call again."})
@@ -168,7 +172,6 @@ def main():
         return json.dumps({"recorded": True})
 
     registry.register(name="report_paper", toolset="scientist", schema=PAPER_SCHEMA, handler=report_paper)
-    registry.register(name="report_record", toolset="scientist", schema=record_schema(request.get("data_sources") or {}), handler=report_record)
     dispatch = registry.dispatch
 
     def restricted(name, args, **kwargs):
@@ -180,6 +183,8 @@ def main():
     from run_agent import AIAgent
 
     try:
+        if request.get("data_sources"):  # no database skill for this run: the model is not offered report_record
+            registry.register(name="report_record", toolset="scientist", schema=record_schema(request["data_sources"]), handler=report_record)
         agent = AIAgent(
             provider="openrouter", base_url=request["base_url"], api_key=request["api_key"], model=request["model"],
             max_iterations=request["max_iterations"], max_tokens=request["max_tokens"],
