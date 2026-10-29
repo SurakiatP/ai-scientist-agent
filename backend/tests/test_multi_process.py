@@ -5,6 +5,7 @@ from collections import defaultdict
 from types import SimpleNamespace
 
 import pytest
+import sqlalchemy as sa
 from alembic import command
 
 from scientist.config import get_settings
@@ -163,6 +164,9 @@ async def test_rf2_dead_owner_is_restarted_once_then_interrupted(cluster):
     await until(ran(fake, 2), 20)  # the lease (5 s) ran out, B swept the run and claimed it again
     assert fake.ran[1][0] == b.pid
     assert sql(fake.db, "select attempt, worker from runs where id = %s", rid) == [(2, b.pid)]
+    async def third():
+        return len(events_of(fake, rid)) >= 3
+    await until(third)  # B's strategy is committed before B dies
     await die(b)
     c = await fake.make(max_concurrent_runs=1)
     await until(is_status(fake, rid, "interrupted"), 20)
@@ -309,3 +313,54 @@ async def test_a_run_that_cannot_be_started_ends_in_error_at_once(cluster):
     await fake.make(max_concurrent_runs=1)
     await until(is_status(fake, rid, "error"), 5)
     assert sql(fake.db, "select status from turns where id = %s", tid) == [("error",)]
+
+
+async def test_a_stale_emit_waits_for_the_sweep_and_then_writes_nothing(cluster):
+    fake = cluster
+    a = await fake.make(start=False, max_concurrent_runs=1)
+    rid = await submit(fake, a, u(), "c1")
+    sql(fake.db, "update runs set status = 'running', worker = %s, attempt = 1 where id = %s", a.pid, rid)
+    fence = {"w": a.pid, "a": 1}
+    async with a.data.db.session() as s, s.begin():
+        await a._event(s, rid, {"type": "strategy"}, fence)
+    async with a.data.db.session() as sweep:
+        async with sweep.begin():  # a sweep pass in flight: the run goes back to the queue
+            await sweep.execute(sa.text("update runs set status = 'queued', attempt = 2, worker = null where id = cast(:r as uuid)"), {"r": rid})
+            stale = asyncio.create_task(_stale_emit(a, rid, fence))
+            await asyncio.sleep(0.3)
+            assert not stale.done()  # serialised behind the sweep's row lock
+            await a._event(sweep, rid, {"type": "restarted"})
+    assert await asyncio.wait_for(stale, 5) is None
+    assert events_of(fake, rid) == [(1, "strategy"), (2, "restarted")]
+
+
+async def _stale_emit(a, rid, fence):
+    async with a.data.db.session() as s, s.begin():
+        return await a._event(s, rid, {"type": "sources"}, fence)
+
+
+async def test_a_failed_launch_leaves_no_live_entry(cluster):
+    fake = cluster
+    a = await fake.make(start=False, max_concurrent_runs=1)
+    rid = await submit(fake, a, u(), "c1")
+
+    def boom(run):
+        raise RuntimeError("x")
+    a._run = boom
+    await a._claim_all()
+    assert a.live == {}
+    assert sql(fake.db, "select status from runs where id = %s", rid) == [("error",)]
+
+
+async def test_a_released_and_a_swept_cancel_notify_followers_at_once(cluster):
+    fake = cluster
+    a = await fake.make(max_concurrent_runs=1)
+    rid = await submit(fake, a, u(), "c1")
+    await until(ran(fake, 1))
+    sql(fake.db, "update runs set cancel_requested = true where id = %s", rid)
+    async with a.st.pgbus.subscribe("run_events") as it:
+        await a.shutdown()  # releases: a requested cancel stops the run
+        seen = []
+        while f"{rid}:end" not in seen:
+            seen.append(await asyncio.wait_for(anext(it), 5))
+    assert sql(fake.db, "select status from runs where id = %s", rid) == [("stopped",)]

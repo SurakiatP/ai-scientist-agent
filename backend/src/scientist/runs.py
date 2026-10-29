@@ -367,7 +367,7 @@ class RunService:
         """Store an event under the next seq of the run (unique across restarts: it continues from max(seq)) and
         announce it when the transaction commits. With `fence` (a runs condition) nothing is written, and None returned,
         unless it holds."""
-        where = f" where exists (select 1 from runs where id = cast(:r as uuid) and worker = :w and attempt = :a and status = 'running')" if fence else ""
+        where = " where exists (select 1 from runs where id = cast(:r as uuid) and worker = :w and attempt = :a and status = 'running' for share)" if fence else ""
         args = {"r": rid, "e": json.dumps(d), **(fence or {})}
         seq = (await s.execute(sa.text(
             "insert into run_events(run_id, seq, event) select cast(:r as uuid), "
@@ -511,6 +511,7 @@ class RunService:
                     await self._launch(row)
                 except Exception:
                     log.exception("run %s could not be started", row["id"])
+                    self.live.pop(row["id"], None)  # _launch may have registered it before failing
                     await self._fail(row, FAILED)
 
     async def _fail(self, row: dict, message: str) -> None:
@@ -541,7 +542,7 @@ class RunService:
             old.cancel_lost()
         self.live[run.id] = run
         async with self.data.db.session() as s:  # a cancel that came in between the claim and now had no one to tell
-            run.stopped = bool((await s.execute(sa.select(m.runs.c.cancel_requested).where(m.runs.c.id == run.id))).scalar_one_or_none())
+            run.stopped = run.stopped or bool((await s.execute(sa.select(m.runs.c.cancel_requested).where(m.runs.c.id == run.id))).scalar_one_or_none())
         run.task = asyncio.create_task(self._run(run))
         self._bg.add(run.task)
         run.task.add_done_callback(self._bg.discard)
@@ -597,6 +598,8 @@ class RunService:
         for r in stopped:
             await self._event(s, str(r.id), json.loads(Error(message="stopped", code="stopped").model_dump_json()))
             await self._notify("run_events", f"{r.id}:end", s)
+        if stopped:
+            await self._notify("runs", "stopped", s)
         if ids := [r.turn_id for r in stopped if r.turn_id]:
             await self._end_turns(s, ids, "stopped", "The run was stopped.", "stopped")
         again = (await s.execute(sa.update(m.runs).where(pred, c.attempt < st.run_max_attempts)
@@ -606,10 +609,13 @@ class RunService:
             await self._event(s, str(rid), {"type": "restarted"})
         if again:
             await self._notify("runs", "restarted", s)
-        dead = [r.turn_id for r in await s.execute(
-            sa.update(m.runs).where(pred, c.attempt >= st.run_max_attempts)
-            .values(status="interrupted", finished_at=sa.func.now()).returning(c.id, c.turn_id))]
-        if dead := [t for t in dead if t]:
+        ended = list(await s.execute(sa.update(m.runs).where(pred, c.attempt >= st.run_max_attempts)
+                                     .values(status="interrupted", finished_at=sa.func.now()).returning(c.id, c.turn_id)))
+        for r in ended:
+            await self._notify("run_events", f"{r.id}:end", s)
+        if ended:
+            await self._notify("runs", "interrupted", s)
+        if dead := [r.turn_id for r in ended if r.turn_id]:
             await self._end_turns(s, dead, "interrupted", LOST, "interrupted")
 
     async def _sweep(self) -> None:
