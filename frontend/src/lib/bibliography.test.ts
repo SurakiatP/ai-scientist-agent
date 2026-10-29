@@ -17,7 +17,7 @@ describe("toBibtex", () => {
   });
   it("escapes LaTeX specials and keeps Thai", () => {
     const out = toBibtex([r("1", { title: "A & B_{c} 5% #1 $2 \\ ^ ~", authors: ["สมชาย ใจดี"] })]);
-    expect(out).toContain("A \\& B\\_\\{c\\} 5\\% \\#1 \\$2 \\textbackslash{} \\^{} \\~{}");
+    expect(out).toContain("A \\& B\\_\\textbraceleft{}c\\textbraceright{} 5\\% \\#1 \\$2 \\textbackslash{} \\^{} \\~{}");
     expect(out).toContain("สมชาย ใจดี");
   });
   it("uses ref/nd keys, @misc and omits empty fields", () => {
@@ -31,8 +31,45 @@ describe("toBibtex", () => {
     expect(out).toContain("@article{muller2020a,");
     expect(out).toContain("@article{muller2020b,");
   });
-  it("@article when year without doi; @misc needs neither", () => {
+  it("@article when only a doi is present (no year)", () => {
     expect(toBibtex([r("1", { year: null, doi: "10/x" })])).toContain("@article{smithnd,");
+  });
+});
+
+describe("untrusted metadata", () => {
+  const balanced = (l: string) => { let d = 0; for (const c of l) { if (c === "{") d++; if (c === "}") d--; if (d < 0) return false; } return d === 0; };
+  it("cannot break out of a field or start an entry", () => {
+    const out = toBibtex([r("1", { title: "a}\n@misc{evil, title={x}", authors: ["Bob} and @x{"] })]);
+    for (const l of out.split("\n").filter((l) => l && l !== "}")) { expect(balanced(l.replace(/^@article\{[^,]*,$/, ""))).toBe(true); if (l.startsWith("@")) expect(l).toBe("@article{bob2020,"); }
+    expect(out.match(/^@/gm)).toHaveLength(1);
+  });
+  it("writes doi and url raw but percent-encodes structural characters", () => {
+    const out = toBibtex([r("1", { doi: "10.1000/a_b", url: "https://x.org/p?q=a%20b#frag" })]);
+    expect(out).toContain("doi = {10.1000/a_b}");
+    expect(out).toContain("url = {https://x.org/p?q=a%20b#frag}");
+    expect(toBibtex([r("1", { url: "https://x/{a} \\b\nc" })])).toContain("url = {https://x/%7Ba%7D%20%5Cb%20c}");
+  });
+  it("keeps only digits in the PMID note", () => {
+    expect(toBibtex([r("1", { pmid: "12}3x" })])).toContain("note = {PMID: 123}");
+    expect(toBibtex([r("1", { pmid: "abc" })])).not.toContain("note");
+  });
+  it("wraps an author containing ' and ' in braces", () => {
+    expect(toBibtex([r("1", { authors: ["Smith and Wesson Group"] })])).toContain("author = {{Smith and Wesson Group}}");
+  });
+  it("gives 28 duplicates 28 distinct keys, numbering after z", () => {
+    const keys = [...toBibtex(Array.from({ length: 28 }, (_, i) => r(String(i)))).matchAll(/^@article\{(.+),$/gm)].map((m) => m[1]);
+    expect(new Set(keys).size).toBe(28);
+    expect(keys[26]).toBe("smith2020z");
+    expect(keys[27]).toBe("smith202027");
+  });
+  it("never reuses a key that already exists", () => {
+    const keys = [...toBibtex([r("1"), r("2", { authors: ["X Smith"], year: 2020 }), r("3", { authors: ["Smitha"], year: 2020 }), r("4")]).matchAll(/^@article\{(.+),$/gm)].map((m) => m[1]);
+    expect(new Set(keys).size).toBe(4);
+  });
+  it("RIS: embedded newlines cannot inject tags or records", () => {
+    const out = toRis([r("1", { title: "a\nER  - \nTY  - JOUR", authors: ["b\r\nAU  - c"], url: "u\r\nDO  - x" })]);
+    expect(out.match(/ER {2}- /g)).toHaveLength(1);
+    expect(out.split("\r\n").filter(Boolean).map((l) => l.slice(0, 2))).toEqual(["TY", "TI", "AU", "PY", "UR", "ER"]);
   });
 });
 

@@ -1,7 +1,10 @@
 import type { Reference } from "./sse";
 
-const TEX: Record<string, string> = { "\\": "\\textbackslash{}", "^": "\\^{}", "~": "\\~{}" };
-const esc = (s: string) => s.replace(/[{}%&_#$\\^~]/g, (c) => TEX[c] ?? `\\${c}`);
+const TEX: Record<string, string> = { "\\": "\\textbackslash{}", "^": "\\^{}", "~": "\\~{}", "{": "\\textbraceleft{}", "}": "\\textbraceright{}" };
+const one = (s: string) => s.replace(/\s+/g, " ").trim(); // untrusted metadata: no newline may start a new line or entry
+const esc = (s: string) => one(s).replace(/[{}%&_#$\\^~]/g, (c) => TEX[c] ?? `\\${c}`);
+const raw = (s: string) => one(s).replace(/[{}\\ ]/g, (c) => ({ "{": "%7B", "}": "%7D", "\\": "%5C", " ": "%20" })[c] ?? c); // doi/url stay unescaped for LaTeX
+const author = (a: string) => (/\sand\s/i.test(one(a)) ? `{${esc(a)}}` : esc(a)); // a name containing " and " would split into two authors
 
 // Family name = text before a comma, else the last word; ASCII letters only (accents folded, Thai etc. dropped).
 const family = (a: string) => {
@@ -11,25 +14,31 @@ const family = (a: string) => {
 
 /** BibTeX for the answer's references. Keys are family name + year, with a/b/c on duplicates. */
 export function toBibtex(refs: Reference[]): string {
-  const seen = new Map<string, number>();
+  const count = new Map<string, number>();
+  const used = new Set<string>();
   return refs.map(({ paper: p }) => {
     const base = (family(p.authors[0] ?? "") || "ref") + (p.year ?? "nd");
-    const n = seen.get(base) ?? 0;
-    seen.set(base, n + 1);
-    const key = base + (n ? String.fromCharCode(96 + n) : ""); // ponytail: past 26 duplicates the suffix leaves a-z
+    let i = count.get(base) ?? 0;
+    let key: string;
+    do { key = base + (i === 0 ? "" : i <= 26 ? String.fromCharCode(96 + i) : i); i++; } while (used.has(key));
+    count.set(base, i);
+    used.add(key);
+    const pmid = (p.pmid ?? "").replace(/\D/g, "");
     const fields: [string, string][] = [
-      ["title", p.title], ["author", p.authors.map(esc).join(" and ")], ["year", p.year == null ? "" : String(p.year)],
-      ["doi", p.doi ?? ""], ["note", p.pmid ? `PMID: ${p.pmid}` : ""], ["url", p.url],
+      ["title", esc(p.title)], ["author", p.authors.map(author).join(" and ")], ["year", p.year == null ? "" : String(p.year)],
+      ["doi", raw(p.doi ?? "")], ["note", pmid && `PMID: ${pmid}`], ["url", raw(p.url)],
     ];
-    const body = fields.filter(([, v]) => v).map(([k, v]) => `  ${k} = {${k === "author" || k === "note" ? v : esc(v)}}`);
+    const body = fields.filter(([, v]) => v).map(([k, v]) => `  ${k} = {${v}}`);
     return `@${p.doi || p.year != null ? "article" : "misc"}{${key},\n${body.join(",\n")}\n}\n`;
   }).join("\n");
 }
 
 /** RIS for the answer's references (CRLF line endings, one ER per record). */
 export function toRis(refs: Reference[]): string {
+  const line = (tag: string, v: string) => `${tag}  - ${one(v)}\r\n`;
   return refs.map(({ paper: p }) => [
-    "TY  - JOUR", p.title && `TI  - ${p.title}`, ...p.authors.map((a) => `AU  - ${a}`),
-    p.year != null && `PY  - ${p.year}`, p.doi && `DO  - ${p.doi}`, p.url && `UR  - ${p.url}`, p.pmid && `N1  - PMID: ${p.pmid}`, "ER  - ",
-  ].filter(Boolean).map((l) => `${l}\r\n`).join("")).join("");
+    line("TY", "JOUR"), p.title && line("TI", p.title), ...p.authors.map((a) => line("AU", a)),
+    p.year != null && line("PY", String(p.year)), p.doi && line("DO", p.doi), p.url && line("UR", p.url),
+    p.pmid && line("N1", `PMID: ${p.pmid}`), line("ER", ""),
+  ].filter(Boolean).join("")).join("");
 }
