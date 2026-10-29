@@ -13,11 +13,13 @@ from dataclasses import dataclass
 
 import sqlalchemy as sa
 from fastapi import Depends, HTTPException, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from scientist.models import api_keys
 from scientist.routes_store import data, rate_limit
 from scientist.store import Store
 
+bearer = HTTPBearer(auto_error=False)  # parses the header and puts the bearer scheme in the OpenAPI document; the 401 below stays ours
 KEY_RE = re.compile(r"sci_[A-Za-z0-9_-]{43}")
 PREFIX_LEN = 12
 NAME_MAX = 80
@@ -80,12 +82,16 @@ async def verify(s, key: str) -> ApiKey | None:
     return ApiKey(row.id, row.name)
 
 
-async def require_key(request: Request, st: Store = Depends(data)) -> ApiKey:
-    """FastAPI dependency: `Authorization: Bearer sci_...`. Every failure is the same 401. Applies the per-key rate limit."""
-    scheme, _, token = request.headers.get("authorization", "").partition(" ")
-    async with st.db.session() as s:
-        k = await verify(s, token.strip()) if scheme.lower() == "bearer" else None
+async def require_key(request: Request, creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+                      st: Store = Depends(data)) -> ApiKey:
+    """FastAPI dependency: `Authorization: Bearer sci_...`. Every failure is the same 401, counted per client IP
+    (guessing is rate limited). Applies the per-key rate limit."""
+    k = None
+    if creds is not None:
+        async with st.db.session() as s:
+            k = await verify(s, creds.credentials.strip())
     if k is None:
+        rate_limit(st, "authfail:" + (request.client.host if request.client else "?"))
         raise HTTPException(401, "invalid or missing API key", headers={"WWW-Authenticate": "Bearer"})
     rate_limit(st, k.client_id)
     return k

@@ -1,0 +1,247 @@
+"""/v1/api: the public research API for programs (API key, JSON only). It drives the same RunService as the browser, with
+its own client id per key (`key:<id>`), so keys and browsers cannot cancel or crowd out each other. Runs live in the shared
+store (project "API"); any key may read any key's run, only the creating key may cancel it."""
+import uuid
+from contextlib import aclosing
+from datetime import UTC, datetime
+from typing import Annotated, Literal
+
+import sqlalchemy as sa
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+from scientist import models as m, routes_runs
+from scientist.apikeys import ApiKey, require_key
+from scientist.bibliography import to_bibtex, to_ris
+from scientist.events import Error, Refused, Strategy
+from scientist.packs import PACKS
+from scientist.pipeline import ask
+from scientist.routes_ask import AskRequest, PlanSearch
+from scientist.routes_runs import RunIn, service
+from scientist.routes_store import run as guarded
+from scientist.runqueue import Rejected
+from scientist.runs import RunService
+from scientist.store import UUID_RE, _row
+from scientist.usage import track
+
+PREFIX = "/v1/api"
+API_PROJECT = uuid.UUID("5c1e2b64-0a7d-5e0b-9d54-a91b6f0d4a10")  # the one project every API session goes into
+Rid = Annotated[str, Path(pattern=UUID_RE)]
+UNAUTH = {401: {"description": "Missing, malformed, unknown or revoked API key (always the same body)"}}
+
+router = APIRouter(prefix=PREFIX, tags=["public"], dependencies=[Depends(require_key)], responses=UNAUTH)
+spec_router = APIRouter(prefix=PREFIX)  # the description of the API is public; it is not part of the API itself
+
+
+class ResearchIn(BaseModel):
+    question: str = Field(description="The research question (same length limit as the app).")
+    mode: Literal["deep", "quick"] = "deep"
+    pack: str | None = Field(None, description="A pack id from GET /packs; omit for General.")
+    plan: list[PlanSearch] | None = Field(None, description="Searches to run instead of letting the model plan them (see POST /plan).")
+    doc_ids: list[str] | None = Field(None, max_length=5, description="Ids of uploaded PDFs; the answer then comes from those documents (mode becomes docs).")
+
+
+class PlanIn(BaseModel):
+    question: str
+    mode: Literal["deep", "quick"] = "deep"
+    pack: str | None = None
+
+
+class SearchOut(BaseModel):
+    term: str
+    instructions: str
+
+
+class PlanOut(BaseModel):
+    reasoning: str
+    searches: list[SearchOut]
+
+
+class Accepted(BaseModel):
+    run_id: str
+    session_id: str
+    turn_id: str
+    status: str
+
+
+class PackOut(BaseModel):
+    id: str
+    th: str
+    en: str
+
+
+class Progress(BaseModel):
+    phase: str | None
+    searches: list[SearchOut]
+    replans: int
+
+
+class RunOut(BaseModel):
+    run_id: str
+    status: Literal["queued", "running", "done", "refused", "error", "stopped", "interrupted"]
+    kind: str
+    mode: str | None
+    pack: str | None
+    created_at: datetime
+    finished_at: datetime | None
+    error: str | None = Field(description="Why a run ended in error or refused; null otherwise.")
+    answer: dict | None = Field(description="{content, references, records, doc_refs, empty_files, usage}; set once the run is done.")
+    progress: Progress
+
+
+def valid(model, **kw):
+    """The app's own request model decides (limits, pack, plan clean-up, docs ids); its errors are a 422 like any other."""
+    try:
+        return model(**kw)
+    except ValidationError as e:
+        raise RequestValidationError(e.errors(include_url=False, include_context=False)) from None
+
+
+def iso(d: datetime) -> str:  # as JS toISOString
+    return d.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+async def own(svc: RunService, rid: str) -> dict:
+    """The run row if it was created with an API key; browser runs are not part of this API."""
+    row = await svc.get(rid)
+    if row is None or not row["client_id"].startswith("key:"):
+        raise HTTPException(404, "run not found")
+    return row
+
+
+async def turn_of(svc: RunService, row: dict) -> dict | None:
+    async with svc.data.db.session() as s:
+        t = (await s.execute(sa.select(m.turns).where(m.turns.c.id == row["turn_id"]))).first()
+    return _row(t) if t else None
+
+
+def shape(row: dict, turn: dict | None) -> dict:
+    p = (turn or {}).get("progress") or {}
+    a = (turn or {}).get("answer")
+    return {"run_id": row["id"], "status": row["status"], "kind": row["kind"], "mode": row["mode"], "pack": (turn or {}).get("pack"),
+            "created_at": row["created_at"], "finished_at": row["finished_at"],
+            "error": row["error"] or (turn or {}).get("refused"),
+            "answer": None if not a else {"content": a.get("content", ""), "references": a.get("references", []), "records": a.get("records", []),
+                                          "doc_refs": a.get("doc_refs", []), "empty_files": a.get("empty_files", []), "usage": a.get("usage")},
+            "progress": {"phase": p.get("phase"), "searches": p.get("searches", []), "replans": len(p.get("replans", []))}}
+
+
+async def api_session(svc: RunService, title: str) -> str:
+    """A new session in the project "API", created on first use."""
+    async with svc.data.tx() as s:
+        r = (await s.execute(pg_insert(m.projects).values(id=str(API_PROJECT), name="API").on_conflict_do_nothing().returning(m.projects))).first()
+    if r:
+        svc.data._changed("project", _row(r))
+    sid = str(uuid.uuid4())
+    await svc.data.upsert("session", sid, {"title": title[:200], "project_id": str(API_PROJECT)}, None)
+    return sid
+
+
+@router.post("/research", status_code=202, response_model=Accepted, summary="Start a research run")
+async def research(body: ResearchIn, key: ApiKey = Depends(require_key), svc: RunService = Depends(service)):
+    run_in = valid(RunIn, session_id=str(uuid.uuid4()), turn_id=str(uuid.uuid4()), kind="ask", question=body.question,
+                   mode="docs" if body.doc_ids else body.mode, doc_ids=body.doc_ids or [], pack=body.pack, plan=body.plan)
+    try:
+        svc.queue.admit(key.client_id)  # refuse before a session is created
+        sid = await guarded(api_session(svc, run_in.question))
+        run_in.session_id = sid
+        try:
+            out = await guarded(svc.submit(run_in, key.client_id))
+        except BaseException:
+            await svc.data.soft_delete("session", sid)  # a refused submit leaves no empty session behind
+            await svc.data.delete_permanent("session", sid)
+            raise
+    except Rejected as e:
+        return JSONResponse({"detail": e.message, "code": e.code}, status_code=429)
+    return {"run_id": out["run"]["id"], "session_id": sid, "turn_id": run_in.turn_id, "status": out["run"]["status"]}
+
+
+@router.post("/plan", response_model=PlanOut, summary="Plan the searches for a question (no run is started)")
+async def plan(body: PlanIn, request: Request, svc: RunService = Depends(service)):
+    q = valid(AskRequest, question=body.question, mode=body.mode, pack=body.pack, plan_only=True)
+    st = request.app.state
+    events = track(ask(q.question, st.runner, settings=st.settings, client=st.client, gate=st.gate, mode=q.mode, plan_only=True,
+                       pack=q.pack), mode="plan", db=st.db)
+    async with aclosing(events) as evs:
+        async for e in evs:
+            if isinstance(e, Strategy):
+                return {"reasoning": e.reasoning, "searches": [s.model_dump() for s in e.searches]}
+            if isinstance(e, Refused):
+                return JSONResponse({"detail": e.reason, "code": e.code}, status_code=422)
+            if isinstance(e, Error):
+                break
+    raise HTTPException(502, e.message if isinstance(e, Error) else "no plan was produced")
+
+
+@router.get("/packs", response_model=list[PackOut], summary="The research packs")
+async def packs():
+    return [{"id": k, "th": p.name_th, "en": p.name_en} for k, p in PACKS.items()]
+
+
+@router.get("/runs/{run_id}", response_model=RunOut, summary="Status, progress and the answer of a run")
+async def get_run(run_id: Rid, svc: RunService = Depends(service)):
+    row = await own(svc, run_id)
+    return shape(row, await turn_of(svc, row))
+
+
+@router.get("/runs/{run_id}/events", summary="Server-sent events of a run (resume with Last-Event-ID or ?after=)",
+            responses={200: {"content": {"text/event-stream": {}}}})
+async def events(run_id: Rid, request: Request, after: Annotated[int | None, Query(ge=0)] = None,
+                 last_event_id: Annotated[str | None, Header()] = None, svc: RunService = Depends(service)):
+    await own(svc, run_id)
+    return await routes_runs.events(run_id, request, after, last_event_id, svc)
+
+
+@router.post("/runs/{run_id}/cancel", response_model=RunOut, summary="Stop a run (only the key that started it)")
+async def cancel(run_id: Rid, key: ApiKey = Depends(require_key), svc: RunService = Depends(service)):
+    await own(svc, run_id)
+    try:
+        row = await svc.cancel(run_id, key.client_id)
+    except PermissionError:
+        raise HTTPException(403, "only the API key that started this run can cancel it") from None
+    return shape(row, await turn_of(svc, row))
+
+
+def provenance_file(turn: dict, answer: dict) -> dict:
+    """The same file as the app's download (frontend/src/lib/provenance.ts)."""
+    return {"format": "ai-scientist-provenance", "version": 1, "exported_at": iso(datetime.now(UTC)),
+            "turn": {"id": str(turn["id"]), "question": turn["question"], "mode": turn["mode"], "created_at": iso(turn["created_at"])},
+            "answer": {"content": answer.get("content", ""),
+                       "references": [{"id": r["id"], "title": (p := r["paper"])["title"], "authors": p.get("authors", []), "year": p.get("year"),
+                                       "doi": p.get("doi"), "pmid": p.get("pmid"), "url": p["url"], "source": p.get("source"),
+                                       "status": r["status"], "checks": r.get("checks", [])} for r in answer.get("references", [])],
+                       "records": answer.get("records", [])},
+            "analysis": None, "provenance": answer["provenance"]}
+
+
+@router.get("/runs/{run_id}/artifacts/{kind}", summary="provenance (JSON), bibtex or ris of a finished run",
+            responses={200: {"content": {"application/json": {}, "application/x-bibtex": {}, "application/x-research-info-systems": {}}}})
+async def artifact(run_id: Rid, kind: Literal["provenance", "bibtex", "ris"], svc: RunService = Depends(service)):
+    row = await own(svc, run_id)
+    if row["status"] in ("queued", "running"):
+        raise HTTPException(409, "the run has not finished")
+    turn = await turn_of(svc, row)
+    a = (turn or {}).get("answer")
+    if not a or (kind == "provenance" and not a.get("provenance")):
+        raise HTTPException(404, "this run has no such artifact")
+    if kind == "provenance":
+        return provenance_file(turn, a)
+    refs = a.get("references", [])
+    return Response(to_bibtex(refs) if kind == "bibtex" else to_ris(refs),
+                    media_type="application/x-bibtex; charset=utf-8" if kind == "bibtex" else "application/x-research-info-systems; charset=utf-8")
+
+
+@spec_router.get("/openapi.json", include_in_schema=False)
+async def openapi(request: Request):
+    st = request.app.state
+    if getattr(st, "api_openapi", None) is None:
+        st.api_openapi = get_openapi(
+            title="AI Scientist public API", version=st.settings.app_version or "1", openapi_version="3.1.0", routes=router.routes,
+            description="Research runs over the same pipeline as the app. Send `Authorization: Bearer sci_...`. "
+                        "Runs share the app's store: any key can read any API run, only its creator can cancel it.",
+            tags=[{"name": "public", "description": "Authenticated with an operator-issued API key."}])
+    return st.api_openapi

@@ -50,7 +50,7 @@ def rate_limit(st: Store, ident: str) -> None:
     while q and now - q[0] > 60:
         q.popleft()
     if len(q) >= cap:
-        raise HTTPException(429, "too many writes; slow down")
+        raise HTTPException(429, "rate limit exceeded; slow down")
     q.append(now)
     if len(st.writes) > 10_000:  # forget idle clients
         for k in [k for k, v in st.writes.items() if not v or now - v[-1] > 60]:

@@ -1,0 +1,20 @@
+{
+  "references": [
+    {
+      "id": "1",
+      "status": "verified",
+      "paper": {
+        "title": "A & B_{c} 5% #1 $2 \\ ^ ~",
+        "authors": [
+          "สมชาย ใจดี"
+        ],
+        "year": 2020,
+        "doi": null,
+        "pmid": null,
+        "url": "https://x"
+      }
+    }
+  ],
+  "bibtex": "@article{ref2020,\n  title = {A \\& B\\_\\textbraceleft{}c\\textbraceright{} 5\\% \\#1 \\$2 \\textbackslash{} \\^{} \\~{}},\n  author = {สมชาย ใจดี},\n  year = {2020},\n  url = {https://x}\n}\n",
+  "ris": "TY  - JOUR\r\nTI  - A & B_{c} 5% #1 $2 \\ ^ ~\r\nAU  - สมชาย ใจดี\r\nPY  - 2020\r\nUR  - https://x\r\nER  - \r\n"
+}

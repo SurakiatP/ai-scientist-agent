@@ -1,0 +1,48 @@
+{
+  "references": [
+    {
+      "id": "1",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "Smith, John Q."
+        ],
+        "year": 2020,
+        "doi": null,
+        "pmid": null,
+        "url": "https://x"
+      }
+    },
+    {
+      "id": "2",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "Ho Chi\tMinh  Jr."
+        ],
+        "year": 2020,
+        "doi": null,
+        "pmid": null,
+        "url": "https://x"
+      }
+    },
+    {
+      "id": "3",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "李 雷"
+        ],
+        "year": 2020,
+        "doi": null,
+        "pmid": null,
+        "url": "https://x"
+      }
+    }
+  ],
+  "bibtex": "@article{smith2020,\n  title = {T},\n  author = {Smith, John Q.},\n  year = {2020},\n  url = {https://x}\n}\n\n@article{jr2020,\n  title = {T},\n  author = {Ho Chi Minh Jr.},\n  year = {2020},\n  url = {https://x}\n}\n\n@article{ref2020,\n  title = {T},\n  author = {李 雷},\n  year = {2020},\n  url = {https://x}\n}\n",
+  "ris": "TY  - JOUR\r\nTI  - T\r\nAU  - Smith, John Q.\r\nPY  - 2020\r\nUR  - https://x\r\nER  - \r\nTY  - JOUR\r\nTI  - T\r\nAU  - Ho Chi Minh Jr.\r\nPY  - 2020\r\nUR  - https://x\r\nER  - \r\nTY  - JOUR\r\nTI  - T\r\nAU  - 李 雷\r\nPY  - 2020\r\nUR  - https://x\r\nER  - \r\n"
+}

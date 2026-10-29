@@ -1,0 +1,48 @@
+{
+  "references": [
+    {
+      "id": "1",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "José Müller"
+        ],
+        "year": 2020,
+        "doi": null,
+        "pmid": null,
+        "url": "https://x"
+      }
+    },
+    {
+      "id": "2",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "Ann Muller"
+        ],
+        "year": 2020,
+        "doi": null,
+        "pmid": null,
+        "url": "https://x"
+      }
+    },
+    {
+      "id": "3",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "Bo Muller"
+        ],
+        "year": 2020,
+        "doi": null,
+        "pmid": null,
+        "url": "https://x"
+      }
+    }
+  ],
+  "bibtex": "@article{muller2020,\n  title = {T},\n  author = {José Müller},\n  year = {2020},\n  url = {https://x}\n}\n\n@article{muller2020a,\n  title = {T},\n  author = {Ann Muller},\n  year = {2020},\n  url = {https://x}\n}\n\n@article{muller2020b,\n  title = {T},\n  author = {Bo Muller},\n  year = {2020},\n  url = {https://x}\n}\n",
+  "ris": "TY  - JOUR\r\nTI  - T\r\nAU  - José Müller\r\nPY  - 2020\r\nUR  - https://x\r\nER  - \r\nTY  - JOUR\r\nTI  - T\r\nAU  - Ann Muller\r\nPY  - 2020\r\nUR  - https://x\r\nER  - \r\nTY  - JOUR\r\nTI  - T\r\nAU  - Bo Muller\r\nPY  - 2020\r\nUR  - https://x\r\nER  - \r\n"
+}

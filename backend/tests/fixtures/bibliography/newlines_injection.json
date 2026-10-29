@@ -1,0 +1,21 @@
+{
+  "references": [
+    {
+      "id": "1",
+      "status": "verified",
+      "paper": {
+        "title": "Line1\n@article{evil,\r\n  title = {x}}",
+        "authors": [
+          "A\nB",
+          "Eve and Mallory"
+        ],
+        "year": 2020,
+        "doi": "10.1/a b{c}\\d",
+        "pmid": "PM 12\n34",
+        "url": "https://x/a b\n{}"
+      }
+    }
+  ],
+  "bibtex": "@article{b2020,\n  title = {Line1 @article\\textbraceleft{}evil, title = \\textbraceleft{}x\\textbraceright{}\\textbraceright{}},\n  author = {A B and {Eve and Mallory}},\n  year = {2020},\n  doi = {10.1/a%20b%7Bc%7D%5Cd},\n  note = {PMID: 1234},\n  url = {https://x/a%20b%20%7B%7D}\n}\n",
+  "ris": "TY  - JOUR\r\nTI  - Line1 @article{evil, title = {x}}\r\nAU  - A B\r\nAU  - Eve and Mallory\r\nPY  - 2020\r\nDO  - 10.1/a b{c}\\d\r\nUR  - https://x/a b {}\r\nN1  - PMID: PM 12 34\r\nER  - \r\n"
+}

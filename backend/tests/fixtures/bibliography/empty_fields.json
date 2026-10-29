@@ -1,0 +1,18 @@
+{
+  "references": [
+    {
+      "id": "1",
+      "status": "verified",
+      "paper": {
+        "title": "",
+        "authors": [],
+        "year": null,
+        "doi": null,
+        "pmid": null,
+        "url": ""
+      }
+    }
+  ],
+  "bibtex": "@misc{refnd,\n\n}\n",
+  "ris": "TY  - JOUR\r\nER  - \r\n"
+}

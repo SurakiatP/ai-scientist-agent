@@ -13,6 +13,7 @@ from scientist.gate import RunGate
 from scientist.runqueue import RunQueue
 from scientist.runs import RunService
 from scientist.routes_runs import router as runs_router
+from scientist.routes_api import router as api_router, spec_router as api_spec_router
 from scientist.object_store import ObjectStore, create_store
 from scientist import sandbox
 from scientist.sandbox import sweep_sandboxes
@@ -112,6 +113,8 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     app.include_router(preview_router)
     app.include_router(store_router)
     app.include_router(runs_router)
+    app.include_router(api_router)
+    app.include_router(api_spec_router)
 
     @app.get("/v1/health")
     async def health():

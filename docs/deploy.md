@@ -90,6 +90,18 @@ The schema is created by Alembic migrations (`backend/migrations`: chats, projec
 - The dataset lives only in Postgres: keep the daily `pg_dump` backup (section 6) and test a restore.
 - `usage_events` (timings, token counts, cost) stores no question text.
 
+## 6d. API keys (public API)
+
+Programs call `/v1/api` with an operator-issued key (see `docs/api.md`). Run on the VM with `dc() { docker compose -f infra/compose.yaml --env-file $APP_ENV_FILE "$@"; }` (locally: `uv run --project backend python -m scientist.apikeys ...`; uses `DATABASE_URL` like the app; the migration `0008_api_keys` must be applied):
+
+```
+dc exec backend python -m scientist.apikeys create --name "<who or what>"   # prints the key once; store it now
+dc exec backend python -m scientist.apikeys list                            # prefix, active/revoked, last used; never hashes
+dc exec backend python -m scientist.apikeys revoke <prefix>                 # takes effect on the key's next request
+```
+
+Only the sha256 of a key is stored. A lost key cannot be recovered: revoke it and create another.
+
 ## 7. Operations
 Logs: `docker compose -f /opt/ai-scientist/current/infra/compose.yaml logs -f backend`. Local TLS rehearsal: set `CADDY_TLS=tls internal` in `app.env`.
 

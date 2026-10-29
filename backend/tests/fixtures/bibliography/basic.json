@@ -1,0 +1,21 @@
+{
+  "references": [
+    {
+      "id": "1",
+      "status": "verified",
+      "paper": {
+        "title": "Zinc",
+        "authors": [
+          "Jane Smith",
+          "Somchai Jaidee"
+        ],
+        "year": 2020,
+        "doi": "10.1/x",
+        "pmid": "123",
+        "url": "https://x"
+      }
+    }
+  ],
+  "bibtex": "@article{smith2020,\n  title = {Zinc},\n  author = {Jane Smith and Somchai Jaidee},\n  year = {2020},\n  doi = {10.1/x},\n  note = {PMID: 123},\n  url = {https://x}\n}\n",
+  "ris": "TY  - JOUR\r\nTI  - Zinc\r\nAU  - Jane Smith\r\nAU  - Somchai Jaidee\r\nPY  - 2020\r\nDO  - 10.1/x\r\nUR  - https://x\r\nN1  - PMID: 123\r\nER  - \r\n"
+}

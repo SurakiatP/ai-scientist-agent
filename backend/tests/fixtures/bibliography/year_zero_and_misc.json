@@ -1,0 +1,48 @@
+{
+  "references": [
+    {
+      "id": "1",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "Jane Smith"
+        ],
+        "year": 0,
+        "doi": null,
+        "pmid": null,
+        "url": "https://x"
+      }
+    },
+    {
+      "id": "2",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "Jane Smith"
+        ],
+        "year": null,
+        "doi": "10.1/z",
+        "pmid": null,
+        "url": "https://x"
+      }
+    },
+    {
+      "id": "3",
+      "status": "verified",
+      "paper": {
+        "title": "T",
+        "authors": [
+          "Jane Smith"
+        ],
+        "year": null,
+        "doi": "",
+        "pmid": "x9y",
+        "url": "https://x"
+      }
+    }
+  ],
+  "bibtex": "@article{smith0,\n  title = {T},\n  author = {Jane Smith},\n  year = {0},\n  url = {https://x}\n}\n\n@article{smithnd,\n  title = {T},\n  author = {Jane Smith},\n  doi = {10.1/z},\n  url = {https://x}\n}\n\n@misc{smithnda,\n  title = {T},\n  author = {Jane Smith},\n  note = {PMID: 9},\n  url = {https://x}\n}\n",
+  "ris": "TY  - JOUR\r\nTI  - T\r\nAU  - Jane Smith\r\nPY  - 0\r\nUR  - https://x\r\nER  - \r\nTY  - JOUR\r\nTI  - T\r\nAU  - Jane Smith\r\nDO  - 10.1/z\r\nUR  - https://x\r\nER  - \r\nTY  - JOUR\r\nTI  - T\r\nAU  - Jane Smith\r\nUR  - https://x\r\nN1  - PMID: x9y\r\nER  - \r\n"
+}
