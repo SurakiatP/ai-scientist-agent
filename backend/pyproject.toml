@@ -17,7 +17,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.1",
     "psycopg[binary]>=3.3",
     "alembic>=1.20.1",
-    "mcp<2",
+    "mcp>=1.30,<2",
 ]
 
 [dependency-groups]

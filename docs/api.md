@@ -79,13 +79,13 @@ The same research tools for MCP clients, over Streamable HTTP (stateless, JSON r
 | `plan_research` | `question`, `mode` (`deep`/`quick`), `pack?` | `{reasoning, searches: [{term, instructions}]}` |
 | `start_research` | `question`, `mode`, `pack?`, `plan?` (searches from `plan_research`) | `{run_id, session_id, turn_id, status}` |
 | `get_run` | `run_id` | the run, as `GET /runs/{run_id}` |
-| `wait_run` | `run_id`, `timeout_seconds` (1 to 600, default 60) | the run, as `get_run`; when the timeout passes first, the run with its current status (`queued` or `running`), not an error |
+| `wait_run` | `run_id`, `timeout_seconds` (1 to 600, default 45; keep it below your client's request timeout: TS SDK 60 s, Python client 300 s read) | the run, as `get_run`; when the timeout passes first, the run with its current status (`queued` or `running`), not an error |
 | `get_artifact` | `run_id`, `kind` (`provenance`/`bibtex`/`ris`) | text: BibTeX, RIS, or the provenance JSON |
 | `cancel_run` | `run_id` | the run (only the key that started it) |
 
-Failures (unknown run, run not finished, refused question, queue full) come back as a tool error with the same message as the REST `detail`. Paper text in answers is untrusted data.
+Failures (unknown run, run not finished, refused question, queue full) come back as a tool error with the same message as the REST `detail`; queue and plan errors are prefixed with their code, e.g. `[client_busy] ...`. Paper text in answers is untrusted data.
 
-Client configuration (Claude Desktop and any client that supports remote servers with headers; replace the host and the key):
+Client configuration. Claude Code and other clients that accept a remote HTTP server with headers (replace the host and the key):
 
 ```json
 {
@@ -99,19 +99,21 @@ Client configuration (Claude Desktop and any client that supports remote servers
 }
 ```
 
-Clients that only speak stdio can bridge with `npx mcp-remote https://scientist.example.com/mcp --header "Authorization: Bearer sci_..."`.
+Claude Desktop (and any client that only speaks stdio) bridges with `npx mcp-remote https://scientist.example.com/mcp --header "Authorization: Bearer sci_..."`.
 
 Python (the `mcp` package):
 
 ```python
+import httpx
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
-async with streamablehttp_client("https://scientist.example.com/mcp", headers={"Authorization": "Bearer sci_..."}) as (r, w, _):
+http = httpx.AsyncClient(headers={"Authorization": "Bearer sci_..."}, timeout=httpx.Timeout(30, read=300))
+async with http, streamable_http_client("https://scientist.example.com/mcp", http_client=http) as (r, w, _):
     async with ClientSession(r, w) as s:
         await s.initialize()
         run = (await s.call_tool("start_research", {"question": "...", "mode": "quick"})).structuredContent
-        done = await s.call_tool("wait_run", {"run_id": run["run_id"], "timeout_seconds": 300})
+        done = await s.call_tool("wait_run", {"run_id": run["run_id"], "timeout_seconds": 240})  # below the read timeout
 ```
 
 ## Rate limits and queues

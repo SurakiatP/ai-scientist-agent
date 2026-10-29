@@ -39,6 +39,12 @@ files.{$DOMAIN} {
 			flush_interval -1
 		}
 	}
+	# MCP endpoint (Streamable HTTP, JSON responses; the bearer key is checked by the backend).
+	handle /mcp {
+		reverse_proxy backend:8000 {
+			flush_interval -1
+		}
+	}
 	handle {
 		reverse_proxy frontend:3000
 	}

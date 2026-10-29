@@ -1,15 +1,19 @@
 """The MCP server (/mcp): bearer auth before FastMCP, the seven tools, wait_run timeout."""
 import json
+import logging
 from contextlib import asynccontextmanager
 
 import httpx
+from fastapi import FastAPI
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 from scientist import apikeys, mcp_server, usage
 from test_api import key
 from test_db import newdb, pg  # noqa: F401
 from test_pipeline import Q, strategy
+from types import SimpleNamespace
+
 from test_runs import _env, serve, u  # noqa: F401
 
 INIT = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
@@ -19,9 +23,8 @@ HDRS = {"accept": "application/json, text/event-stream", "content-type": "applic
 
 @asynccontextmanager
 async def mcp(c, bearer):
-    def factory(headers=None, timeout=None, auth=None):
-        return httpx.AsyncClient(transport=httpx.ASGITransport(app=c.app), base_url="http://t", headers=headers, timeout=timeout, auth=auth)
-    async with streamablehttp_client("http://t/mcp", headers={"authorization": f"Bearer {bearer}"}, httpx_client_factory=factory) as (r, w, _):
+    http = httpx.AsyncClient(transport=httpx.ASGITransport(app=c.app), base_url="http://t", headers={"authorization": f"Bearer {bearer}"}, timeout=30)
+    async with http, streamable_http_client("http://t/mcp", http_client=http) as (r, w, _):
         async with ClientSession(r, w) as s:
             await s.initialize()
             yield s
@@ -125,3 +128,73 @@ async def test_wait_run_times_out_with_the_current_status(serve, fake_complete, 
 
 def test_wait_clamp():
     assert [mcp_server.clamp(x) for x in (-1, 0, 1, 60, 600, 9999)] == [1, 1, 1, 60, 600, 600]
+
+
+async def test_unauthenticated_get_and_delete_are_401(serve, fake_complete):
+    async with serve() as c:
+        for method in ("GET", "DELETE"):
+            r = await c.request(method, "/mcp", headers={"accept": "text/event-stream"})
+            assert r.status_code == 401 and r.json() == {"detail": "invalid or missing API key"}
+
+
+async def test_cancel_by_another_key_and_browser_run_ids(serve, fake_complete):
+    fake_complete["strategy"] = strategy("slow")
+    async with serve() as c:
+        a, _ = await key(c, "a")
+        b, _ = await key(c, "b")
+        async with mcp(c, a) as sa, mcp(c, b) as sb:
+            _, j = await call(sa, "start_research", question=Q)
+            err, msg = await call(sb, "cancel_run", run_id=j["run_id"])
+            assert err and "only the API key that started this run" in msg
+            sid, cid = u(), u()
+            await c.put(f"/v1/store/sessions/{sid}", json={"title": "t"})
+            r = await c.post("/v1/runs", json={"session_id": sid, "turn_id": u(), "kind": "ask", "question": Q, "mode": "deep"}, headers={"x-client-id": cid})
+            err, msg = await call(sa, "get_run", run_id=r.json()["run"]["id"])
+            assert err and "run not found" in msg
+            await c.post(f"/v1/runs/{r.json()['run']['id']}/cancel", headers={"x-client-id": cid})
+            await call(sa, "cancel_run", run_id=j["run_id"])
+
+
+async def test_queue_errors_carry_their_code(serve, fake_complete):
+    fake_complete["strategy"] = strategy("slow")
+    async with serve(MAX_CONCURRENT_RUNS=1, MAX_RUNNING_PER_CLIENT=1, MAX_QUEUED_PER_CLIENT=0) as c:
+        k, _ = await key(c)
+        async with mcp(c, k) as s:
+            _, j = await call(s, "start_research", question=Q)
+            err, msg = await call(s, "start_research", question=Q)
+            assert err and ("[client_busy] " in msg or "[queue_full] " in msg)
+            await call(s, "cancel_run", run_id=j["run_id"])
+
+
+def test_building_the_server_leaves_process_logging_alone():
+    root = logging.getLogger()
+    saved, level = root.handlers[:], root.level
+    root.handlers.clear()
+    try:
+        mcp_server.build(FastAPI())
+        assert root.handlers == [] and root.level == level
+    finally:
+        root.handlers[:] = saved
+
+
+async def test_session_manager_startup_failure_surfaces():
+    class Boom:
+        def run(self):
+            raise RuntimeError("boom")
+    started = False
+    try:
+        async with mcp_server.running(SimpleNamespace(session_manager=Boom())):
+            started = True
+    except RuntimeError as e:
+        assert str(e) == "boom"
+    assert not started
+
+
+async def test_wait_run_default_is_below_client_timeouts(serve, fake_complete):
+    assert mcp_server.WAIT_DEFAULT == 45
+    async with serve() as c:
+        k, _ = await key(c)
+        async with mcp(c, k) as s:
+            wait = next(t for t in (await s.list_tools()).tools if t.name == "wait_run")
+            assert wait.inputSchema["properties"]["timeout_seconds"]["default"] == 45
+            assert "below" in wait.description and "timeout" in wait.description

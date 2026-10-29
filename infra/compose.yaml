@@ -12,6 +12,7 @@ services:
     <<: *hardening
     image: ghcr.io/surakiatp/ai-scientist-agent/backend:${IMAGE_TAG:-develop}
     build: { context: .., dockerfile: backend/Dockerfile }
+    stop_grace_period: 30s  # uvicorn gets 20 s (--timeout-graceful-shutdown) to end open streams, then the run service shuts down
     # OPENROUTER_API_KEY, MODEL, ... come from an env file kept outside the repo; never baked into the image.
     env_file: ${APP_ENV_FILE:-/etc/ai-scientist/private/app.env}
     environment:
