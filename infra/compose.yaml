@@ -57,13 +57,14 @@ services:
   # Pinned: docker:28.5.2-dind index digest, resolved 2026-10-29 via `docker buildx imagetools inspect docker:28.5.2-dind`.
   # Limits, worst case: MAX_CONCURRENT_RUNS (4) x MAX_BRANCHES (5) = 20 branch containers x (1 CPU, 512 MB) = 20 CPU / 10 GB,
   # plus SANDBOX_MAX_CONCURRENT (3) analyses x 2 GB = 6 GB, so 16 GB and about 23 CPUs at the theoretical maximum. The defaults
-  # below fit a modest VM (8 GB / 4 CPUs) and do NOT cover that maximum: under load runs slow down or get OOM-killed
+  # below (6g / 3 CPUs) leave headroom on a modest 8 GB / 4 CPU VM for postgres, backend, minio and caddy, and do NOT cover that maximum: under load runs slow down or get OOM-killed
   # inside the sandbox instead of starving the host. Raise SANDBOX_MEM_LIMIT / SANDBOX_CPUS / SANDBOX_PIDS_LIMIT on a bigger VM;
-  # LOWER SANDBOX_CPUS on a host with fewer than 4 CPUs (Docker rejects cpus above the host CPU count).
+  # LOWER SANDBOX_CPUS on a host with fewer than 3 CPUs (Docker rejects cpus above the host CPU count).
   sandbox:
     image: docker:28.5.2-dind@sha256:2a232a42256f70d78e3cc5d2b5d6b3276710a0de0596c145f627ecfae90282ac
     runtime: sysbox-runc
     restart: unless-stopped
+    stop_grace_period: 30s
     security_opt: ["no-new-privileges:true"]
     # The dind entrypoint puts the container hostname into the server cert's SAN. Compose's service name is only a
     # network alias, so without this the cert names the container id and `tcp://sandbox:2376` fails to verify.
@@ -77,11 +78,11 @@ services:
     volumes:
       - ./deploy/sandbox-entrypoint.sh:/sandbox-entrypoint.sh:ro
       - sandbox-certs:/certs
-      - sandbox-share:/srv/sandbox-share
+      - sandbox-share:/srv/sandbox-share:ro  # the daemon only reads bind-mount sources (sandbox-init creates the dirs); root in an untrusted workload must not rewrite the backend's Hermes home
       - sandbox-docker:/var/lib/docker
     networks: [sandbox, sandbox-egress]
-    mem_limit: ${SANDBOX_MEM_LIMIT:-8g}
-    cpus: ${SANDBOX_CPUS:-4}
+    mem_limit: ${SANDBOX_MEM_LIMIT:-6g}
+    cpus: ${SANDBOX_CPUS:-3}
     pids_limit: ${SANDBOX_PIDS_LIMIT:-4096}
     healthcheck:
       test: ["CMD-SHELL", "DOCKER_HOST=tcp://localhost:2376 DOCKER_TLS_VERIFY=1 DOCKER_CERT_PATH=/certs/client docker version && iptables -C FORWARD -j DOCKER-USER && iptables -C DOCKER-USER -d 169.254.0.0/16 -j DROP"]

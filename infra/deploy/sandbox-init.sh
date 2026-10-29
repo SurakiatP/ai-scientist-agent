@@ -23,6 +23,7 @@ chown 10001:10001 /srv/sandbox-share/hermes-home /srv/sandbox-share/work
 # Always try to pull (a mutable tag like :develop must not stay stale in the persistent daemon); fall back to a pre-loaded image
 # (rehearsal: docs/deploy.md) and fail when neither works.
 for img in "$HERMES_IMAGE" "$ANALYSIS_IMAGE"; do
-  docker pull "$img" || docker image inspect "$img" >/dev/null
+  timeout 300 docker pull "$img" || docker image inspect "$img" >/dev/null
 done
+docker image prune -f >/dev/null  # dangling layers left by re-pulled mutable tags
 echo "sandbox-init: ok"

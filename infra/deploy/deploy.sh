@@ -28,6 +28,10 @@ if [ ! -d "$REL" ]; then
   esac
   mv "$REL.partial" "$REL"
 fi
+# The sandbox image is only needed when this release's compose uses it (older tags roll back without it).
+if grep -q 'ai-scientist-agent/sandbox' "$REL/infra/compose.yaml"; then
+  docker manifest inspect "$IMG/sandbox:$TAG" >/dev/null 2>&1 || { echo "image $IMG/sandbox:$TAG is not published (package missing or private on ghcr)" >&2; exit 1; }
+fi
 
 PREV="$(readlink -f "$BASE/current" 2>/dev/null || true)"
 dc() { IMAGE_TAG="$2" docker compose -f "$1/infra/compose.yaml" --env-file "$ENVF" "${@:3}"; }
