@@ -1,6 +1,7 @@
 "use client";
 import { memo, useState } from "react";
 import { Box, Button, IconButton, Stack, Tab, Tabs, Tooltip, Typography } from "@mui/material";
+import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
@@ -21,6 +22,7 @@ import { ProgressCard } from "@/components/research/ProgressCard";
 import { AnswerSkeleton } from "@/components/research/AnswerSkeleton";
 import { ReportArtifact, reportId } from "@/components/research/ReportArtifact";
 import type { RefusalCode, Turn } from "@/lib/chat";
+import { downloadProvenance, provenanceOf } from "@/lib/provenance";
 import { useReportPanel } from "@/lib/exportReport";
 import { useInspector } from "@/lib/inspector";
 import { usePrefs, useT } from "@/lib/prefs";
@@ -158,6 +160,11 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
             <Tooltip title={copied === "fail" ? t.copyFailed : copied === "ok" ? t.copied : t.copyAnswer}>
               <IconButton aria-label={t.copyAnswer} onClick={copy} sx={{ width: 44, height: 44, color: "text.secondary" }}><ContentCopyRoundedIcon fontSize="small" /></IconButton>
             </Tooltip>
+            {provenanceOf(turn) && (
+              <Tooltip title={t.downloadProvenance}>
+                <IconButton aria-label={t.downloadProvenance} onClick={() => downloadProvenance(turn)} sx={{ width: 44, height: 44, color: "text.secondary" }}><FileDownloadOutlinedIcon fontSize="small" /></IconButton>
+              </Tooltip>
+            )}
             <Tooltip title={busy ? t.retryBusy : t.regen}>
               <span><IconButton aria-label={t.regen} onClick={retry} disabled={busy} sx={{ width: 44, height: 44, color: "text.secondary" }}><ReplayRoundedIcon fontSize="small" /></IconButton></span>
             </Tooltip>

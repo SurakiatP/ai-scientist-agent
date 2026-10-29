@@ -34,6 +34,16 @@ beforeEach(() => {
 });
 const tab = (name: string) => fireEvent.click(screen.getByRole("tab", { name }));
 
+describe("provenance button", () => {
+  it("shows only when the analysis has provenance", () => {
+    const { unmount } = render(<AnalysisArtifact turn={base(data)} />);
+    expect(screen.queryByRole("button", { name: t.downloadProvenance })).toBeNull();
+    unmount();
+    render(<AnalysisArtifact turn={base({ ...data, provenance: { schema: 1 } })} />);
+    expect(screen.getByRole("button", { name: t.downloadProvenance })).toBeInTheDocument();
+  });
+});
+
 describe("timing helpers", () => {
   it("only reports timings the backend actually sent", () => {
     expect(stepSeconds({ script_s: 3 }, "running")).toBe(3);

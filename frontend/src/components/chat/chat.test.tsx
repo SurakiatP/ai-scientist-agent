@@ -299,6 +299,14 @@ describe("Thread", () => {
     expect(await screen.findByText(t.copyFailed)).toBeInTheDocument();
   });
 
+  it("shows the provenance download only when the answer has it", () => {
+    const { unmount } = render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "x", references: [] } })} />);
+    expect(screen.queryByRole("button", { name: t.downloadProvenance })).toBeNull();
+    unmount();
+    render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "x", references: [], provenance: { schema: 1 } } })} />);
+    expect(screen.getByRole("button", { name: t.downloadProvenance })).toBeInTheDocument();
+  });
+
   it("renders nothing for an empty session", () => {
     const { container } = render(<Thread sessionId={mk()} />);
     expect(container.querySelectorAll("article")).toHaveLength(0);

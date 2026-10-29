@@ -1,4 +1,4 @@
-import type { DataRecord, RunUsage } from "./sse";
+import type { DataRecord, Provenance, RunUsage } from "./sse";
 
 // Display names of the evidence sources the backend reports by id. Kept in sync with backend/src/scientist/sources.py
 // (sources.test.ts parses that file and fails when the two lists differ).
@@ -105,6 +105,12 @@ export const usableRecords = (records: unknown): DataRecord[] =>
 export const answerSourceIds = (answer: { references: { paper: { source?: string | null } }[]; records?: unknown }): string[] =>
   [...new Set([...answer.references.map((r) => r.paper?.source), ...usableRecords(answer.records).map((r) => r.database)].filter((i): i is string => !!i))];
 
+/** A stored/streamed provenance is unvalidated: the object when it has schema 1 and fits in 50 KB, else undefined (the turn stays, the download hides). */
+export const usableProvenance = (p: unknown): Provenance | undefined => {
+  const x = p as { schema?: unknown } | null;
+  if (!x || typeof x !== "object" || Array.isArray(x) || x.schema !== 1) return undefined;
+  try { return JSON.stringify(x).length > 50_000 ? undefined : (x as Provenance); } catch { return undefined; }
+};
 /** A stored/streamed usage is unvalidated: the object when every field is well-formed, else undefined (the turn stays, the line hides). */
 export const usableUsage = (u: unknown): RunUsage | undefined => {
   const x = u as Partial<Record<keyof RunUsage, unknown>> | null;

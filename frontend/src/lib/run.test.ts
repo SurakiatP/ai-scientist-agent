@@ -231,6 +231,16 @@ describe("analysis controller", () => {
     expect(run.canStart(sid)).toEqual({ ok: true });
   });
 
+  it("keeps a valid provenance on the analysis and drops a malformed one", async () => {
+    const { chat, run, sid } = await setup();
+    analyzeScript = agen([{ ...result, provenance: { schema: 1, prompts: {} } }, { type: "complete" }]);
+    await run.startAnalysis(sid, "q", "f".repeat(32));
+    expect(last(chat).analysis!.provenance).toEqual({ schema: 1, prompts: {} });
+    analyzeScript = agen([{ ...result, provenance: { schema: 9 } } as never, { type: "complete" }]);
+    await run.startAnalysis(sid, "q", "f".repeat(32));
+    expect(last(chat).analysis!.provenance).toBeUndefined();
+  });
+
   it("deduplicates repeated steps and keeps a repaired step", async () => {
     const { chat, run, sid } = await setup();
     analyzeScript = agen([

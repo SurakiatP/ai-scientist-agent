@@ -3,9 +3,9 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { DEFER_HYDRATION, gate } from "./config";
 import { dataStorage, isItem, newId, safeStorage, storageFull, useHistoryStore } from "./history";
 import type { Progress } from "./progress";
-import { usableRecords, usableUsage } from "./sources";
+import { usableProvenance, usableRecords, usableUsage } from "./sources";
 import { cleanEvidence } from "./refs";
-import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, DataRecord, Reference, RunUsage, Search } from "./sse";
+import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, DataRecord, Provenance, Reference, RunUsage, Search } from "./sse";
 
 // What the analyze stream taught us about this turn. Every field is optional because events arrive one at a time.
 export type TurnAnalysis = {
@@ -18,6 +18,7 @@ export type TurnAnalysis = {
   findings?: string[];
   timings?: Record<string, number>;
   artifacts?: AnalysisArtifact[];
+  provenance?: Provenance; // how the run was made; absent on older turns
 };
 
 export type Turn = {
@@ -27,7 +28,7 @@ export type Turn = {
   mode?: AskMode;
   kind?: "analysis";
   plan?: Search[]; // the approved plan: stored while awaiting review and kept as "the plan used" after approval
-  answer?: { content: string; references: Reference[]; records?: DataRecord[]; usage?: RunUsage }; // usage: the run's tokens and cost, absent on older turns; records: absent on turns saved before database records existed
+  answer?: { content: string; references: Reference[]; records?: DataRecord[]; usage?: RunUsage; provenance?: Provenance }; // usage: the run's tokens and cost, absent on older turns; records: absent on turns saved before database records existed
   analysis?: TurnAnalysis;
   refused?: string; refusedCode?: RefusalCode; error?: string;
   runId?: string; // the server-side run that owns this turn: the server writes it, this browser only shows it
@@ -170,22 +171,26 @@ const clampAnalysis = (a: TurnAnalysis): TurnAnalysis => ({
   ...(a.findings && { findings: a.findings.slice(0, FINDINGS).map((f) => f.slice(0, FINDING)) }),
   ...(a.timings && { timings: Object.fromEntries(Object.entries(a.timings).slice(0, TIMINGS).filter(([, n]) => isNum(n) && n >= 0).map(([k, n]) => [k.slice(0, 100), n])) }),
   ...(a.artifacts && { artifacts: a.artifacts.slice(0, ARTIFACTS).map((x) => ({ id: x.id.slice(0, FILE), name: x.name.slice(0, 300), kind: x.kind, url: x.url.slice(0, 2048) })) }),
+  ...(usableProvenance(a.provenance) && { provenance: usableProvenance(a.provenance) }),
 });
 const clampPatch = (p: Partial<Turn>): Partial<Turn> => ({
   ...p,
   ...(p.progress && { progress: clampProgress(p.progress) }),
   ...(p.error !== undefined && { error: p.error.slice(0, 2048) }),
   ...(p.refused !== undefined && { refused: p.refused.slice(0, REASON) }),
-  ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef), ...(p.answer.records !== undefined && { records: usableRecords(p.answer.records).slice(0, RECORDS).map(clampRecord) }), ...(usableUsage(p.answer.usage) && { usage: usableUsage(p.answer.usage) }) } }),
+  ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef), ...(p.answer.records !== undefined && { records: usableRecords(p.answer.records).slice(0, RECORDS).map(clampRecord) }), ...(usableUsage(p.answer.usage) && { usage: usableUsage(p.answer.usage) }), ...(usableProvenance(p.answer.provenance) && { provenance: usableProvenance(p.answer.provenance) }) } }),
   ...(p.analysis && { analysis: clampAnalysis(p.analysis) }),
   ...(p.plan !== undefined && { plan: clampPlan(p.plan) }),
 });
 // A stored answer's records are unvalidated: keep the usable ones, drop the field when it is not a list.
 const cleanRecords = (t: Turn): Turn => {
-  if (!t.answer) return t;
-  const { usage, references, ...a } = t.answer;
-  const u = usableUsage(usage);
-  return { ...t, answer: { ...a, references: references.map(cleanEvidence), ...(a.records !== undefined && { records: usableRecords(a.records) }), ...(u && { usage: u }) } };
+  const { provenance: ap, ...an } = t.analysis ?? ({} as Partial<TurnAnalysis>);
+  const pa = usableProvenance(ap);
+  const base = t.analysis ? { ...t, analysis: { ...(an as TurnAnalysis), ...(pa && { provenance: pa }) } } : t;
+  if (!t.answer) return base;
+  const { usage, references, provenance, ...a } = t.answer;
+  const u = usableUsage(usage), p = usableProvenance(provenance);
+  return { ...base, answer: { ...a, references: references.map(cleanEvidence), ...(a.records !== undefined && { records: usableRecords(a.records) }), ...(u && { usage: u }), ...(p && { provenance: p }) } };
 };
 // Reuses history's item validator for the answer + references (its question/id/createdAt are filled in).
 export const isTurn = (v: unknown): v is Turn => {

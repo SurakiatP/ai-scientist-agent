@@ -346,6 +346,27 @@ describe("newSession blank reuse", () => {
     s.getState().patchTurn(id, "t3", { answer: { content: "a", references: [], usage: u } });
     expect(s.getState().sessions.find((x) => x.id === id)!.turns[0].answer?.usage).toEqual(u);
   });
+  it("provenance is kept when valid and dropped (not the turn) when malformed, on load, answer and analysis", async () => {
+    const p = { schema: 1 as const, models: {} };
+    const t = (answer: unknown, analysis?: unknown) => ({ ...turn("t"), answer, ...(analysis ? { analysis, kind: "analysis" } : {}) });
+    const an = (provenance: unknown) => ({ fileId: "f", steps: [], provenance });
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [
+      sess("s", [t({ content: "a", references: [], provenance: p })]), sess("s2", [t({ content: "a", references: [], provenance: { schema: 2 } })]),
+      sess("s3", [{ ...t(undefined, an(p)), answer: undefined }]), sess("s4", [{ ...t(undefined, an("x")), answer: undefined }]),
+    ], activeId: "s" } }));
+    const s = await load();
+    const g = (id: string) => s.getState().sessions.find((x) => x.id === id)!.turns[0];
+    expect(g("s").answer?.provenance).toEqual(p);
+    expect(g("s2").answer?.content).toBe("a");
+    expect(g("s2").answer?.provenance).toBeUndefined();
+    expect(g("s3").analysis?.provenance).toEqual(p);
+    expect(g("s4").analysis?.fileId).toBe("f");
+    expect(g("s4").analysis?.provenance).toBeUndefined();
+    const id = s.getState().newSession();
+    s.getState().addTurn(id, turn("t5", "running") as never);
+    s.getState().patchTurn(id, "t5", { answer: { content: "a", references: [], provenance: p } });
+    expect(s.getState().sessions.find((x) => x.id === id)!.turns[0].answer?.provenance).toEqual(p);
+  });
   it("deleting a project keeps its chats (moved to Personal), so their memory stays with them", async () => {
     const s = await load();
     const p = s.getState().addProject("Lab");

@@ -11,6 +11,8 @@ export type Paper = {
   source?: string | null; // id of the paper source that found it (see lib/sources.ts); absent on older turns
 };
 export type RunUsage = { prompt_tokens: number; completion_tokens: number; cost_usd: number | null; estimated: boolean }; // the whole run so far; cost null = unknown
+/** The run's provenance file body (backend Provenance); only schema is checked on read, the rest is passed through as the server wrote it. */
+export type Provenance = { schema: 1; created_at?: string; [k: string]: unknown };
 export type DataRecord = { database: string; id: string; title: string; url: string; summary: string }; // one record from a scientific database; database = id in lib/sources.ts
 export type Check = { claim: string; support: "supported" | "partial" | "unsupported" | "no_quote"; quote: string | null }; // the reviewer's verdict on one claim a reference is cited for
 export type Reference = { id: string; paper: Paper; status: "verified" | "unverified" | "unknown"; checks?: Check[] }; // checks: absent on turns saved before the reviewer existed
@@ -33,7 +35,7 @@ export type AskEvent =
   | { type: "sources"; term: string; papers: Paper[] }
   | { type: "records"; term: string; records: DataRecord[] }
   | { type: "answer"; term: string; content: string }
-  | { type: "final_answer"; content: string; references: Reference[]; records?: DataRecord[]; usage?: RunUsage | null }
+  | { type: "final_answer"; content: string; references: Reference[]; records?: DataRecord[]; usage?: RunUsage | null; provenance?: Provenance | null }
   | { type: "complete" }
   | StreamError;
 
@@ -50,6 +52,7 @@ export type AnalysisResult = {
   findings: string[];
   timings: Record<string, number>;
   artifacts: AnalysisArtifact[];
+  provenance?: Provenance | null;
 };
 
 export type AnalyzeEvent =

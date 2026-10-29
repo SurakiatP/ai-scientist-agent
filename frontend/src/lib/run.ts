@@ -5,7 +5,7 @@ import { usePrefs } from "./prefs";
 import { emptyProgress, reduce, type Progress } from "./progress";
 import { ACTIVE, attachRun, cancelRun, getRun, refreshLoad, submitRun, type RunBody, type RunView } from "./runs";
 import { streamAnalyze, streamAsk, type AnalyzeEvent, type ApiError, type AskEvent, type AskMode, type HistoryTurn, type MemoryRef, type MemoryTurn, type Reference, type Search } from "./sse";
-import { usableUsage } from "./sources";
+import { usableProvenance, usableUsage } from "./sources";
 import { strings } from "./strings";
 import { recordServerTurn, refreshNow, reprobeSync, settleSession, toTurn, useSync } from "./sync";
 
@@ -112,7 +112,7 @@ const errorOutcome = (e: ApiError): Patch =>
   : e.code === "cut_off" || e.code === "failed" ? { status: "error", error: e.message.slice(0, 2048) || cutOffText(), errCode: e.code }
   : (e.runCode === "use_runs" && void reprobeSync().catch(() => {}), { status: "error", error: errorText(e) }); // the server has the shared database after all: look again so a retry takes the queue
 const askOutcome = (e: AskEvent): Patch | null =>
-  e.type === "final_answer" ? { status: "done", answer: { content: e.content, references: e.references, ...(e.records?.length ? { records: e.records } : {}), ...(usableUsage(e.usage) ? { usage: usableUsage(e.usage) } : {}) } }
+  e.type === "final_answer" ? { status: "done", answer: { content: e.content, references: e.references, ...(e.records?.length ? { records: e.records } : {}), ...(usableUsage(e.usage) ? { usage: usableUsage(e.usage) } : {}), ...(usableProvenance(e.provenance) ? { provenance: usableProvenance(e.provenance) } : {}) } }
   : e.type === "refused" ? { status: "refused", refused: e.reason, refusedCode: refusalCode(e.code) }
   : e.type === "error" ? errorOutcome(e) : null;
 
@@ -384,6 +384,7 @@ function reduceAnalysis(a: TurnAnalysis, e: AnalyzeEvent): TurnAnalysis {
     case "analysis_script": return { ...a, script: e.code };
     case "analysis_result": return {
       ...a, quality: e.quality, tables: e.tables, findings: e.findings, timings: e.timings, artifacts: e.artifacts,
+      ...(usableProvenance(e.provenance) ? { provenance: usableProvenance(e.provenance) } : {}),
     };
     default: return a;
   }
