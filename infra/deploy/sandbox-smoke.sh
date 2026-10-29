@@ -47,14 +47,16 @@ unreachable() { ! branch "$PROBE" "$1" "$2" >/dev/null 2>&1; }
 
 # (d) a branch container cannot drive the daemon: it holds no client cert, so a TLS request to the daemon port must fail.
 # (Traffic to the daemon's own address is INPUT, not FORWARD, so the egress filter does not apply: the client-cert requirement is the control.)
-TLS='import urllib.request as u,ssl,sys
+TLS='import urllib.request as u,urllib.error as ue,ssl,sys
 c = ssl.create_default_context(); c.check_hostname = False; c.verify_mode = ssl.CERT_NONE
 try: u.urlopen("https://" + sys.argv[1] + ":2376/version", timeout=6, context=c)
 except Exception as x:
-    r = getattr(x, "reason", x)  # URLError wraps the socket/ssl error
-    t = str(x).upper()  # TLS 1.3 reports the missing client cert as an alert string on read
-    if isinstance(r, (ssl.SSLError, ConnectionResetError)) or "CERTIFICATE_REQUIRED" in t or "HANDSHAKE_FAILURE" in t or "BAD_CERTIFICATE" in t: print("TLS refused:", type(r).__name__); sys.exit(0)  # RemoteDisconnected is a ConnectionResetError
-    print("other failure (not a TLS refusal):", type(r).__name__, r); sys.exit(1)
+    r = x.reason if isinstance(x, ue.URLError) else x  # URLError wraps the socket/ssl error (HTTPError is a URLError too, but carries no TLS alert)
+    t = str(r).upper()
+    # PASS only for a TLS alert meaning "client certificate required/refused"; plain resets, timeouts, refusals, HTTP answers, wrong protocol are FAIL
+    for alert in ("CERTIFICATE_REQUIRED", "HANDSHAKE_FAILURE", "BAD_CERTIFICATE"):
+        if not isinstance(x, ue.HTTPError) and isinstance(r, ssl.SSLError) and alert in t: print("TLS alert:", alert); sys.exit(0)
+    print("not a client-cert refusal:", type(r).__name__, r); sys.exit(1)
 print("daemon answered without a client cert"); sys.exit(1)'
 SBX_IP="$(getent hosts sandbox | awk '{print $1; exit}')"
 d() { [ -n "$SBX_IP" ] && branch "$TLS" "$SBX_IP"; }
