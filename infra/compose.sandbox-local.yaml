@@ -1,0 +1,8 @@
+# REHEARSAL ON A DEVELOPER MACHINE ONLY (Docker Desktop has no sysbox runtime).
+# Usage: docker compose -f infra/compose.yaml -f infra/compose.sandbox-local.yaml ...
+# Runs the nested daemon with `privileged: true`: NEVER use this on the VM and NEVER combine it with a public domain.
+# Production uses sysbox-runc from infra/compose.yaml alone.
+services:
+  sandbox:
+    runtime: runc
+    privileged: true

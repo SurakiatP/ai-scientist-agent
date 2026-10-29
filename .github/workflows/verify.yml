@@ -33,3 +33,4 @@ jobs:
         run: |
           mkdir -p /tmp/p && touch /tmp/p/minio-access-key /tmp/p/minio-secret-key /tmp/app.env
           PRIVATE_DIR=/tmp/p APP_ENV_FILE=/tmp/app.env docker compose -f infra/compose.yaml config -q
+          PRIVATE_DIR=/tmp/p APP_ENV_FILE=/tmp/app.env docker compose -f infra/compose.yaml -f infra/compose.sandbox-local.yaml config -q

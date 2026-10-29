@@ -24,25 +24,88 @@ services:
       ALLOWED_ORIGINS: '["https://${DOMAIN:-localhost}"]' # store writes carrying another Origin get 403
       FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:-127.0.0.1} # uvicorn reads this itself; set to Caddy's address/CIDR so the rate limit is per real client
       HERMES_SOURCE_PATH: /home/app/.cache/scientist/upstream/hermes
-      HERMES_RUNTIME_DIR: /home/app/hermes-home # writable; the pinned cache below stays read-only
+      # Isolated runner (see `sandbox` below): the backend only holds a client cert for its TLS port, never the host Docker socket.
+      DOCKER_HOST: tcp://sandbox:2376
+      DOCKER_TLS_VERIFY: "1"
+      DOCKER_CERT_PATH: /certs/client
+      HERMES_RUNTIME_DIR: /srv/sandbox-share/hermes-home # same path inside the sandbox, so bind mounts of branch/analysis dirs resolve there
+      SANDBOX_WORK_DIR: /srv/sandbox-share/work
+      SANDBOX_IMAGE: ghcr.io/surakiatp/ai-scientist-agent/sandbox:${IMAGE_TAG:-develop}
     secrets: [minio_access_key, minio_secret_key, postgres_app_password]
-    networks: [default, db]
+    networks: [default, db, sandbox]
     volumes:
       # Pinned Hermes + skills checkout built by bootstrap.sh (outside the repo).
       - ${SCIENTIST_CACHE_DIR:-/var/lib/ai-scientist/cache}:/home/app/.cache/scientist:ro
+      - sandbox-share:/srv/sandbox-share
+      - sandbox-certs:/certs:ro
     read_only: true
     # /tmp holds Starlette's multipart spool: must exceed the largest upload cap (100 MB csv/parquet). RAM-backed.
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=256m
-      - /home/app/hermes-home:rw,noexec,nosuid,size=64m,uid=10001,gid=10001
     expose: ["8000"]
     depends_on:
       minio: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
-    # No host Docker socket here on purpose. Branch sandboxes (hermes.py SANDBOX_IMAGE) need a separate,
-    # isolated runner, e.g. a rootless-docker/sysbox `analysis-sandbox` service. Not implemented yet:
-    # analysis-sandbox:
-    #   image: <TBD>
+      sandbox-init: { condition: service_completed_successfully }
+    # No host Docker socket on purpose. Research branches (hermes.py SANDBOX_IMAGE) and data analysis run as containers in
+    # the nested daemon of `sandbox`, reached over mTLS (tcp://sandbox:2376); the shared volume carries their files.
+
+  # Isolated runner: Docker-in-Docker under the sysbox runtime (user-namespaced root, no extra host privileges), so a container
+  # escape lands in a throwaway uid range, not on the VM. Requires sysbox-runc installed on the host (docs/deploy.md).
+  # NOT on the `hardening` anchor: dockerd needs capabilities (SYS_ADMIN, NET_ADMIN, ...) inside its sysbox user
+  # namespace, and cap_drop ALL would stop it from starting. no-new-privileges is kept; sysbox confines the rest.
+  # Pinned: docker:28.5.2-dind index digest, resolved 2026-10-29 via `docker buildx imagetools inspect docker:28.5.2-dind`.
+  # Limits, worst case: MAX_CONCURRENT_RUNS (4) x MAX_BRANCHES (5) = 20 branch containers x (1 CPU, 512 MB) = 20 CPU / 10 GB,
+  # plus SANDBOX_MAX_CONCURRENT (3) analyses x 2 GB = 6 GB, so 16 GB and about 23 CPUs at the theoretical maximum. The defaults
+  # below fit a modest VM (8 GB / 4 CPUs) and do NOT cover that maximum: under load runs slow down or get OOM-killed
+  # inside the sandbox instead of starving the host. Raise SANDBOX_MEM_LIMIT / SANDBOX_CPUS / SANDBOX_PIDS_LIMIT on a bigger VM.
+  sandbox:
+    image: docker:28.5.2-dind@sha256:2a232a42256f70d78e3cc5d2b5d6b3276710a0de0596c145f627ecfae90282ac
+    runtime: sysbox-runc
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    # The dind entrypoint puts the container hostname (plus DOCKER_TLS_SAN) into the server cert's SAN. Compose's service
+    # name is only a network alias, so without this the cert names the container id and `tcp://sandbox:2376` fails to verify.
+    hostname: sandbox
+    environment:
+      DOCKER_TLS_CERTDIR: /certs
+      DOCKER_TLS_SAN: DNS:sandbox
+    volumes:
+      - sandbox-certs:/certs
+      - sandbox-share:/srv/sandbox-share
+      - sandbox-docker:/var/lib/docker
+    networks: [sandbox, sandbox-egress]
+    mem_limit: ${SANDBOX_MEM_LIMIT:-8g}
+    cpus: ${SANDBOX_CPUS:-4}
+    pids_limit: ${SANDBOX_PIDS_LIMIT:-4096}
+    healthcheck:
+      test: ["CMD-SHELL", "DOCKER_HOST=tcp://localhost:2376 DOCKER_TLS_VERIFY=1 DOCKER_CERT_PATH=/certs/client docker version"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+
+  # One-shot: hands the client cert to the backend user (uid 10001 only), creates the shared dirs and pre-pulls both images
+  # (the sandbox network is internal, so pulls go through the daemon's own egress). Same docker:28.5.2-cli digest as backend/Dockerfile.
+  sandbox-init:
+    image: docker:28.5.2-cli@sha256:625d9431a9f54c5a2bc90f24f0e1c3d55b1349fd857dd85035f98c2c9acbdd4d
+    restart: "no"
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]  # chown/chmod on the volumes; read the key after it is chowned
+    entrypoint: ["sh", "/sandbox-init.sh"]
+    environment:
+      DOCKER_HOST: tcp://sandbox:2376
+      DOCKER_TLS_VERIFY: "1"
+      DOCKER_CERT_PATH: /certs/client
+      ANALYSIS_IMAGE: ghcr.io/surakiatp/ai-scientist-agent/sandbox:${IMAGE_TAG:-develop}
+    volumes:
+      - ./deploy/sandbox-init.sh:/sandbox-init.sh:ro
+      - sandbox-certs:/certs
+      - sandbox-share:/srv/sandbox-share
+    networks: [sandbox]
+    read_only: true
+    depends_on: { sandbox: { condition: service_healthy } }
 
   frontend:
     <<: *hardening
@@ -141,9 +204,14 @@ secrets:
 
 networks:
   db: { internal: true }  # postgres, migrate and backend only; no route to the internet or the host
+  sandbox: { internal: true }  # backend <-> sandbox daemon (2376, client cert required); no route out
+  sandbox-egress: {}  # sandbox only: lets the nested daemon pull images and branch containers reach the internet
 
 volumes:
   postgres_data:
   minio_data:
   caddy_data:
   caddy_config:
+  sandbox-certs:  # dind CA + server + client certs
+  sandbox-share:  # hermes-home + analysis work dir, same path in backend and sandbox
+  sandbox-docker:  # nested daemon's images and layers
