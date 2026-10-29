@@ -46,3 +46,12 @@ def test_token_budget_cap_and_contact_defaults():
     s = get_settings()
     assert (s.guardrail_max_tokens, s.strategy_max_tokens, s.synthesis_max_tokens) == (256, 1500, 4000)
     assert s.max_papers_per_branch == 30 and s.contact_email == ""
+
+
+def test_replan_defaults_and_bounds():
+    s = Settings()
+    assert (s.replan_rounds, s.replan_min_papers, s.replan_max_searches) == (1, 2, 3)
+    for kw in ({"replan_rounds": 3}, {"replan_rounds": -1}, {"replan_min_papers": 0}, {"replan_max_searches": 6},
+               {"replan_max_searches": 0}):
+        with pytest.raises(Exception):
+            Settings(**kw)

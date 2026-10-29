@@ -15,7 +15,7 @@ from scientist.events import AnalysisResult, AnalysisStep, BranchAnswer, Complet
 log = logging.getLogger(__name__)
 PENDING: set[asyncio.Task] = set()
 CURRENT: ContextVar["Acc | None"] = ContextVar("usage", default=None)
-END_LABEL = {Waiting: "queue", Strategy: "strategy", Replan: "strategy", Sources: "search", BranchAnswer: "search",
+END_LABEL = {Waiting: "queue", Strategy: "strategy", Replan: "search", Sources: "search", BranchAnswer: "search",
              FinalAnswer: "synthesis", Refused: "scope", AnalysisStep: "setup", AnalysisResult: "finish"}
 
 

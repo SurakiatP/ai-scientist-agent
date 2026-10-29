@@ -12,7 +12,7 @@ from scientist.config import Settings
 from scientist.events import Error, FinalAnswer, Refused, Strategy, Waiting, to_sse
 from scientist.gate import RunGate
 from scientist.hermes import HermesRuntime
-from scientist.pipeline import ask
+from scientist.pipeline import REPLAN, ask
 
 FAKE = str(Path(__file__).parent / "fake_bridge.py")
 Q = "What are the latest CRISPR base editing methods and how do they compare?"
@@ -555,7 +555,7 @@ def replan_reply(*terms):
 
 
 def replan_calls(fake_complete):
-    return [c for c in fake_complete["calls"] if c["system"].startswith("You re-plan")]
+    return [c for c in fake_complete["calls"] if c["system"] == REPLAN]
 
 
 async def test_thin_search_gets_a_second_round(settings, tmp_path, fake_complete):
@@ -597,18 +597,25 @@ async def test_replan_prompt_has_only_question_terms_and_counts(settings, tmp_pa
 
 
 @pytest.mark.parametrize("script,failed", [
-    ({"a": [answer("s")], "b": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")]}, "a"),  # 0 papers
-    ({"a": [paper("A1", "10.1/a1"), answer("s")], "b": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")]}, "a"),  # 1 paper
-    ({"a": [paper("A0", "10.1/a0"), {"die": True}], "b": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")]}, "a"),  # failed
-    ({"a": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")], "b": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")]}, "b"),  # duplicates only
+    ({"a": [answer("s")], "b": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")]}, ["a"]),  # 0 papers
+    ({"a": [paper("A1", "10.1/a1"), answer("s")], "b": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")]}, ["a"]),  # 1 paper
+    ({"a": [paper("A0", "10.1/a0"), {"die": True}], "b": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")]}, ["a"]),  # failed
+    ({"a": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")], "b": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")]}, []),  # duplicates count when reported >= min
+    ({"a": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")], "b": [paper("B1", "10.1/b1"), answer("s")]}, ["b"]),  # 1 duplicate reported
 ])
 async def test_thin_detection(settings, tmp_path, fake_complete, script, failed):
     fake_complete["strategy"] = strategy("a", "b")
     fake_complete["replan"] = replan_reply("c")
     script["c"] = [paper("C1", "10.1/c1"), answer("s")]
     events = await run(Q, runner(settings, tmp_path, script), settings)
-    [rp] = [e for e in events if e.type == "replan"]
-    assert rp.thin == [failed]
+    rps = [e for e in events if e.type == "replan"]
+    assert [t for e in rps for t in e.thin] == failed
+
+
+def test_replan_phase_is_search_time():
+    from scientist import usage
+    from scientist.events import Replan
+    assert usage.END_LABEL[Replan] == "search"
 
 
 async def test_no_thin_search_no_replan(settings, tmp_path, fake_complete):
@@ -646,11 +653,11 @@ async def test_round_two_duplicate_counted_once_and_still_thin(tmp_path, fake_co
     fake_complete["strategy"] = strategy("a")
     fake_complete["replan"] = replan_reply("b")
     rt = runner(st, tmp_path, {"a": [paper("A1", "10.1/a1"), answer("s")],
-                               "b": [paper("A1", "10.1/a1"), paper("B1", "10.1/b1"), answer("s")]})
+                               "b": [paper("A1", "10.1/a1"), answer("s")]})
     events = [e async for e in start(Q, rt, st)]
     final = next(e for e in events if isinstance(e, FinalAnswer))
-    assert [r.paper.title for r in final.references] == ["A1", "B1"]  # one A1
-    # b found 1 new paper (A1 is a duplicate), so it is thin again and the second re-plan runs
+    assert [r.paper.title for r in final.references] == ["A1"]  # one A1
+    # b reported 1 paper (a duplicate): thin, so the second re-plan runs
     [c1, c2] = replan_calls(fake_complete)
     assert re.search(r'"term": "b",\s+"papers_found": 1', c2["user"]) and '"a"' in c2["user"]
 
@@ -694,7 +701,7 @@ async def test_stop_during_replan_call_and_round_two_kills_bridges(settings, tmp
     started = asyncio.Event()
 
     async def hang(system, user, *, model=None, max_tokens, json_mode=False, settings=None):
-        if system.startswith("You re-plan"):
+        if system == REPLAN:
             started.set()
             await asyncio.sleep(60)
         return llm.LlmResult(text=strategy("a"), prompt_tokens=1, completion_tokens=1, cached_tokens=0)

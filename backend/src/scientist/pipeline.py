@@ -64,7 +64,8 @@ async def _replan(question: str, thin: list[tuple[str, int]], tried: list[str], 
     """Extra English searches for the thin ones, none already tried. Gets only the question, terms and counts (never
     paper text, which is untrusted). Any failure or nothing new is None: the run goes on without it."""
     user = (f"{_history_block(history)}<searches>\n"
-            + json.dumps({"thin": [{"term": t, "papers_found": n} for t, n in thin], "already_tried": tried},
+            + json.dumps({"max_searches": settings.replan_max_searches, "thin": [{"term": t, "papers_found": n} for t, n in thin],
+                       "already_tried": tried},
                          ensure_ascii=False, indent=1).replace("<", "\\u003c")
             + f"\n</searches>\n\nQuestion:\n{question}")
     try:
@@ -172,7 +173,6 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     rejected: set[str] = set()
     unkeyed = 0  # rejections with no identity at all
     per_branch: dict[str, int] = {}
-    new_per_branch: dict[str, int] = {}  # papers a search was first to find (a re-plan trigger when few)
     capped = 0  # papers past max_papers_per_branch
     records: dict[tuple[str, str], DataRecord] = {}
     rec_per_branch: dict[str, int] = {}
@@ -217,10 +217,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
                     capped += 1
                 else:
                     per_branch[term] = n + 1
-                    key = paper_key(item.doi, item.pmid, item.title, item.url)
-                    if key not in references:
-                        new_per_branch[term] = new_per_branch.get(term, 0) + 1
-                    references.setdefault(key, Reference(id=str(len(references) + 1), paper=item, status="unknown"))
+                    references.setdefault(paper_key(item.doi, item.pmid, item.title, item.url), Reference(id=str(len(references) + 1), paper=item, status="unknown"))
                     yield Sources(term=term, papers=[item])
         finally:
             task.cancel()  # consumer gone (client disconnect): stop branches, which kills their bridges
@@ -228,8 +225,9 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
                 await task
         if round_no == extra_rounds:
             break
-        thin = [(s.term, new_per_branch.get(s.term, 0)) for s in searches
-                if new_per_branch.get(s.term, 0) < settings.replan_min_papers or s.term in failed[failed_before:]]
+        # thin: the branch failed, or reported fewer papers than the minimum (duplicates of another search's papers count)
+        thin = [(s.term, per_branch.get(s.term, 0)) for s in searches
+                if per_branch.get(s.term, 0) < settings.replan_min_papers or s.term in failed[failed_before:]]
         thin = list(dict(thin).items())
         # a cancel during this call finds no branch alive: the finally above already stopped them
         if not thin or not (replan := await _replan(question, thin, tried, settings, history)):

@@ -49,7 +49,7 @@ Needs `uv`, Node >= 20 with npm, and a running Docker.
 | `MAX_PAPERS_PER_BRANCH` | 30 | papers a branch may report; extra ones are ignored and counted in the final note |
 | `MAX_RECORDS_PER_BRANCH` | 20 | database records a branch may report (only with `database-lookup` enabled); extra ones are ignored and counted in the final note |
 | `REPLAN_ROUNDS` | 1 | extra search rounds in deep mode when searches come back thin (0 = off, max 2); a re-plan failure never fails the run |
-| `REPLAN_MIN_PAPERS` | 2 | a search is thin when it finds fewer new papers than this (or fails) |
+| `REPLAN_MIN_PAPERS` | 2 | a search is thin when it reports fewer papers than this in total (duplicates of other searches' papers count) or fails |
 | `REPLAN_MAX_SEARCHES` | 3 | new search terms per extra round (max 5); total searches never exceed `MAX_BRANCHES` + rounds x this |
 | `GUARDRAIL_MAX_TOKENS` | 256 | `max_tokens` for the scope-check call (reasoning models spend part of it thinking; too small comes back blank) |
 | `STRATEGY_MAX_TOKENS` | 1500 | `max_tokens` for the search-plan call |
