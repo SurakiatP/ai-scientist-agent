@@ -242,6 +242,7 @@ def main():
             emit(usage_event(agent))
         except Exception:
             pass
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)  # a late SIGTERM must not abort container cleanup (the backend kills after 15 s)
         environments = list(terminal._active_environments.values())
         cleanup_vm(task_id, force_remove=True)
         for environment in environments:  # removal runs on a thread; wait so exit does not orphan it

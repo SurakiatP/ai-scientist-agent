@@ -402,3 +402,26 @@ def test_bridge_usage_event_reads_counters_defensively():
     class B(A):
         session_cost_status = "unknown"
     assert ev(B())["cost_usd"] is None  # no price known: never invent a number
+
+
+async def test_cancelled_branch_still_reports_its_spend(settings, tmp_path):
+    from scientist import usage
+    acc = usage.Acc()
+    usage.CURRENT.set(acc)
+    rt = runtime(settings, tmp_path, [{"on_term": usage_line(prompt_tokens=77, completion_tokens=8, cost_usd=0.5)}, {"sleep": 30}])
+    task = asyncio.create_task(collect(rt))
+    await asyncio.sleep(1)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert (acc.prompt, acc.completion, acc.cost) == (77, 8, 0.5)
+
+
+async def test_usage_before_answer_still_fails_the_branch_and_counts_once(settings, tmp_path):
+    items = await collect(runtime(settings, tmp_path, [usage_line()]), usage=True)
+    assert [type(i).__name__ for i in items] == ["BranchUsage", "BranchFailed"]
+
+
+async def test_unknown_status_nulls_the_cost(settings, tmp_path):
+    items = await collect(runtime(settings, tmp_path, [{"event": "answer", "content": "d"}, usage_line(cost_usd=0.0, cost_status="unknown")]), usage=True)
+    assert items[-1].cost_usd is None

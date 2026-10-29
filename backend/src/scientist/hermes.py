@@ -9,11 +9,13 @@ import shutil
 import subprocess
 import time
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from pathlib import Path
 from typing import Protocol
 
 from pydantic import BaseModel, ValidationError
 
+from scientist import usage
 from scientist.config import Settings
 from scientist.events import BranchAnswer, DataRecord, Paper, paper_key
 from scientist.proc import kill_and_reap
@@ -84,7 +86,7 @@ def _count(v: object) -> int:
 
 def _usage(term: str, msg: dict) -> BranchUsage:
     c = msg.get("cost_usd")
-    cost = float(c) if isinstance(c, (int, float)) and not isinstance(c, bool) and math.isfinite(c) and c >= 0 else None
+    cost = float(c) if msg.get("cost_status") != "unknown" and isinstance(c, (int, float)) and not isinstance(c, bool) and math.isfinite(c) and c >= 0 else None
     return BranchUsage(term=term, prompt_tokens=_count(msg.get("prompt_tokens")), completion_tokens=_count(msg.get("completion_tokens")),
                        cost_usd=cost, cost_status=str(msg.get("cost_status") or "unknown")[:40])
 
@@ -212,6 +214,8 @@ class HermesRuntime(BranchRunner):
                 yield item
                 if isinstance(item, BranchUsage):
                     metered = True
+                    if not ended:
+                        yield BranchFailed(term=term, reason="bridge_exited")
                     return  # the bridge exits right after it
                 ended = isinstance(item, (BranchAnswer, BranchFailed))
             if not ended:
@@ -220,9 +224,28 @@ class HermesRuntime(BranchRunner):
             if not ended:
                 yield BranchFailed(term=term, reason=type(e).__name__)
         finally:
+            if not metered and proc.returncode is None:  # cancelled or timed out: SIGTERM makes the bridge print what it spent
+                metered = await self._spent(proc, term)
             await self._stop(proc)
         if not metered:  # bridge died or timed out before reporting: the total must show it is incomplete
             yield BranchUsage(term=term)
+
+    async def _spent(self, proc: asyncio.subprocess.Process, term: str) -> bool:
+        """SIGTERM the bridge and add the usage line it prints on its way out to the run's totals (within 15 s)."""
+        async def read() -> bool:
+            proc.terminate()
+            while line := await proc.stdout.readline():
+                with suppress(ValueError, TypeError):
+                    msg = json.loads(line)
+                    if isinstance(msg, dict) and msg.get("event") == "usage":
+                        u = _usage(term, msg)
+                        usage.note(u.prompt_tokens, u.completion_tokens, u.cost_usd, u.cost_status == "estimated")
+                        return True
+            return False
+        try:
+            return await asyncio.wait_for(read(), 15)
+        except (TimeoutError, OSError, ValueError):
+            return False
 
     async def _stop(self, proc: asyncio.subprocess.Process) -> None:
         # finally: a second cancel during the wait (seen on Linux) must not leave the process tracked; it already has SIGTERM
