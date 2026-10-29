@@ -478,7 +478,7 @@ def test_runner_audit_hook_leaves_imports_and_files_alone(tmp_path):
 
 def test_runner_installs_the_hook_before_exec():
     src = (Path(sandbox.__file__).parents[2] / "sandbox/runner.py").read_text()
-    assert src.index("importlib.import_module(lib)") < src.index("sys.addaudithook(audit_block)") < src.index("exec(code, env)")
+    assert src.index("importlib.import_module(lib)") < src.rindex("sys.addaudithook(audit_block)") < src.index("exec(code, env)")  # rindex: extract() installs it too
 
 
 def test_audit_hook_allows_dlopen_and_harmless_symbols_and_raises_oserror():

@@ -129,9 +129,44 @@ def finding(text):
     result["findings"].append(str(text)[:500])
 
 
+MAX_PAGES, MAX_CHARS = 300, 2_000_000
+
+
+def extract(path):
+    """PDF text mode (/in/data.pdf): no model code runs. Same audit hook and fork_exec stub as for a script, installed before
+    the untrusted file is parsed; pypdf is imported first (imports may start helpers). Limits: 300 pages, 2,000,000 characters."""
+    import pypdf
+    block_fork_exec()
+    sys.addaudithook(audit_block)
+    result.clear()
+    try:
+        reader = pypdf.PdfReader(str(path))
+        if reader.is_encrypted:
+            raise ValueError("encrypted")
+        pages, total, truncated = [], 0, False
+        for n, page in enumerate(reader.pages, 1):
+            if n > MAX_PAGES:
+                truncated = True
+                break
+            text = page.extract_text() or ""
+            if total + len(text) > MAX_CHARS:
+                text, truncated = text[:MAX_CHARS - total], True
+            pages.append({"page": n, "text": text})
+            total += len(text)
+            if truncated:
+                break
+        result.update(pages=pages, truncated=truncated)
+    except Exception:
+        traceback.print_exc()
+        result.clear()
+        result["error"] = "unreadable"
+
+
 def main():
     t0 = time.monotonic()
     path = next(IN.glob("data.*"))
+    if path.suffix == ".pdf":
+        return extract(path)
     df, truncated = load(path)
     result["timings"]["load_s"] = round(time.monotonic() - t0, 3)
     result["quality"] = quality(df, truncated)

@@ -35,6 +35,16 @@ files = sa.Table(
     sa.Column("name", sa.Text, nullable=False), sa.Column("size", sa.BigInteger, nullable=False, server_default="0"),
     sa.Column("kind", sa.Text, nullable=False, server_default=""), _ts("added_at", nullable=False, server_default=NOW),
     _ts("deleted_at"), sa.Column("version", sa.Integer, nullable=False, server_default="1"), sa.Column("owner", sa.Text))
+doc_index = sa.Table(  # one row per indexed PDF; the primary key is the guard against indexing twice
+    "doc_index", md, sa.Column("file_id", sa.CHAR(32), sa.ForeignKey("files.id", ondelete="CASCADE"), primary_key=True),
+    sa.Column("status", sa.Text, nullable=False), sa.Column("pages", sa.Integer, nullable=False, server_default="0"),
+    sa.Column("chunks", sa.Integer, nullable=False, server_default="0"), sa.Column("truncated", sa.Boolean, nullable=False, server_default="false"),
+    sa.Column("error", sa.Text), _ts("created_at", nullable=False, server_default=NOW))
+doc_chunks = sa.Table(
+    "doc_chunks", md, sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+    sa.Column("file_id", sa.CHAR(32), sa.ForeignKey("files.id", ondelete="CASCADE"), nullable=False),
+    sa.Column("page", sa.Integer, nullable=False), sa.Column("idx", sa.Integer, nullable=False), sa.Column("text", sa.Text, nullable=False),
+    sa.Column("tsv", pg.TSVECTOR, sa.Computed("to_tsvector('simple', text)", persisted=True)))
 usage_events = sa.Table(
     "usage_events", md, sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
     _ts("at", nullable=False, server_default=NOW), sa.Column("session_id", UUID), sa.Column("turn_id", UUID),

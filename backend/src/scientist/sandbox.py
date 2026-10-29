@@ -255,19 +255,24 @@ def sweep_sandboxes() -> None:
         pass
 
 
-async def run_analysis(script: str | None, data: bytes, ext: str, settings: Settings, pack: str | None = None) -> AnalysisResult:
-    """script None = profile only (no model code runs). Never shell=True; no secrets are passed in. Concurrency is
-    limited by the caller (routes_analyze's gate)."""
-    s, name = settings, f"scientist-sandbox-{uuid.uuid4().hex[:12]}"
+class _Raw(BaseModel):
+    out: bytes = b""
+    tail: str = ""
+    rc: int | None = None
+    error: str | None = None  # set when there is no usable stdout
+
+
+async def _container(files: dict[str, bytes | str], image: str, s: Settings, extra_env: tuple[str, ...] = ()) -> _Raw:
+    """One throwaway locked-down container with `files` mounted read-only at /in. Never shell=True; no secrets are passed in."""
+    name = f"scientist-sandbox-{uuid.uuid4().hex[:12]}"
     work = work_dir(s)
     work.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="run-", dir=work) as tmp:  # only the backend writes here: cleanup always works
         Path(tmp).chmod(0o711)  # mkdtemp is 0700; the container user (65534) must traverse it, not list it
         inp = Path(tmp, "in")
         inp.mkdir(mode=0o755)
-        (inp / f"data.{ext}").write_bytes(data)
-        if script is not None:
-            (inp / "script.py").write_text(script)
+        for fname, content in files.items():
+            (inp / fname).write_bytes(content if isinstance(content, bytes) else content.encode())
         for f in inp.iterdir():
             f.chmod(0o644)
         cmd = ["docker", "run", "--rm", "--name", name, "--label", f"scientist.sandbox={PROC}", "--network", "none",
@@ -278,13 +283,12 @@ async def run_analysis(script: str | None, data: bytes, ext: str, settings: Sett
                "-e", f"SANDBOX_MAX_ROWS={s.sandbox_max_rows}", "-e", f"SANDBOX_MEM_BYTES={mem_bytes(s.sandbox_mem)}",
                "-e", f"SANDBOX_TIMEOUT_S={s.sandbox_timeout_s}",
                "-e", "JOBLIB_MULTIPROCESSING=0", "-e", "LOKY_MAX_CPU_COUNT=1",  # no process pools: joblib runs in-process
-               *(["-e", f"SANDBOX_EXTRA_IMPORTS={','.join(extra)}"] if (extra := extra_imports(pack)) else []),
-               image_for(s, pack)]
+               *extra_env, image]
         try:
             proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
                                                         stderr=asyncio.subprocess.PIPE)
         except OSError:
-            return AnalysisResult(ok=False, error="docker_unavailable")
+            return _Raw(error="docker_unavailable")
         out_t = asyncio.ensure_future(_read_capped(proc.stdout, s.sandbox_output_max_bytes))
         err_t = asyncio.ensure_future(_read_tail(proc.stderr, STDERR_KEEP))
 
@@ -301,7 +305,7 @@ async def run_analysis(script: str | None, data: bytes, ext: str, settings: Sett
                 t.cancel()
             await asyncio.gather(out_t, err_t, return_exceptions=True)
             await kill_and_reap(proc)
-            return AnalysisResult(ok=False, error="timeout" if isinstance(e, TimeoutError) else "output_too_large")
+            return _Raw(error="timeout" if isinstance(e, TimeoutError) else "output_too_large")
         except BaseException:  # cancelled (client gone): same cleanup, then propagate
             await asyncio.shield(_docker("rm", "-f", name))
             proc.kill()
@@ -311,13 +315,58 @@ async def run_analysis(script: str | None, data: bytes, ext: str, settings: Sett
             err_t.cancel()
         tail = err.decode(errors="replace")
         if not out and proc.returncode and ("Cannot connect to the Docker daemon" in tail or "error during connect" in tail):
-            return AnalysisResult(ok=False, error="docker_unavailable", stderr_tail=tail)
+            return _Raw(error="docker_unavailable", tail=tail)
         if not out:  # OOM-killed or crashed before printing
-            return AnalysisResult(ok=False, error="oom_or_crash" if proc.returncode in (125, 137) else "no_result",
-                                  stderr_tail=tail)
-        try:
-            result, figs = validate_output(out, s.sandbox_output_max_bytes)
-        except ValueError:
-            return AnalysisResult(ok=False, error="bad_output", stderr_tail=tail)
-        ok = proc.returncode == 0 and not result.get("error")
-        return AnalysisResult(ok=ok, result=result, figures=figs, stderr_tail=tail, error=None if ok else "script_error")
+            return _Raw(error="oom_or_crash" if proc.returncode in (125, 137) else "no_result", tail=tail)
+        return _Raw(out=out, tail=tail, rc=proc.returncode)
+
+
+async def run_analysis(script: str | None, data: bytes, ext: str, settings: Settings, pack: str | None = None) -> AnalysisResult:
+    """script None = profile only (no model code runs). Concurrency is limited by the caller (routes_analyze's gate)."""
+    files = {f"data.{ext}": data} | ({"script.py": script} if script is not None else {})
+    env = (("-e", f"SANDBOX_EXTRA_IMPORTS={','.join(extra)}") if (extra := extra_imports(pack)) else ())
+    raw = await _container(files, image_for(settings, pack), settings, env)
+    if raw.error:
+        return AnalysisResult(ok=False, error=raw.error, stderr_tail=raw.tail)
+    try:
+        result, figs = validate_output(raw.out, settings.sandbox_output_max_bytes)
+    except ValueError:
+        return AnalysisResult(ok=False, error="bad_output", stderr_tail=raw.tail)
+    ok = raw.rc == 0 and not result.get("error")
+    return AnalysisResult(ok=ok, result=result, figures=figs, stderr_tail=raw.tail, error=None if ok else "script_error")
+
+
+class ExtractResult(BaseModel):
+    ok: bool
+    pages: list[dict] = []  # [{"page": n (1-based), "text": str}]
+    truncated: bool = False
+    error: str | None = None  # unreadable / timeout / bad_output / docker_unavailable / ...
+
+
+MAX_PAGES, MAX_CHARS = 300, 2_000_000
+
+
+def validate_extract(raw: bytes) -> ExtractResult:
+    """The extract runner's stdout: {"pages": [...], "truncated": bool} or {"error": "unreadable"}. Anything else is bad_output."""
+    try:
+        d = json.loads(raw)
+        if not isinstance(d, dict):
+            raise ValueError
+        if "error" in d:
+            return ExtractResult(ok=False, error=_s(d["error"])[:40])
+        pages = _list(d["pages"], MAX_PAGES)
+        if not all(isinstance(p, dict) and isinstance(p.get("page"), int) and not isinstance(p["page"], bool)
+                   and isinstance(p.get("text"), str) for p in pages):
+            raise ValueError
+        if sum(len(p["text"]) for p in pages) > MAX_CHARS:
+            raise ValueError
+        return ExtractResult(ok=True, pages=[{"page": p["page"], "text": p["text"]} for p in pages],
+                             truncated=d.get("truncated") is True)
+    except (ValueError, KeyError, TypeError):
+        return ExtractResult(ok=False, error="bad_output")
+
+
+async def extract_pdf(data: bytes, settings: Settings) -> ExtractResult:
+    """PDF text, extracted in the sandbox (base image, same flags and timeout as analysis). The backend never parses PDF bytes."""
+    raw = await _container({"data.pdf": data}, settings.sandbox_image, settings)
+    return ExtractResult(ok=False, error=raw.error) if raw.error else validate_extract(raw.out)
