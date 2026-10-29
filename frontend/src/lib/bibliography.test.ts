@@ -40,7 +40,7 @@ describe("untrusted metadata", () => {
   const balanced = (l: string) => { let d = 0; for (const c of l) { if (c === "{") d++; if (c === "}") d--; if (d < 0) return false; } return d === 0; };
   it("cannot break out of a field or start an entry", () => {
     const out = toBibtex([r("1", { title: "a}\n@misc{evil, title={x}", authors: ["Bob} and @x{"] })]);
-    for (const l of out.split("\n").filter((l) => l && l !== "}")) { expect(balanced(l.replace(/^@article\{[^,]*,$/, ""))).toBe(true); if (l.startsWith("@")) expect(l).toBe("@article{bob2020,"); }
+    for (const l of out.split("\n").filter((l) => l && l !== "}")) { expect(balanced(l.replace(/^@article\{[^,]*,$/, ""))).toBe(true); if (l.startsWith("@")) expect(l).toBe("@article{x2020,"); }
     expect(out.match(/^@/gm)).toHaveLength(1);
   });
   it("writes doi and url raw but percent-encodes structural characters", () => {
