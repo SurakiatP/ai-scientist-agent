@@ -8,7 +8,8 @@ import InsertDriveFileOutlinedIcon from "@mui/icons-material/InsertDriveFileOutl
 import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import { ARTIFACT_URL, type Turn, type TurnAnalysis } from "@/lib/chat";
 import { API_BASE } from "@/lib/config";
-import { useT } from "@/lib/prefs";
+import { packName, usablePack } from "@/lib/packs";
+import { usePrefs, useT } from "@/lib/prefs";
 import { downloadProvenance, provenanceOf } from "@/lib/provenance";
 import { queueText } from "./ProgressCard";
 import type { AnalysisArtifact as AnalysisArtifactItem, AnalysisStep } from "@/lib/sse";
@@ -315,8 +316,9 @@ function Code({ a, t }: { a: TurnAnalysis; t: Strings }) {
 }
 
 export function AnalysisArtifact({ turn }: { turn: Turn }) {
-  const t = useT();
+  const t = useT(), lang = usePrefs((s) => s.lang);
   const a = turn.analysis;
+  const pack = usablePack(turn.pack);
   const [tab, setTab] = useState<TabKey>("overview");
   const uid = useId();
   if (!a) return null;
@@ -340,6 +342,7 @@ export function AnalysisArtifact({ turn }: { turn: Turn }) {
             <Typography component="h3" sx={{ fontSize: "0.9375rem", fontWeight: 700, lineHeight: 1.5, overflowWrap: "anywhere" }}>{name}</Typography>
             <Stack direction="row" useFlexGap sx={{ mt: 0.5, alignItems: "center", flexWrap: "wrap", gap: 1 }}>
               <StatusChip turn={turn} t={t} />
+              {pack && <Typography sx={{ fontSize: "0.75rem", color: "text.secondary", overflowWrap: "anywhere" }}>{t.packCaption.replace("{name}", packName(pack, lang))}</Typography>}
               {total !== null && (
                 <Typography sx={{ fontSize: "0.75rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{t.elapsed} {formatSeconds(total, { minute: t.analysisMinute, second: t.analysisSecond })}</Typography>
               )}

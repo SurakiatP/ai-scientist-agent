@@ -7,10 +7,10 @@ import type { AnalyzeEvent, AskEvent, AskOptions } from "./sse";
 let script: (signal: AbortSignal) => AsyncGenerator<AskEvent>;
 let analyzeScript: (signal: AbortSignal) => AsyncGenerator<AnalyzeEvent>;
 let asks: { question: string; opts: AskOptions | undefined }[] = [];
-let analyzes: { fileId: string; question: string }[] = [];
+let analyzes: { fileId: string; question: string; pack?: string }[] = [];
 vi.mock("./sse", () => ({
   streamAsk: (question: string, signal: AbortSignal, opts?: AskOptions) => { asks.push({ question, opts }); return script(signal); },
-  streamAnalyze: (fileId: string, question: string, signal: AbortSignal) => { analyzes.push({ fileId, question }); return analyzeScript(signal); },
+  streamAnalyze: (fileId: string, question: string, signal: AbortSignal, pack?: string) => { analyzes.push({ fileId, question, ...(pack ? { pack } : {}) }); return analyzeScript(signal); },
 }));
 
 const ref = { id: "R1", status: "verified", paper: { title: "P", authors: [], year: null, doi: null, pmid: null, url: "u" } } as never;
@@ -96,6 +96,20 @@ describe("run controller", () => {
     await run.startRun(sid, "q", { mode: "quick" });
     expect(asks.at(-1)!.opts).toEqual({ mode: "quick", history: [] });
     expect(last(chat).mode).toBe("quick");
+  });
+  it("a field pack reaches the stream and is stored on the turn; chat mode never sends it; an unknown id is dropped", async () => {
+    const { chat, run, sid } = await setup();
+    script = gen([{ type: "final_answer", content: "a", references: [] }, { type: "complete" }]);
+    await run.startRun(sid, "q", { mode: "deep", pack: "chem" });
+    expect(asks.at(-1)!.opts).toEqual({ mode: "deep", history: [], pack: "chem" });
+    expect(last(chat).pack).toBe("chem");
+    script = gen([{ type: "final_answer", content: "b", references: [] }, { type: "complete" }]);
+    await run.startRun(sid, "q2", { mode: "chat", pack: "chem" });
+    expect(asks.at(-1)!.opts).not.toHaveProperty("pack");
+    expect(last(chat).pack).toBeUndefined();
+    script = gen([{ type: "final_answer", content: "c", references: [] }, { type: "complete" }]);
+    await run.startRun(sid, "q3", { mode: "quick", pack: "nope" as never });
+    expect(asks.at(-1)!.opts).not.toHaveProperty("pack");
   });
   it("progress equals folding reduce over events", async () => {
     const { chat, run, sid } = await setup();
@@ -226,8 +240,9 @@ describe("analysis controller", () => {
       result,
       { type: "complete" },
     ]);
-    await run.startAnalysis(sid, "what?", "f".repeat(32), "data.csv");
-    expect(analyzes).toEqual([{ fileId: "f".repeat(32), question: "what?" }]);
+    await run.startAnalysis(sid, "what?", "f".repeat(32), "data.csv", "ml");
+    expect(analyzes).toEqual([{ fileId: "f".repeat(32), question: "what?", pack: "ml" }]);
+    expect(last(chat).pack).toBe("ml");
     expect(last(chat)).toMatchObject({
       kind: "analysis", status: "done",
       analysis: {
@@ -383,6 +398,17 @@ describe("plan review flow", () => {
     script = gen([{ type: "final_answer", content: "x", references: [] }, { type: "complete" }]);
     await run.startRun(sid2, "q2", { mode: "quick" });
     expect(chat.getState().sessions.find((s) => s.id === sid2)!.turns[0].status).toBe("done");
+  });
+
+  it("approve resends the turn's pack", async () => {
+    const { chat, run, sid } = await setup(true);
+    script = gen(planEvs);
+    await run.startRun(sid, "q", { pack: "bio" });
+    const tid = turnOf(chat, sid).id;
+    expect(asks[0].opts).toMatchObject({ planOnly: true, pack: "bio" });
+    script = gen([{ type: "final_answer", content: "ans", references: [] }, { type: "complete" }]);
+    await run.approvePlan(sid, tid, edited);
+    expect(asks[1].opts).toEqual({ mode: "deep", history: [], plan: edited, pack: "bio" });
   });
 
   it("approve runs the real stream with the edited plan in the request body", async () => {

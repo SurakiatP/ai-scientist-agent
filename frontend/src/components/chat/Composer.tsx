@@ -4,6 +4,7 @@ import { Box, Button, CircularProgress, IconButton, InputBase, Menu, MenuItem, T
 import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
+import ScienceOutlinedIcon from "@mui/icons-material/ScienceOutlined";
 import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
@@ -15,7 +16,8 @@ import { useStorageFull } from "@/lib/history";
 import { registerUpload, useAttach } from "@/lib/files";
 import { ease, enterPop } from "@/lib/motion";
 import { API_BASE } from "@/lib/config";
-import { useT } from "@/lib/prefs";
+import { useT, usePrefs } from "@/lib/prefs";
+import { PACK_IDS, packName, type PackId } from "@/lib/packs";
 import { canStart, startAnalysis, startError, startRun, stopRun, useRunState } from "@/lib/run";
 import { UploadError, uploadFile, type AskMode } from "@/lib/sse";
 import { MAX_QUESTION } from "@/lib/strings";
@@ -33,6 +35,8 @@ export const useStartErr = create<{ by: Record<string, string>; set: (sid: strin
   set: (sid, msg) => set((d) => ({ by: { ...d.by, [sid]: msg } })),
 }));
 export const useMode = create<{ mode: AskMode; set: (m: AskMode) => void }>((set) => ({ mode: "deep", set: (mode) => set({ mode }) }));
+// The chosen field pack, shared like the mode (in memory only); undefined = General.
+export const usePack = create<{ pack: PackId | undefined; set: (p: PackId | undefined) => void }>((set) => ({ pack: undefined, set: (pack) => set({ pack }) }));
 export const focusComposer = () => document.getElementById("composer")?.focus();
 
 type Attached = { name: string; size: number; status: "uploading" | "ready" | "error"; fileId?: string; error?: string };
@@ -50,6 +54,8 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   // "Answer research" needs this session's own finished answers; without them the pill shows (and sends) deep
   const hasMemory = useChatStore((s) => !!s.sessions.find((x) => x.id === sessionId)?.turns.some((x) => x.status === "done" && !!x.answer?.content.trim()));
   const mode: AskMode = picked === "chat" && !hasMemory ? "deep" : picked;
+  const pack = usePack((s) => s.pack), setPack = usePack((s) => s.set), lang = usePrefs((s) => s.lang);
+  const packText = (p: PackId | undefined) => p ? packName(p, lang) : t.packGeneral;
   const modeName = (m: AskMode) => m === "deep" ? t.modeDeep : m === "chat" ? t.modeChat : t.modeQuick;
   const [attachOff, setAttachOff] = useState(false); // backend says uploads/analysis cannot work: say so instead of failing after the upload
   useEffect(() => {
@@ -61,6 +67,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const full = useStorageFull();
   const [composing, setComposing] = useState(false);
   const [modeAnchor, setModeAnchor] = useState<HTMLElement | null>(null);
+  const [packAnchor, setPackAnchor] = useState<HTMLElement | null>(null);
   const [file, setFile] = useState<Attached | null>(null);
   const picker = useRef<HTMLInputElement>(null);
   const upload = useRef<AbortController | null>(null);
@@ -121,8 +128,8 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
       // through the store: the first message of an empty chat remounts this composer, and local state would be lost
       useStartErr.getState().set(sessionId, e instanceof Error && e.message === "busy" ? t.busyElsewhere : startError(e) ?? t.startFailed);
     };
-    if (attached?.status === "ready" && attached.fileId) startAnalysis(sessionId, q, attached.fileId, attached.name).catch(restore);
-    else startRun(sessionId, q, { mode }).catch(restore);
+    if (attached?.status === "ready" && attached.fileId) startAnalysis(sessionId, q, attached.fileId, attached.name, pack).catch(restore);
+    else startRun(sessionId, q, { mode, pack }).catch(restore);
   };
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key !== "Enter" || e.shiftKey || composing || e.nativeEvent.isComposing || e.keyCode === 229) return; // 229: IME (Safari fires keydown after compositionend)
@@ -203,6 +210,28 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
                   </MenuItem>
                 );
               })}
+            </Menu>
+            {/* the field: same chip + menu pattern as the mode; outlined = General, tinted = a field is set. Answer-from-memory searches nothing, so it has no field */}
+            <Button color="inherit" variant="outlined" disabled={mode === "chat"} aria-haspopup="menu" aria-expanded={!!packAnchor}
+              aria-label={`${t.packLabel}: ${packText(pack)}`} onClick={(e) => setPackAnchor(e.currentTarget)}
+              startIcon={<ScienceOutlinedIcon sx={{ color: mode === "chat" ? "inherit" : "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
+              sx={{
+                borderRadius: 99, fontSize: "0.875rem", px: 1.5, minHeight: 44, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap", maxWidth: { xs: 190, sm: 240 },
+                "& .MuiButton-startIcon": { mr: 0.5 }, "& .MuiButton-endIcon": { ml: 0.5 },
+                ...(pack
+                  ? { borderColor: "primary.main", bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)", color: "text.primary", fontWeight: 600,
+                      "&:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 22%, transparent)", borderColor: "primary.main" } }
+                  : { borderColor: "divider", fontWeight: 400 }),
+              }}>
+              <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis" }}>{packText(pack)}</Box>
+            </Button>
+            <Menu anchorEl={packAnchor} open={!!packAnchor} onClose={() => setPackAnchor(null)} slotProps={{ list: { "aria-label": t.choosePack } }}>
+              {([undefined, ...PACK_IDS] as (PackId | undefined)[]).map((p) => (
+                <MenuItem key={p ?? "general"} selected={p === pack} role="menuitemradio" aria-checked={p === pack} sx={{ minHeight: 44 }}
+                  onClick={() => { setPack(p); setPackAnchor(null); }}>
+                  {packText(p)}
+                </MenuItem>
+              ))}
             </Menu>
             <IconButton aria-label={mine ? t.stop : t.ask} onClick={(e) => { if (!mine) send(); else if (e.detail < 2) void stopRun(sessionId).then((ok) => setErr(ok ? "" : t.stopFailed)); }} /* a double-click on Send must not land on Stop */ disabled={!mine && !canSend}
               sx={{ width: 44, height: 44, alignSelf: "center", flexShrink: 0, bgcolor: "primary.main", color: "primary.contrastText", transition: `background-color 160ms ${ease}`, "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 35%, transparent)", color: "primary.contrastText" } }}>

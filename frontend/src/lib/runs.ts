@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { API_BASE } from "./config";
 import { newId } from "./history";
+import type { PackId } from "./packs";
 import { stream, type AskEvent, type AnalyzeEvent, type ApiError, type AskMode, type HistoryTurn, type MemoryTurn, type Search } from "./sse";
 
 // Client for the server-side run queue (/v1/runs). The client id only orders the queue fairly; it is not a login.
@@ -30,7 +31,7 @@ export type RunView = {
 };
 export type RunBody = {
   session_id: string; turn_id: string; kind: "ask" | "analyze"; question: string;
-  mode?: AskMode; history?: HistoryTurn[]; memory?: MemoryTurn[]; plan?: Search[]; file_id?: string; file_name?: string;
+  mode?: AskMode; pack?: PackId; history?: HistoryTurn[]; memory?: MemoryTurn[]; plan?: Search[]; file_id?: string; file_name?: string;
 };
 export type QueueStatus = Record<"research" | "analysis", { running: number; limit: number; queued: number }>;
 export const ACTIVE: RunView["status"][] = ["queued", "running"];

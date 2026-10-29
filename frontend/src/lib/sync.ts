@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { API_BASE, DEFER_HYDRATION, gate } from "./config";
 import { capSessions, isProject, isSession, isTurn, MAX_SESSIONS, PERSONAL, personal, useChatStore, type Project, type RefusalCode, type Session, type Turn } from "./chat";
+import { usablePack } from "./packs";
 import { isFileEntry, useFilesStore, type FileEntry } from "./files";
 import { safeStorage } from "./history";
 import { emptyProgress } from "./progress";
@@ -80,6 +81,7 @@ export const toTurn = (r: Row): Turn | null => {
   const t = {
     id: str(r.id), question: str(r.question), createdAt: ms(r.created_at), status, progress: { ...emptyProgress, ...prog } as Turn["progress"],
     ...(r.mode === "deep" || r.mode === "quick" || r.mode === "chat" ? { mode: r.mode } : {}),
+    ...(usablePack(r.pack) ? { pack: usablePack(r.pack) } : {}),
     ...(analysis ? { kind: "analysis" as const } : {}),
     ...(runId ? { runId } : {}), ...(err === "cut_off" || err === "failed" || err === "interrupted" || err === "stopped" ? { errCode: err } : {}),
     ...(r.plan ? { plan: r.plan } : {}), ...(r.answer ? { answer: r.answer } : {}), ...(r.analysis ? { analysis: r.analysis } : {}),
@@ -89,7 +91,7 @@ export const toTurn = (r: Row): Turn | null => {
 };
 export const turnBody = (t: Turn, idx: number) => ({
   idx, question: t.question.slice(0, 4000), mode: t.kind === "analysis" ? "analysis" : t.mode ?? null, status: t.status,
-  answer: t.answer ?? null, progress: t.refusedCode ? { ...t.progress, _code: t.refusedCode } : t.progress, plan: t.plan ?? null, analysis: t.analysis ?? null,
+  answer: t.answer ?? null, progress: t.refusedCode ? { ...t.progress, _code: t.refusedCode } : t.progress, pack: t.pack ?? null, plan: t.plan ?? null, analysis: t.analysis ?? null,
   refused: t.refused ?? null, error: t.error ?? null,
 });
 const toSession = (r: Row, local?: Session): Session => {

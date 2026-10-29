@@ -5,6 +5,7 @@ import { dataStorage, isItem, newId, safeStorage, storageFull, useHistoryStore }
 import type { Progress } from "./progress";
 import { usableProvenance, usableRecords, usableUsage } from "./sources";
 import { cleanEvidence } from "./refs";
+import { usablePack, type PackId } from "./packs";
 import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, DataRecord, Provenance, Reference, RunUsage, Search } from "./sse";
 
 // What the analyze stream taught us about this turn. Every field is optional because events arrive one at a time.
@@ -26,6 +27,7 @@ export type Turn = {
   status: "running" | "awaiting_plan" | "done" | "refused" | "error" | "stopped" | "interrupted";
   progress: Progress;
   mode?: AskMode;
+  pack?: PackId; // the field pack the run used; absent = General
   kind?: "analysis";
   plan?: Search[]; // the approved plan: stored while awaiting review and kept as "the plan used" after approval
   answer?: { content: string; references: Reference[]; records?: DataRecord[]; usage?: RunUsage; provenance?: Provenance }; // usage: the run's tokens and cost, absent on older turns; records: absent on turns saved before database records existed
@@ -189,7 +191,9 @@ const clampPatch = (p: Partial<Turn>): Partial<Turn> => {
   };
 };
 // A stored turn is unvalidated: clean its references and records, and keep usage and provenance only when usable (the turn itself is never dropped).
-const cleanTurn = (t: Turn): Turn => {
+const cleanTurn = (t0: Turn): Turn => {
+  const { pack, ...rest } = t0; // unknown pack: drop the field, never the turn
+  const t: Turn = usablePack(pack) ? t0 : (rest as Turn);
   const { provenance: ap, ...an } = t.analysis ?? ({} as Partial<TurnAnalysis>);
   const pa = usableProvenance(ap);
   const base = t.analysis ? { ...t, analysis: { ...(an as TurnAnalysis), ...(pa && { provenance: pa }) } } : t;

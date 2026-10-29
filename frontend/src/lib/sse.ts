@@ -1,3 +1,4 @@
+import { usablePack, type PackId } from "./packs";
 import { API_BASE } from "./config";
 
 export type Paper = {
@@ -14,7 +15,7 @@ export type RunUsage = { prompt_tokens: number; completion_tokens: number; cost_
 /** The run's provenance file body (backend Provenance); only schema is checked on read, the rest is passed through as the server wrote it. */
 export type Provenance = {
   schema: 1; created_at?: string;
-  plan_source?: "strategy" | "given"; // research: "strategy" = the run's model planned round 1; "given" = the client supplied the plan (possibly edited)
+  plan_source?: "strategy" | "given" | null; // research: "strategy" = the run's model planned round 1; "given" = the client supplied the plan (possibly edited)
   input_sha256?: string | null; // analysis: sha256 of the analysed file's bytes
   history_turns?: number; // earlier turns sent to the model as history
   [k: string]: unknown;
@@ -27,7 +28,7 @@ export type AskMode = "deep" | "quick" | "chat"; // chat = answer from the sessi
 export type HistoryTurn = { question: string; answer: string };
 export type MemoryRef = { id: string; title: string; authors: string[]; year: number | null; doi: string | null; pmid: string | null; url: string; status: Reference["status"] };
 export type MemoryTurn = { question: string; answer: string; references: MemoryRef[] };
-export type AskOptions = { mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; planOnly?: boolean; memory?: MemoryTurn[] };
+export type AskOptions = { mode?: AskMode; pack?: PackId; history?: HistoryTurn[]; plan?: Search[]; planOnly?: boolean; memory?: MemoryTurn[] };
 
 export type StreamCode = "malformed" | "network" | "http";
 export type ApiError = { message: string; code?: StreamCode | "stopped" | "interrupted" | "cut_off" | "failed"; status?: number; runCode?: string; uncertain?: boolean }; // uncertain: the request went out but no answer came back (the run may exist) // runCode: the run queue's own 429 reason (client_busy, queue_full, rate_limited)
@@ -148,12 +149,13 @@ export async function* stream(url: string, init: RequestInit, signal: AbortSigna
 
 export async function* streamAsk(question: string, signal: AbortSignal, opts: AskOptions = {}): AsyncGenerator<AskEvent> {
   // Send only what differs from the backend defaults.
-  const body: { question: string; mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; plan_only?: boolean; memory?: MemoryTurn[] } = { question };
+  const body: { question: string; mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; plan_only?: boolean; memory?: MemoryTurn[]; pack?: PackId } = { question };
   if (opts.mode === "quick" || opts.mode === "chat") body.mode = opts.mode;
   if (opts.mode === "chat" && opts.memory?.length) body.memory = opts.memory;
   if (opts.history?.length) body.history = opts.history;
   if (opts.plan?.length) body.plan = opts.plan;
   if (opts.planOnly) body.plan_only = true;
+  if (usablePack(opts.pack)) body.pack = opts.pack;
   const init: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
@@ -163,11 +165,11 @@ export async function* streamAsk(question: string, signal: AbortSignal, opts: As
   for await (const e of stream(`${API_BASE}/v1/async/ask`, init, signal)) yield e as AskEvent;
 }
 
-export async function* streamAnalyze(fileId: string, question: string, signal: AbortSignal): AsyncGenerator<AnalyzeEvent> {
+export async function* streamAnalyze(fileId: string, question: string, signal: AbortSignal, pack?: PackId): AsyncGenerator<AnalyzeEvent> {
   const init: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-    body: JSON.stringify({ file_id: fileId, question }),
+    body: JSON.stringify({ file_id: fileId, question, ...(usablePack(pack) ? { pack } : {}) }),
     signal,
   };
   for await (const e of stream(`${API_BASE}/v1/async/analyze`, init, signal)) yield e as AnalyzeEvent;

@@ -57,6 +57,14 @@ describe("chat store", () => {
     s.getState().truncateFrom(id, "a");
     expect(s.getState().sessions[0].turns).toEqual([]);
   });
+  it("keeps a known pack, drops an unknown one but never the turn", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [{ ...turn("a"), pack: "chem" }, { ...turn("b"), pack: "nope" }, { ...turn("c"), pack: 7 }])], activeId: "s" } }));
+    const s = await load();
+    const ts = s.getState().sessions[0].turns;
+    expect(ts.map((t) => t.id)).toEqual(["a", "b", "c"]);
+    expect(ts.map((t) => t.pack)).toEqual(["chem", undefined, undefined]);
+    expect(ts[1]).not.toHaveProperty("pack");
+  });
   it("rehydrates running turns as interrupted", async () => {
     localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [turn("t", "running")])], activeId: "s" } }));
     const s = await load();

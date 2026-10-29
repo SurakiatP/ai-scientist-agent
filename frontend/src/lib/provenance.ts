@@ -6,6 +6,9 @@ import type { Provenance } from "./sse";
 // Re-validated here too: synced turns reach the UI without passing the local load path.
 export const provenanceOf = (turn: Turn): Provenance | undefined => usableProvenance(turn.kind === "analysis" ? turn.analysis?.provenance : turn.answer?.provenance);
 
+// A malformed createdAt (NaN, out of range) must not throw: the current time stands in.
+const isoOf = (ms: number, now = new Date()) => { const d = new Date(ms); return (Number.isNaN(d.getTime()) ? now : d).toISOString(); };
+
 /** The downloadable file. References keep their ID-check data but never the paper abstract. */
 export function buildProvenanceFile(turn: Turn, now = new Date()) {
   const provenance = provenanceOf(turn);
@@ -15,7 +18,7 @@ export function buildProvenanceFile(turn: Turn, now = new Date()) {
     format: "ai-scientist-provenance",
     version: 1,
     exported_at: now.toISOString(),
-    turn: { id: turn.id, question: turn.question, mode: turn.mode ?? null, created_at: new Date(turn.createdAt).toISOString() },
+    turn: { id: turn.id, question: turn.question, mode: turn.mode ?? null, created_at: isoOf(turn.createdAt, now) },
     answer: {
       content: turn.answer?.content ?? (a?.findings ?? []).join("\n"), // analysis has no answer text: its findings stand in
       references: (turn.answer?.references ?? []).map((r) => ({
@@ -29,7 +32,7 @@ export function buildProvenanceFile(turn: Turn, now = new Date()) {
   };
 }
 
-export const provenanceFilename = (turn: Turn) => `ai-scientist-provenance-${new Date(turn.createdAt).toISOString().slice(0, 10)}-${turn.id.slice(0, 8)}.json`;
+export const provenanceFilename = (turn: Turn) => `ai-scientist-provenance-${isoOf(turn.createdAt).slice(0, 10)}-${turn.id.slice(0, 8)}.json`;
 
 export function downloadProvenance(turn: Turn) {
   const file = buildProvenanceFile(turn);

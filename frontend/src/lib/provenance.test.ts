@@ -24,6 +24,13 @@ describe("provenance file", () => {
     const t = turn({ kind: "analysis", answer: undefined, analysis: { fileId: "f", fileName: "d.csv", steps: [], script: "print(1)", findings: ["x"], provenance: prov } });
     expect(buildProvenanceFile(t)).toMatchObject({ analysis: { script: "print(1)", file_id: "f", file_name: "d.csv" }, provenance: prov, answer: { content: "x", references: [] } });
   });
+  it("a malformed createdAt does not throw: the current time stands in", () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-02T10:00:00Z"));
+    const t = turn({ createdAt: Number.NaN });
+    expect(buildProvenanceFile(t, new Date("2026-11-02T10:00:00Z"))!.turn.created_at).toBe("2026-11-02T10:00:00.000Z");
+    expect(provenanceFilename(t)).toBe("ai-scientist-provenance-2026-11-02-abcdef12.json");
+    expect(provenanceFilename(turn({ createdAt: 1e20 }))).toBe("ai-scientist-provenance-2026-11-02-abcdef12.json");
+  });
   it("old turns have none", () => {
     expect(provenanceOf(turn({ answer: { content: "A", references: [] } }))).toBeUndefined();
     expect(buildProvenanceFile(turn({ answer: { content: "A", references: [] } }))).toBeNull();

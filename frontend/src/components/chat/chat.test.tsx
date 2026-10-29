@@ -9,7 +9,7 @@ import { emptyProgress } from "@/lib/progress";
 import { MAX_QUESTION, sampleQuestions, strings } from "@/lib/strings";
 import { useReportPanel } from "@/lib/exportReport";
 import { AgentMessage } from "./AgentMessage";
-import { Composer, useDraft, useMode } from "./Composer";
+import { Composer, useDraft, useMode, usePack } from "./Composer";
 import { EmptyChat } from "./EmptyChat";
 import { Thread } from "./Thread";
 
@@ -48,6 +48,7 @@ beforeEach(() => {
   upload.fn.mockReset();
   useDraft.setState({ drafts: {} });
   useMode.setState({ mode: "deep" });
+  usePack.setState({ pack: undefined });
 });
 afterEach(cleanup);
 
@@ -61,6 +62,25 @@ describe("Composer", () => {
     fireEvent.keyDown(box(), { key: "Enter" });
     expect(run.startRun).toHaveBeenCalledWith(id, "hello", { mode: "deep" });
     expect(box().value).toBe("");
+  });
+
+  it("the field picker defaults to General, sends the chosen pack, and is off in answer mode", () => {
+    const id = mk();
+    render(<Composer sessionId={id} />);
+    const chip = screen.getByRole("button", { name: `${t.packLabel}: ${t.packGeneral}` });
+    fireEvent.click(chip);
+    expect(screen.getAllByRole("menuitemradio")).toHaveLength(7);
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "เคมีสารสนเทศ" }));
+    expect(screen.getByRole("button", { name: `${t.packLabel}: เคมีสารสนเทศ` })).toBeInTheDocument();
+    type("hello");
+    fireEvent.keyDown(box(), { key: "Enter" });
+    expect(run.startRun).toHaveBeenCalledWith(id, "hello", { mode: "deep", pack: "chem" });
+  });
+  it("the field picker is disabled in answer-from-memory mode", () => {
+    const id = mk([turn("done", { answer: { content: "a", references: [] } })]);
+    useMode.setState({ mode: "chat" });
+    render(<Composer sessionId={id} />);
+    expect(screen.getByRole("button", { name: new RegExp(t.packLabel) })).toBeDisabled();
   });
 
   it("Enter while IME composing does not send", () => {
@@ -100,7 +120,7 @@ describe("Composer", () => {
     type("what changed?");
     expect(sendBtn()).toBeEnabled();
     fireEvent.click(sendBtn());
-    expect(run.startAnalysis).toHaveBeenCalledWith(id, "what changed?", "f1", "data.csv");
+    expect(run.startAnalysis).toHaveBeenCalledWith(id, "what changed?", "f1", "data.csv", undefined);
     expect(run.startRun).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByText("data.csv")).toBeNull());
   });
@@ -124,7 +144,7 @@ describe("Composer", () => {
     expect(useAttach.getState().file).toBeNull();
     type("go");
     fireEvent.click(sendBtn());
-    expect(run.startAnalysis).toHaveBeenCalledWith(expect.any(String), "go", "f9", "lib.csv");
+    expect(run.startAnalysis).toHaveBeenCalledWith(expect.any(String), "go", "f9", "lib.csv", undefined);
   });
 
   it("upload failure keeps an error chip and blocks Send until removed", async () => {
@@ -269,6 +289,14 @@ describe("Thread", () => {
     unmount();
     render(<AgentMessage sessionId="s" turn={turn("done", { analysis: { fileId: "f", steps: [] }, answer: { content: "a", references: [r], records: [rec] } })} />);
     expect(screen.queryByText(/Europe PMC/)).toBeNull();
+  });
+  it("a finished answer names its field; General and unknown ids show nothing", () => {
+    const a = { answer: { content: "a", references: [] } };
+    const { unmount } = render(<AgentMessage sessionId="s" turn={turn("done", { ...a, pack: "chem" })} />);
+    expect(screen.getByText("สาขา: เคมีสารสนเทศ")).toBeInTheDocument();
+    unmount();
+    render(<AgentMessage sessionId="s" turn={turn("done", { ...a, pack: "nope" as never })} />);
+    expect(screen.queryByText(/สาขา:/)).toBeNull();
   });
   it("a finished answer shows the run cost and tokens; ~ only when estimated; tokens only when cost unknown; hidden without usage", () => {
     const answer = (usage: unknown) => ({ answer: { content: "a", references: [], usage: usage as never } });
@@ -461,7 +489,7 @@ describe("Analysis messages", () => {
   it("analysis Retry resumes the same file instead of a research run", () => {
     render(<AgentMessage sessionId="s" turn={turn("error", { question: "why?", error: "boom", kind: "analysis", analysis })} />);
     fireEvent.click(screen.getByRole("button", { name: t.retry }));
-    expect(run.startAnalysis).toHaveBeenCalledWith("s", "why?", "f".repeat(32), "data.csv");
+    expect(run.startAnalysis).toHaveBeenCalledWith("s", "why?", "f".repeat(32), "data.csv", undefined);
     expect(run.startRun).not.toHaveBeenCalled();
   });
 

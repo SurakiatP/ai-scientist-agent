@@ -99,6 +99,26 @@ describe("streamAsk", () => {
   });
 });
 
+describe("pack in requests", () => {
+  const sent = (f: ReturnType<typeof mockFetch>) => JSON.parse(f.mock.calls[0][1].body as string);
+  it("streamAsk sends a known pack only", async () => {
+    let f = mockFetch(['data: {"type":"complete"}\n\n']);
+    await collect(undefined, { pack: "med" });
+    expect(sent(f).pack).toBe("med");
+    f = mockFetch(['data: {"type":"complete"}\n\n']);
+    await collect(undefined, { pack: "nope" as never });
+    expect(sent(f)).not.toHaveProperty("pack");
+    f = mockFetch(['data: {"type":"complete"}\n\n']);
+    await collect();
+    expect(sent(f)).not.toHaveProperty("pack");
+  });
+  it("streamAnalyze sends pack when given", async () => {
+    const f = mockFetch(['data: {"type":"complete"}\n\n']);
+    for await (const e of streamAnalyze("f".repeat(32), "q", new AbortController().signal, "chem")) void e;
+    expect(sent(f)).toEqual({ file_id: "f".repeat(32), question: "q", pack: "chem" });
+  });
+});
+
 describe("streamAnalyze", () => {
   async function collectAnalyze(signal = new AbortController().signal) {
     const out: AnalyzeEvent[] = [];

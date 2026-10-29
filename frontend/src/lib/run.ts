@@ -4,6 +4,7 @@ import { newId } from "./history";
 import { usePrefs } from "./prefs";
 import { emptyProgress, reduce, type Progress } from "./progress";
 import { ACTIVE, attachRun, cancelRun, getRun, refreshLoad, submitRun, type RunBody, type RunView } from "./runs";
+import { usablePack, type PackId } from "./packs";
 import { streamAnalyze, streamAsk, type AnalyzeEvent, type ApiError, type AskEvent, type AskMode, type HistoryTurn, type MemoryRef, type MemoryTurn, type Reference, type Search } from "./sse";
 import { usableProvenance, usableUsage } from "./sources";
 import { strings } from "./strings";
@@ -121,7 +122,7 @@ const askOutcome = (e: AskEvent): Patch | null => {
 };
 
 // The real ask stream, shared by startRun (direct runs) and approvePlan (a reviewed plan).
-async function runAsk(question: string, c: AbortController, opts: { mode: AskMode; history: HistoryTurn[]; plan?: Search[]; memory?: MemoryTurn[] }, patch: (p: Patch) => void): Promise<void> {
+async function runAsk(question: string, c: AbortController, opts: { mode: AskMode; pack?: PackId; history: HistoryTurn[]; plan?: Search[]; memory?: MemoryTurn[] }, patch: (p: Patch) => void): Promise<void> {
   let progress: Progress = emptyProgress;
   let answer: Patch["answer"];
   let outcome: Patch | null = null;
@@ -288,11 +289,13 @@ async function sharedRun(sessionId: string, body: RunBody, local: Turn, existing
   await follow(sessionId, t, run.id, f, t.progress);
 }
 
-export async function startRun(sessionId: string, question: string, opts: { mode?: AskMode } = {}): Promise<void> {
+export async function startRun(sessionId: string, question: string, opts: { mode?: AskMode; pack?: PackId } = {}): Promise<void> {
   if (!canStart(sessionId).ok) throw new Error("busy");
   const session = useChatStore.getState().sessions.find((x) => x.id === sessionId);
   if (!session) throw new Error("no such session"); // before any state or stream
   const mode: AskMode = opts.mode === "quick" || opts.mode === "chat" ? opts.mode : "deep";
+  const pack = mode === "chat" ? undefined : usablePack(opts.pack); // an answer from memory searches nothing: no field
+  const withPack = pack ? { pack } : {};
   // Deep Research can pause for plan review first; Quick and Answer-research never pause.
   const review = mode === "deep" && usePrefs.getState().reviewPlan;
   const turnId = newId();
@@ -302,8 +305,8 @@ export async function startRun(sessionId: string, question: string, opts: { mode
     take(sessionId, turnId, c);
     try {
       if (!session.title) store().renameSession(sessionId, question); // the session reaches the server with a title, like the first turn would have
-      await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question, mode, ...(mode === "chat" ? { memory: memoryFrom(session) } : { history: historyFrom(session) }) },
-        { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, mode }, false, c);
+      await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question, mode, ...withPack, ...(mode === "chat" ? { memory: memoryFrom(session) } : { history: historyFrom(session) }) },
+        { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, mode, ...withPack }, false, c);
     } catch (e) {
       if (!c.signal.aborted) throw e; // Stop before the server answered: the question is gone again
     } finally {
@@ -311,7 +314,7 @@ export async function startRun(sessionId: string, question: string, opts: { mode
     }
     return;
   }
-  store().addTurn(sessionId, { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, mode });
+  store().addTurn(sessionId, { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, mode, ...withPack });
   take(sessionId, turnId, c);
   const patch = (p: Parameters<ReturnType<typeof store>["patchTurn"]>[2]) => { if (leaving) return; try { store().patchTurn(sessionId, turnId, p); } catch {} }; // storage must never abort a run
   try {
@@ -319,7 +322,7 @@ export async function startRun(sessionId: string, question: string, opts: { mode
       let plan: Search[] | null = null;
       let outcome: Patch | null = null;
       try {
-        for await (const e of streamAsk(question, c.signal, { mode, history: historyFrom(session), planOnly: true })) {
+        for await (const e of streamAsk(question, c.signal, { mode, ...withPack, history: historyFrom(session), planOnly: true })) {
           if (e.type === "strategy") plan = e.searches;
           else if (e.type === "refused") outcome = { status: "refused", refused: e.reason, refusedCode: refusalCode(e.code) }; // planning asks too: scope can be refused
           else if (e.type === "error") outcome = { status: "error", error: errorText(e) };
@@ -335,7 +338,7 @@ export async function startRun(sessionId: string, question: string, opts: { mode
         return; // the plan fetch is done; the single-run lock is NOT held while the user reviews
       }
     } else {
-      await runAsk(question, c, mode === "chat" ? { mode, history: [], memory: memoryFrom(session) } : { mode, history: historyFrom(session) }, patch);
+      await runAsk(question, c, mode === "chat" ? { mode, history: [], memory: memoryFrom(session) } : { mode, ...withPack, history: historyFrom(session) }, patch);
     }
   } finally {
     release(sessionId);
@@ -351,12 +354,13 @@ export async function approvePlan(sessionId: string, turnId: string, plan: Searc
   if (!session || !turn) throw new Error("no such turn"); // before any state or stream
   if (turn.status !== "awaiting_plan") throw new Error("not awaiting");
   const mode: AskMode = turn.mode === "quick" ? "quick" : "deep"; // a plan is only ever reviewed in deep mode
+  const pack = usablePack(turn.pack), withPack = pack ? { pack } : {}; // the backend takes the field from this request, not from the plan fetch
   const c = new AbortController();
   const store = () => useChatStore.getState();
   take(sessionId, turnId, c);
   if (shared()) {
     try {
-      await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question: turn.question, mode, history: historyFrom(session), plan }, turn, true, c);
+      await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question: turn.question, mode, ...withPack, history: historyFrom(session), plan }, turn, true, c);
     } catch (e) {
       if (!c.signal.aborted) throw e; // the turn stays awaiting its plan; the card says the start failed
     } finally {
@@ -367,7 +371,7 @@ export async function approvePlan(sessionId: string, turnId: string, plan: Searc
   const patch = (p: Parameters<ReturnType<typeof store>["patchTurn"]>[2]) => { if (leaving) return; try { store().patchTurn(sessionId, turnId, p); } catch {} };
   try {
     store().patchTurn(sessionId, turnId, { status: "running", progress: emptyProgress, plan });
-    await runAsk(turn.question, c, { mode, history: historyFrom(session), plan }, patch);
+    await runAsk(turn.question, c, { mode, ...withPack, history: historyFrom(session), plan }, patch);
   } finally {
     release(sessionId);
   }
@@ -395,11 +399,12 @@ function reduceAnalysis(a: TurnAnalysis, e: AnalyzeEvent): TurnAnalysis {
 }
 
 // Same per-session controller as startRun: one active turn per session, Stop aborts it, a reload reads the stored turn as interrupted.
-export async function startAnalysis(sessionId: string, question: string, fileId: string, fileName?: string): Promise<void> {
+export async function startAnalysis(sessionId: string, question: string, fileId: string, fileName?: string, packId?: PackId): Promise<void> {
   if (!canStart(sessionId).ok) throw new Error("busy");
   const session = useChatStore.getState().sessions.find((x) => x.id === sessionId);
   if (!session) throw new Error("no such session"); // before any state or stream
   if (!fileId) throw new Error("no file"); // before any state or stream
+  const pack = usablePack(packId), withPack = pack ? { pack } : {};
   const turnId = newId();
   const c = new AbortController();
   const store = () => useChatStore.getState();
@@ -407,8 +412,8 @@ export async function startAnalysis(sessionId: string, question: string, fileId:
     take(sessionId, turnId, c);
     try {
       if (!session.title) store().renameSession(sessionId, question);
-      await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "analyze", question, file_id: fileId, ...(fileName ? { file_name: fileName } : {}) },
-        { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, kind: "analysis", analysis: analysisFrom(fileId, fileName) }, false, c);
+      await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "analyze", question, ...withPack, file_id: fileId, ...(fileName ? { file_name: fileName } : {}) },
+        { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, kind: "analysis", analysis: analysisFrom(fileId, fileName), ...withPack }, false, c);
     } catch (e) {
       if (!c.signal.aborted) throw e;
     } finally {
@@ -417,12 +422,12 @@ export async function startAnalysis(sessionId: string, question: string, fileId:
     return;
   }
   let analysis = analysisFrom(fileId, fileName);
-  store().addTurn(sessionId, { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, kind: "analysis", analysis });
+  store().addTurn(sessionId, { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, kind: "analysis", analysis, ...withPack });
   take(sessionId, turnId, c);
   const patch = (p: Parameters<ReturnType<typeof store>["patchTurn"]>[2]) => { if (leaving) return; try { store().patchTurn(sessionId, turnId, p); } catch {} };
   let outcome: Parameters<typeof patch>[0] | null = null;
   try {
-    for await (const e of streamAnalyze(fileId, question, c.signal)) {
+    for await (const e of streamAnalyze(fileId, question, c.signal, pack)) {
       analysis = reduceAnalysis(analysis, e);
       if (e.type === "analysis_result" || e.type === "complete") outcome = outcome ?? { status: "done" };
       else if (e.type === "refused") outcome = { status: "refused", refused: e.reason, refusedCode: refusalCode(e.code) };

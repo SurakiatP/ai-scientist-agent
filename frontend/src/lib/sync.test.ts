@@ -4,7 +4,7 @@ import { MAX_SESSIONS, MAX_TURNS, PERSONAL, useChatStore } from "./chat";
 import { gate } from "./config";
 import { useFilesStore } from "./files";
 import { emptyProgress } from "./progress";
-import { __queue, __resetSync, recordServerTurn, settleSession, startSync, TURN_GAP_MS, useSync } from "./sync";
+import { __queue, __resetSync, recordServerTurn, settleSession, startSync, toTurn, turnBody, TURN_GAP_MS, useSync } from "./sync";
 
 const run = vi.hoisted(() => ({ turn: null as string | null, att: null as string | null }));
 vi.mock("./run", () => ({ runningTurnIds: () => (run.turn ? [run.turn] : []), isRunningHere: (id: string) => id === run.turn, isAttached: (id: string) => id === run.att, attachRunning: vi.fn(), useRunState: () => ({ sessionId: null, turnId: null }), stopRun: vi.fn() }));
@@ -400,5 +400,17 @@ describe("server-owned runs and local caps", () => {
     expect(useChatStore.getState().sessions).toHaveLength(MAX_SESSIONS + 1);
     expect(calls.filter((c) => c.method === "DELETE")).toEqual([]);
     expect(useSync.getState().undo).toBeNull();
+  });
+});
+
+describe("pack on server rows", () => {
+  const row = (pack: unknown) => ({ id: "t1", question: "q", mode: "deep", status: "done", created_at: "2026-10-29T00:00:00Z", progress: {}, pack });
+  it("keeps a known pack, drops an unknown one but never the turn, writes it back", () => {
+    expect(toTurn(row("med"))).toMatchObject({ id: "t1", pack: "med" });
+    const t = toTurn(row("nope"))!;
+    expect(t.id).toBe("t1");
+    expect(t).not.toHaveProperty("pack");
+    expect(toTurn(row(null))).not.toHaveProperty("pack");
+    expect(turnBody({ ...toTurn(row("med"))! }, 0).pack).toBe("med");
   });
 });

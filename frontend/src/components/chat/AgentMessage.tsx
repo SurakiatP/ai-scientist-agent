@@ -22,6 +22,7 @@ import { ProgressCard } from "@/components/research/ProgressCard";
 import { AnswerSkeleton } from "@/components/research/AnswerSkeleton";
 import { ReportArtifact, reportId } from "@/components/research/ReportArtifact";
 import type { RefusalCode, Turn } from "@/lib/chat";
+import { packName, usablePack } from "@/lib/packs";
 import { downloadProvenance, provenanceOf } from "@/lib/provenance";
 import { useReportPanel } from "@/lib/exportReport";
 import { useInspector } from "@/lib/inspector";
@@ -58,8 +59,8 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const retry = () => {
     setRetryErr(null);
     const fail = (e: unknown) => setRetryErr(startError(e));
-    if (analysis) startAnalysis(sessionId, turn.question, analysis.fileId, analysis.fileName).catch(fail);
-    else startRun(sessionId, turn.question, { mode: turn.mode }).catch(fail);
+    if (analysis) startAnalysis(sessionId, turn.question, analysis.fileId, analysis.fileName, usablePack(turn.pack)).catch(fail);
+    else startRun(sessionId, turn.question, { mode: turn.mode, pack: usablePack(turn.pack) }).catch(fail);
   };
   const scope = { sessionId, turnId: turn.id };
   // the backend reason is English-only; Thai UI shows the localized scope message instead
@@ -72,6 +73,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const cost = usage && (usage.cost_usd === null ? t.runTokens : t.runCost)
     .replace("{cost}", `${usage.estimated ? "~" : ""}$${(usage.cost_usd ?? 0).toFixed(3)}`)
     .replace("{tokens}", (usage.prompt_tokens + usage.completion_tokens).toLocaleString(lang === "en" ? "en-US" : "th-TH"));
+  const field = usablePack(turn.pack) && t.packCaption.replace("{name}", packName(usablePack(turn.pack)!, lang));
   const replans = turn.progress.replans ?? [];
   const sourceIds = sourceNames(ids) ? ids : null; // no wrapper at all when no known source is to be named
   const [tab, setTab] = useState<"answer" | "sources">("answer");
@@ -145,14 +147,15 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
               <ReferenceList references={refs} t={t} scope={scope} />
             </Box>
           )}
-          {(sourceIds || cost || replans.length > 0) && (
+          {(sourceIds || cost || field || replans.length > 0) && (
             <Box sx={{ mt: 1.5 }}>
               {sourceIds && <SourcesUsed ids={sourceIds} />}
               {replans.map((r, i) => <Typography key={i} role="note" sx={{ fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{replanText(r, t)}</Typography>)}
+              {field && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{field}</Typography>}
               {cost && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{cost}</Typography>}
             </Box>
           )}
-          <Stack direction="row" spacing={1} useFlexGap sx={{ mt: sourceIds || cost || replans.length ? 1 : 2, flexWrap: "wrap" }}>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ mt: sourceIds || cost || field || replans.length ? 1 : 2, flexWrap: "wrap" }}>
             <Button variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={() => { useMode.getState().set("chat"); focusComposer(); }}>{t.askFollowUp}</Button>
             <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={refs.length === 0} sx={{ borderColor: "divider" }}
               onClick={(e) => openInspector({ ...scope, refId: refs[0].id }, e.currentTarget)}>{t.openEvidence}</Button>
