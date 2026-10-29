@@ -1,6 +1,7 @@
 """Sync client for the AI Scientist public API (/v1/api)."""
 import json
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
@@ -12,8 +13,11 @@ TERMINAL = {"done", "refused", "error", "stopped", "interrupted"}
 
 class ApiError(Exception):
     def __init__(self, status: int, code: str | None, message: str):
-        super().__init__(f"{status}{' ' + code if code else ''}: {message}")
+        super().__init__(status, code, message)  # keeps the exception picklable
         self.status, self.code, self.message = status, code, message
+
+    def __str__(self):
+        return f"{self.status}{' ' + self.code if self.code else ''}: {self.message}"
 
 
 @dataclass
@@ -148,6 +152,7 @@ def _raise(r: httpx.Response):
 
 class Client:
     def __init__(self, base_url: str, api_key: str, *, timeout: float = 30.0, transport: httpx.BaseTransport | None = None):
+        self._timeout = timeout
         self._http = httpx.Client(base_url=base_url.rstrip("/") + "/v1/api", headers={"Authorization": f"Bearer {api_key}"},
                                   timeout=timeout, transport=transport)
 
@@ -159,6 +164,13 @@ class Client:
 
     def __exit__(self, *a):
         self.close()
+
+    @staticmethod
+    def _rid(run_id: str) -> str:
+        try:
+            return str(uuid.UUID(str(run_id)))
+        except ValueError:
+            raise ValueError(f"invalid run id: {run_id!r}") from None
 
     def _req(self, method: str, path: str, **kw) -> httpx.Response:
         r = self._http.request(method, path, **kw)
@@ -177,19 +189,28 @@ class Client:
             body["plan"] = [{"term": s.term, "instructions": s.instructions} for s in plan]
         if doc_ids is not None:
             body["doc_ids"] = doc_ids
-        return Started(**self._req("POST", "/research", json=body).json())
+        return Started(**_fields(Started, self._req("POST", "/research", json=body).json()))
 
-    def run(self, run_id: str) -> Run:
-        return _run(self._req("GET", f"/runs/{run_id}").json())
+    def run(self, run_id: str, *, _timeout: float | None = None) -> Run:
+        kw = {} if _timeout is None else {"timeout": _timeout}
+        return _run(self._req("GET", f"/runs/{self._rid(run_id)}", **kw).json())
 
     def wait(self, run_id: str, *, timeout: float = 600.0, interval: float = 1.0, max_interval: float = 10.0) -> Run:
         """Poll with capped exponential backoff; on timeout return the last state (never raises for timeout)."""
         end = time.monotonic() + timeout
+        last = None
         while True:
-            run = self.run(run_id)
             left = end - time.monotonic()
-            if run.done or left <= 0:
-                return run
+            try:  # each poll is capped by the time left, so a slow server cannot overrun the deadline
+                last = self.run(run_id, _timeout=min(self._timeout, max(left, 0.1)))
+                if last.done:
+                    return last
+            except httpx.TransportError:
+                if last is None:
+                    raise
+            left = end - time.monotonic()
+            if left <= 0:
+                return last
             time.sleep(min(interval, left))
             interval = min(interval * 2, max_interval)
 
@@ -197,15 +218,20 @@ class Client:
         headers = {"Accept": "text/event-stream"}
         if last_event_id is not None:
             headers["Last-Event-ID"] = str(last_event_id)
-        with self._http.stream("GET", f"/runs/{run_id}/events", headers=headers, timeout=httpx.Timeout(30.0, read=None)) as r:
+        with self._http.stream("GET", f"/runs/{self._rid(run_id)}/events", headers=headers,
+                              timeout=httpx.Timeout(self._timeout, read=60.0)) as r:
             if r.status_code >= 400:
                 _raise(r)
             eid, data = None, []
             for line in r.iter_lines():
                 if line == "":
                     if data:
-                        yield Event(eid, json.loads("\n".join(data)))
-                    eid, data = None, []
+                        try:
+                            payload = json.loads("\n".join(data))
+                        except ValueError:
+                            raise ApiError(r.status_code, "bad_event", "event data is not valid JSON") from None
+                        yield Event(eid, payload)
+                    data = []  # the last-event id persists across events (SSE spec)
                 elif line.startswith(":"):
                     continue
                 else:
@@ -217,14 +243,14 @@ class Client:
                         data.append(val)
 
     def cancel(self, run_id: str) -> Run:
-        return _run(self._req("POST", f"/runs/{run_id}/cancel").json())
+        return _run(self._req("POST", f"/runs/{self._rid(run_id)}/cancel").json())
 
     def artifact(self, run_id: str, kind: str) -> dict | str:
         """provenance -> dict; bibtex / ris -> text."""
         if kind not in ("provenance", "bibtex", "ris"):
             raise ValueError("kind must be provenance, bibtex or ris")
-        r = self._req("GET", f"/runs/{run_id}/artifacts/{kind}")
+        r = self._req("GET", f"/runs/{self._rid(run_id)}/artifacts/{kind}")
         return r.json() if kind == "provenance" else r.content.decode("utf-8")
 
     def packs(self) -> list[Pack]:
-        return [Pack(**p) for p in self._req("GET", "/packs").json()]
+        return [Pack(**_fields(Pack, p)) for p in self._req("GET", "/packs").json()]

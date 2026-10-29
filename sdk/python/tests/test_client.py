@@ -177,3 +177,58 @@ def test_live_backend_packs_and_auth():
     with pytest.raises(ApiError) as e:
         Client(os.environ["AI_SCIENTIST_URL"], "sci_" + "x" * 43).packs()
     assert e.value.status == 401
+
+
+# --- fix round 1 -----------------------------------------------------------------------------------------------------------
+def test_wait_slow_poll_keeps_deadline_and_returns_last_good_state(ft):
+    seen, n = [], {"i": 0}
+
+    def h(req):
+        n["i"] += 1
+        if n["i"] == 1:
+            return httpx.Response(200, json=QUEUED)
+        seen.append(req.extensions["timeout"]["read"])
+        ft.now += seen[-1]  # the poll hangs until its (capped) timeout
+        raise httpx.ReadTimeout("slow", request=req)
+
+    r = client(h).wait(RID, interval=1, timeout=10)
+    assert r.status == "queued" and ft.now <= 10.2
+    assert all(t <= 10 for t in seen) and min(seen) >= 0.1
+
+
+def test_wait_transport_error_without_state_raises(ft):
+    def h(req):
+        raise httpx.ConnectError("down", request=req)
+
+    with pytest.raises(httpx.TransportError):
+        client(h).wait(RID, timeout=5)
+
+
+def test_sse_id_persists_and_bad_json_is_api_error():
+    ev = list(client(lambda r: httpx.Response(200, content=b"id: 4\ndata: {\"type\":\"a\"}\n\ndata: {\"type\":\"b\"}\n\n")).events(RID))
+    assert [e.id for e in ev] == [4, 4]
+    with pytest.raises(ApiError) as e:
+        list(client(lambda r: httpx.Response(200, content=b"data: not json\n\n")).events(RID))
+    assert e.value.code == "bad_event"
+
+
+def test_tolerant_shapes_and_run_id_validation():
+    c = client(lambda r: httpx.Response(200, json=[{"id": "bio", "th": "t", "en": "e", "new": 1}]) if r.url.path.endswith("packs")
+               else httpx.Response(202, json={"run_id": RID, "session_id": "s", "turn_id": "t", "status": "queued", "extra": 1}))
+    assert c.packs()[0].id == "bio" and c.research("q").run_id == RID
+    for bad in ("../x", "abc", RID + "/cancel"):
+        with pytest.raises(ValueError):
+            c.run(bad)
+
+
+def test_error_pickles_and_key_not_leaked():
+    import pickle
+    e = pickle.loads(pickle.dumps(ApiError(429, "client_busy", "busy")))
+    assert (e.status, e.code, e.message) == (429, "client_busy", "busy") and "429" in str(e)
+    c = Client(BASE, "sci_secretkey")
+    assert "secretkey" not in repr(c) and "secretkey" not in str(ApiError(401, None, "invalid or missing API key"))
+
+
+def test_py_typed_present():
+    import pathlib
+    assert (pathlib.Path(sdk.__file__).parent / "py.typed").exists()
