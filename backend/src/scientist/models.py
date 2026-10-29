@@ -60,7 +60,10 @@ runs = sa.Table(
     "runs", md, sa.Column("id", UUID, primary_key=True), sa.Column("client_id", sa.Text, nullable=False),
     sa.Column("session_id", UUID), sa.Column("turn_id", UUID), sa.Column("kind", sa.Text, nullable=False),
     sa.Column("mode", sa.Text), sa.Column("request", pg.JSONB), sa.Column("status", sa.Text, nullable=False),
-    _ts("created_at", nullable=False, server_default=NOW), _ts("started_at"), _ts("finished_at"), sa.Column("error", sa.Text))
+    _ts("created_at", nullable=False, server_default=NOW), _ts("started_at"), _ts("finished_at"), sa.Column("error", sa.Text),
+    sa.Column("worker", sa.Text), _ts("lease_until"), sa.Column("attempt", sa.Integer, nullable=False, server_default="1"),
+    sa.Column("cancel_requested", sa.Boolean, nullable=False, server_default=sa.false()), sa.Column("pool", sa.Text),
+    _ts("served_at"), sa.Index("runs_status_pool", "status", "pool"))
 run_events = sa.Table(
     "run_events", md, sa.Column("run_id", UUID, sa.ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True),
     sa.Column("seq", sa.Integer, primary_key=True), _ts("at", nullable=False, server_default=NOW),

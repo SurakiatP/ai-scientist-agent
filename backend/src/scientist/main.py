@@ -12,6 +12,7 @@ from starlette.routing import Route
 from scientist import mcp_server, store as store_mod, usage
 from scientist.config import get_settings
 from scientist.gate import RunGate
+from scientist.pgbus import PgBus
 from scientist.runqueue import RunQueue
 from scientist.runs import RunService
 from scientist.routes_runs import router as runs_router
@@ -56,6 +57,9 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                 except Exception:
                     log.exception("object store unavailable")
             purger = asyncio.create_task(_purge_hourly(app)) if app.state.data else None
+            if app.state.db and settings.database_url:
+                app.state.pgbus = PgBus(settings)
+                await app.state.pgbus.start()
             if app.state.runs:
                 try:
                     await app.state.runs.startup()
@@ -66,6 +70,8 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
             finally:
                 if app.state.runs:
                     await app.state.runs.shutdown()  # before the runtime closes: runs kill their own bridges
+                if app.state.pgbus:
+                    await app.state.pgbus.stop()
                 if purger:
                     purger.cancel()
                     with suppress(asyncio.CancelledError):
@@ -91,6 +97,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     store_mod.MAX_JSON_BYTES[0] = settings.store_max_turn_json_bytes
     app = FastAPI(title="scientist", lifespan=lifespan)
     app.state.db = db or open_database(settings)
+    app.state.pgbus = None  # set in the lifespan when a database is configured
     app.state.data = Store(app.state.db, Bus(), settings, lambda: app.state.store) if app.state.db else None
 
     @app.exception_handler(RateLimited)

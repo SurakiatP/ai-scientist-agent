@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     max_running_per_client: int = Field(3, ge=1)  # one browser may run several sessions at once; the pool limit still caps the server
     max_queued_per_client: int = Field(1, ge=0)  # each submitted run keeps one event stream open: 3 + 1 + the store stream stays under the 6 connections per host of plain HTTP/1.1
     run_queue_max: int = Field(20, ge=0)  # runs allowed to wait across all clients; more get 429 queue_full
+    run_lease_seconds: int = Field(30, ge=5)  # a run's owner renews its lease every third of this; another process re-queues a run whose lease ran out
+    run_max_attempts: int = Field(2, ge=1)  # a run lost to a dead process is restarted until this many attempts, then marked interrupted
+    scheduler_poll_seconds: float = Field(2.0, gt=0)  # every process looks for a queued run to claim at least this often (NOTIFY wakes it sooner)
     run_retention_days: int = Field(7, ge=1)
     app_version: str | None = None  # e.g. the image tag; recorded in each answer's provenance
     contact_email: str = ""  # sent as mailto in the citation-check User-Agent (Crossref/NCBI polite pool)
