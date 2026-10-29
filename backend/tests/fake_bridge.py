@@ -11,7 +11,10 @@ import time
 request = json.loads(sys.stdin.readline())
 script = json.loads(open(sys.argv[1]).read())
 for step in script.get(request["term"], script.get("*", [])):
-    if "on_term" in step:  # like the real bridge: on SIGTERM print this line, then exit
+    if "ignore_term" in step:
+        import signal
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    elif "on_term" in step:  # like the real bridge: on SIGTERM print this line, then exit
         import signal
         signal.signal(signal.SIGTERM, lambda *_, line=json.dumps(step["on_term"]): (print(line, flush=True), os._exit(143)))
     elif "sleep" in step:

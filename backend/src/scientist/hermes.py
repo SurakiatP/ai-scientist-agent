@@ -31,6 +31,7 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1"
 PROMPTS = Path(__file__).parent / "prompts"
 DB_SKILL = "database-lookup"
 BRANCH_TIMEOUT_S = 300
+SPENT_WAIT_S = 15  # how long a stopped bridge may take to print its usage line
 
 
 class BranchFailed(BaseModel):
@@ -224,9 +225,11 @@ class HermesRuntime(BranchRunner):
             if not ended:
                 yield BranchFailed(term=term, reason=type(e).__name__)
         finally:
-            if not metered and proc.returncode is None:  # cancelled or timed out: SIGTERM makes the bridge print what it spent
-                metered = await self._spent(proc, term)
-            await self._stop(proc)
+            try:
+                if not metered and proc.returncode is None:  # cancelled or timed out: SIGTERM makes the bridge print what it spent
+                    metered = await self._spent(proc, term)
+            finally:  # a second cancel during _spent must still reap the bridge
+                await self._stop(proc)
         if not metered:  # bridge died or timed out before reporting: the total must show it is incomplete
             yield BranchUsage(term=term)
 
@@ -243,8 +246,9 @@ class HermesRuntime(BranchRunner):
                         return True
             return False
         try:
-            return await asyncio.wait_for(read(), 15)
+            return await asyncio.wait_for(read(), SPENT_WAIT_S)
         except (TimeoutError, OSError, ValueError):
+            await kill_and_reap(proc)  # hung bridge: no second SIGTERM wait
             return False
 
     async def _stop(self, proc: asyncio.subprocess.Process) -> None:

@@ -425,3 +425,31 @@ async def test_usage_before_answer_still_fails_the_branch_and_counts_once(settin
 async def test_unknown_status_nulls_the_cost(settings, tmp_path):
     items = await collect(runtime(settings, tmp_path, [{"event": "answer", "content": "d"}, usage_line(cost_usd=0.0, cost_status="unknown")]), usage=True)
     assert items[-1].cost_usd is None
+
+
+async def test_hung_bridge_is_killed_fast_and_untracked_after_cancel(settings, tmp_path, monkeypatch):
+    import time
+    from scientist import hermes
+    monkeypatch.setattr(hermes, "SPENT_WAIT_S", 0.5)
+    rt = runtime(settings, tmp_path, [{"ignore_term": True}, {"sleep": 60}])
+    task = asyncio.create_task(collect(rt))
+    await asyncio.sleep(1)
+    start = time.monotonic()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert time.monotonic() - start < 5 and not rt.procs  # killed after the short wait, not a second 15 s SIGTERM wait
+
+
+async def test_second_cancel_during_spent_still_reaps(settings, tmp_path, monkeypatch):
+    from scientist import hermes
+    monkeypatch.setattr(hermes, "SPENT_WAIT_S", 30)
+    rt = runtime(settings, tmp_path, [{"ignore_term": True}, {"sleep": 60}])
+    task = asyncio.create_task(collect(rt))
+    await asyncio.sleep(1)
+    task.cancel()
+    await asyncio.sleep(0.3)  # now inside _spent, waiting for a usage line that never comes
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not rt.procs
