@@ -1,10 +1,12 @@
 # Build from the repo root: docker build -f backend/Dockerfile .
-FROM ghcr.io/astral-sh/uv:0.8.17 AS uv
+# uv:0.8.17 index digest, resolved 2026-10-29 via `docker buildx imagetools inspect ghcr.io/astral-sh/uv:0.8.17`
+FROM ghcr.io/astral-sh/uv:0.8.17@sha256:e4644cb5bd56fdc2c5ea3ee0525d9d21eed1603bccd6a21f887a938be7e85be1 AS uv
 
 # docker CLI only (no daemon): docker:28.5.2-cli index digest, resolved 2026-10-29 via `docker buildx imagetools inspect docker:28.5.2-cli`
 FROM docker:28.5.2-cli@sha256:625d9431a9f54c5a2bc90f24f0e1c3d55b1349fd857dd85035f98c2c9acbdd4d AS dockercli
 
-FROM python:3.12.11-slim-bookworm
+# python:3.12.11-slim-bookworm index digest, resolved 2026-10-29 via `docker buildx imagetools inspect python:3.12.11-slim-bookworm`
+FROM python:3.12.11-slim-bookworm@sha256:519591d6871b7bc437060736b9f7456b8731f1499a57e22e6c285135ae657bf7
 COPY --from=uv /uv /usr/local/bin/uv
 COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never \
