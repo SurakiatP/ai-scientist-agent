@@ -38,10 +38,15 @@ def write_guard(request: Request, st: Store = Depends(data)) -> None:
     """Per-client-IP sliding minute (behind a proxy, set FORWARDED_ALLOW_IPS so the real client IP is seen)."""
     if request.method != "DELETE":  # DELETE always preflights; the rest must declare JSON, even body-less POSTs
         require_json(request)
+    rate_limit(st, request.client.host if request.client else "?")
+
+
+def rate_limit(st: Store, ident: str) -> None:
+    """Sliding minute of store_write_rate_per_min per ident (client IP, or "key:<id>" for API keys)."""
     cap = st.settings.store_write_rate_per_min
     if not cap:
         return
-    now, q = time.monotonic(), st.writes[request.client.host if request.client else "?"]
+    now, q = time.monotonic(), st.writes[ident]
     while q and now - q[0] > 60:
         q.popleft()
     if len(q) >= cap:

@@ -65,3 +65,7 @@ run_events = sa.Table(
     "run_events", md, sa.Column("run_id", UUID, sa.ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True),
     sa.Column("seq", sa.Integer, primary_key=True), _ts("at", nullable=False, server_default=NOW),
     sa.Column("event", pg.JSONB, nullable=False))
+api_keys = sa.Table(  # only the sha256 of a key is stored; prefix = first 12 chars, for listings
+    "api_keys", md, sa.Column("id", UUID, primary_key=True), sa.Column("name", sa.Text, nullable=False),
+    sa.Column("prefix", sa.Text, nullable=False), sa.Column("hash", sa.Text, nullable=False, unique=True),
+    _ts("created_at", nullable=False, server_default=NOW), _ts("revoked_at"), _ts("last_used_at"))
