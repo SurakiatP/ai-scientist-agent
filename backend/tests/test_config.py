@@ -59,6 +59,6 @@ def test_replan_defaults_and_bounds():
 
 def test_review_defaults_and_bounds():
     s = Settings()
-    assert (s.review_enabled, s.review_max_tokens) == (True, 2500)
+    assert (s.review_enabled, s.review_max_tokens) == (True, 8000)
     with pytest.raises(Exception):
         Settings(review_max_tokens=255)
