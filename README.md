@@ -54,6 +54,8 @@ Needs `uv`, Node >= 20 with npm, and a running Docker.
 | `GUARDRAIL_MAX_TOKENS` | 256 | `max_tokens` for the scope-check call (reasoning models spend part of it thinking; too small comes back blank) |
 | `STRATEGY_MAX_TOKENS` | 1500 | `max_tokens` for the search-plan call |
 | `SYNTHESIS_MAX_TOKENS` | 4000 | `max_tokens` for the final-answer call |
+| `REVIEW_ENABLED` | true | reviewer pass after synthesis: checks each cited claim against the cited paper's abstract, keeps only exact quotes, flags unsupported citations; a failure never fails the run |
+| `REVIEW_MAX_TOKENS` | 2500 | `max_tokens` for the reviewer call (min 256) |
 | `CONTACT_EMAIL` | empty | sent as `mailto:` in the citation-check User-Agent (Crossref/NCBI ask for one); empty: no `mailto` |
 
 ## Run

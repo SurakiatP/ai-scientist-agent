@@ -32,6 +32,7 @@ PAPER_SCHEMA = {
         "doi": {"type": "string", "description": "DOI without the https://doi.org/ prefix, if known"},
         "pmid": {"type": "string", "description": "PubMed ID, if known"},
         "url": {"type": "string", "description": "Landing page; https://doi.org/<doi> when nothing better"},
+        "abstract": {"type": "string", "description": "The abstract as the API returned it; leave out if none"},
         "source": {"type": "string", "enum": list(PAPER_SOURCES),
                    "description": "The one paper-lookup API you actually used to get THIS paper"},
     }},
@@ -71,6 +72,8 @@ def clean_paper(args):
     paper["title"], paper["url"] = title.strip(), url.strip()
     if isinstance(args.get("source"), str):  # advisory: the backend normalizes it, a bad one never rejects the paper
         paper["source"] = args["source"].strip()
+    if isinstance(args.get("abstract"), str) and args["abstract"].strip():  # advisory, capped by the backend
+        paper["abstract"] = args["abstract"].strip()
     authors, year, doi, pmid = (args.get(k) for k in ("authors", "year", "doi", "pmid"))
     if authors is not None:
         if not isinstance(authors, list) or not all(isinstance(a, str) for a in authors):

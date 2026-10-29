@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     guardrail_max_tokens: int = 256
     strategy_max_tokens: int = 1500
     synthesis_max_tokens: int = 4000
+    review_enabled: bool = True  # reviewer pass: checks cited claims against the cited abstracts before delivery
+    review_max_tokens: int = Field(2500, ge=256)
     # "answer research" (chat) mode: the browser sends the session's earlier turns; these cap what reaches the model
     chat_memory_turns: int = Field(8, ge=1)  # newest turns kept
     chat_memory_answer_chars: int = Field(6000, ge=1)  # per answer

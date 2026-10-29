@@ -453,3 +453,10 @@ async def test_second_cancel_during_spent_still_reaps(settings, tmp_path, monkey
     with pytest.raises(asyncio.CancelledError):
         await task
     assert not rt.procs
+
+
+def test_bridge_keeps_paper_abstract():
+    b = load_bridge()
+    assert b.clean_paper({"title": "T", "url": "https://x.org", "abstract": " Text. "})[0]["abstract"] == "Text."
+    assert "abstract" not in b.clean_paper({"title": "T", "url": "https://x.org", "abstract": 5})[0]
+    assert "abstract" in b.PAPER_SCHEMA["parameters"]["properties"]

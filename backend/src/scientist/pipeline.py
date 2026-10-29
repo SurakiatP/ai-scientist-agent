@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from scientist import llm, usage
 from scientist.citations import verify_references
 from scientist.config import Settings
-from scientist.events import (BranchAnswer, Complete, DataRecord, Error, Event, FinalAnswer, Paper, Records, Reference, Refused,
+from scientist.events import (BranchAnswer, Check, Complete, DataRecord, Error, Event, FinalAnswer, Paper, Records, Reference, Refused,
                               Replan, Search, Sources, Strategy, Waiting, arxiv_id, paper_key)
 from scientist.gate import RunGate
 from scientist.guardrail import guard
@@ -22,6 +22,7 @@ from scientist.sources import DATA_SOURCES
 PROMPTS = Path(__file__).parent / "prompts"
 STRATEGY = (PROMPTS / "strategy.md").read_text()
 REPLAN = (PROMPTS / "replan.md").read_text()
+REVIEW = (PROMPTS / "review.md").read_text()
 SYNTHESIS = (PROMPTS / "synthesis.md").read_text()
 CHAT = (PROMPTS / "chat.md").read_text()
 THAI = re.compile("[฀-๿]")
@@ -87,11 +88,54 @@ async def _replan(question: str, thin: list[tuple[str, int]], tried: list[str], 
 
 
 def _data_block(references: list[Reference], answers: list[BranchAnswer], records: list[DataRecord] = ()) -> str:
-    data = {"references": [{"id": r.id, "status": r.status, **r.paper.model_dump()} for r in references],
+    data = {"references": [{"id": r.id, "status": r.status, **r.paper.model_dump(exclude={"abstract"})} for r in references],
             "records": [r.model_dump() for r in records],  # fields are already length-capped by DataRecord
             "findings": [{"search": a.term, "summary": a.content} for a in answers]}
     # JSON keeps the text a string; escaping "<" stops it from closing the block early
     return "<data>\n" + json.dumps(data, ensure_ascii=False, indent=1).replace("<", "\\u003c") + "\n</data>"
+
+
+def _squash(s: str) -> str:
+    return " ".join(s.split())
+
+
+async def _review(text: str, refs: list[Reference], settings: Settings) -> list[Reference] | None:
+    """Check each claim cited to a reference with an abstract. Returns the references with `checks`, or None when there is
+    nothing to review or anything fails (the answer then goes out as without review). A quote survives only as an exact,
+    case-sensitive substring of that abstract after collapsing whitespace; otherwise the check becomes no_quote."""
+    cited = {m[1] for m in re.finditer(r"\[(\d+)\]", text)}
+    pool = {r.id: r for r in refs if r.id in cited and r.paper.abstract}
+    for k in list(pool)[30:]:  # at most 30 references go to the reviewer
+        del pool[k]
+    if not pool:
+        return None
+    data = {"answer": text[:20000],
+            "references": [{"id": r.id, "title": r.paper.title, "abstract": r.paper.abstract} for r in pool.values()]}
+    user = "<data>\n" + json.dumps(data, ensure_ascii=False, indent=1).replace("<", "\\u003c") + "\n</data>"
+    try:
+        r = await llm.complete(REVIEW, user, max_tokens=settings.review_max_tokens, json_mode=True, settings=settings)
+        raw = json.loads(r.text)["checks"]
+        if not isinstance(raw, list):
+            return None
+    except Exception:
+        return None
+    checks: dict[str, list[Check]] = {}
+    total = 0
+    for c in raw:
+        try:
+            ref, support = str(c["ref"]), c["support"]
+            if ref not in pool or support not in ("supported", "partial", "unsupported", "no_quote") or len(checks.get(ref, [])) >= 5 or total >= 60:
+                continue
+            quote = _squash(c["quote"]) if isinstance(c.get("quote"), str) else ""
+            if quote and quote not in _squash(pool[ref].paper.abstract) or len(quote) > 600:
+                quote = ""
+            if support in ("supported", "partial") and not quote:
+                support = "no_quote"
+            checks.setdefault(ref, []).append(Check(claim=str(c["claim"]).strip()[:400], support=support, quote=quote or None))
+            total += 1
+        except Exception:  # one malformed check is dropped, not the rest
+            continue
+    return [x.model_copy(update={"checks": checks.get(x.id, [])}) for x in refs]
 
 
 def _has_id(r: Reference) -> bool:
@@ -292,7 +336,13 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     except Exception:
         yield Error(message="Could not write the answer. Please try again.")
         return
-    yield FinalAnswer(content=r.text.strip() + note, references=refs, records=final_records, usage=usage.snapshot())
+    text = r.text.strip()
+    if settings.review_enabled and mode in ("deep", "quick") and (reviewed := await _review(text, refs, settings)):
+        refs = reviewed
+        if ids := "".join(f"[{x.id}]" for x in refs if any(c.support == "unsupported" for c in x.checks)):
+            note += (f"\n\nNote: the reviewer found that reference(s) {ids} do not support the claim they are cited for. "
+                     "Treat those claims with caution.")
+    yield FinalAnswer(content=text + note, references=refs, records=final_records, usage=usage.snapshot())
     yield Complete()
 
 

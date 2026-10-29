@@ -67,6 +67,12 @@ class Paper(BaseModel):
     pmid: str | None = None
     url: str
     source: str | None = None  # which paper-lookup API it came from; unknown or garbage -> None, never a rejection
+    abstract: str | None = None  # as the API returned it; untrusted. Stripped, cut at 2000 chars, never a rejection
+
+    @field_validator("abstract", mode="before")
+    @classmethod
+    def _abstract(cls, v):
+        return (v.strip()[:2000].strip() or None) if isinstance(v, str) else None
 
     @field_validator("source", mode="before")
     @classmethod
@@ -126,10 +132,18 @@ class Records(BaseModel):
     records: list[DataRecord]
 
 
+class Check(BaseModel):
+    """The reviewer's verdict on one claim cited to a reference; a quote is only ever an exact passage of the abstract."""
+    claim: str = Field(max_length=400)
+    support: Literal["supported", "partial", "unsupported", "no_quote"]
+    quote: str | None = Field(None, max_length=600)
+
+
 class Reference(BaseModel):
     id: str
     paper: Paper
     status: Literal["verified", "unverified", "unknown"]
+    checks: list[Check] = []
 
 
 class Search(BaseModel):
