@@ -104,7 +104,7 @@ class HermesRuntime(BranchRunner):
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": str(home / "process-home"), "HERMES_HOME": str(home),
             "DOCKER_CONFIG": os.environ.get("DOCKER_CONFIG", str(Path.home() / ".docker")),
-            **({"DOCKER_HOST": os.environ["DOCKER_HOST"]} if "DOCKER_HOST" in os.environ else {}),
+            **{k: os.environ[k] for k in ("DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH") if k in os.environ},
             "PYTHONPATH": str(source), "PYTHONDONTWRITEBYTECODE": "1",
             "TERMINAL_ENV": "docker", "TERMINAL_DOCKER_IMAGE": SANDBOX_IMAGE, "TERMINAL_DOCKER_IMAGE_PINNED": "1",
             "TERMINAL_CONTAINER_PERSISTENT": "false", "TERMINAL_DOCKER_PERSIST_ACROSS_PROCESSES": "false",

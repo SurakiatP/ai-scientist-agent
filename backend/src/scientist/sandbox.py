@@ -9,6 +9,7 @@ import binascii
 import json
 import re
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -71,7 +72,33 @@ class AnalysisResult(BaseModel):
     error: str | None = None  # timeout / output_too_large / docker_unavailable / script_error / ...
 
 
-WORK = Path.home() / ".cache/scientist/sandbox"  # under $HOME: Docker Desktop/colima share it, not always the system tmp
+
+
+def work_dir(settings: Settings) -> Path:
+    # default under $HOME: Docker Desktop/colima share it, not always the system tmp
+    return settings.sandbox_work_dir or Path.home() / ".cache/scientist/sandbox"
+
+
+_reach = [0.0, False]  # monotonic time of the last probe, its result
+
+
+async def docker_reachable() -> bool:
+    if time.monotonic() - _reach[0] < 30 and _reach[0]:
+        return _reach[1]
+    ok = False
+    try:
+        p = await asyncio.create_subprocess_exec("docker", "version", "--format", "{{.Server.Version}}",
+                                                 stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        try:
+            ok = await asyncio.wait_for(p.wait(), 3) == 0
+        except TimeoutError:
+            await kill_and_reap(p)
+    except OSError:
+        pass
+    _reach[:] = [time.monotonic(), ok]
+    return ok
+
+
 PROC = uuid.uuid4().hex[:12]  # per-process label value
 STDERR_KEEP = 4096
 MAX_TABLES, MAX_ROWS, MAX_COLS, MAX_FINDINGS, MAX_FIGS = 20, 200, 200, 20, 20
@@ -204,8 +231,9 @@ async def run_analysis(script: str | None, data: bytes, ext: str, settings: Sett
     """script None = profile only (no model code runs). Never shell=True; no secrets are passed in. Concurrency is
     limited by the caller (routes_analyze's gate)."""
     s, name = settings, f"scientist-sandbox-{uuid.uuid4().hex[:12]}"
-    WORK.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="run-", dir=WORK) as tmp:  # only the backend writes here: cleanup always works
+    work = work_dir(s)
+    work.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="run-", dir=work) as tmp:  # only the backend writes here: cleanup always works
         Path(tmp).chmod(0o711)  # mkdtemp is 0700; the container user (65534) must traverse it, not list it
         inp = Path(tmp, "in")
         inp.mkdir(mode=0o755)

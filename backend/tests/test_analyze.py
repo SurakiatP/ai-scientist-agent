@@ -207,7 +207,8 @@ sys.stdout.write(os.environ.get("FAKE_DOC", ""))
     log.touch()
     monkeypatch.setenv("PATH", f"{d}:{os.environ['PATH']}")
     monkeypatch.setenv("FAKE_LOG", str(log))
-    monkeypatch.setattr(sandbox, "WORK", tmp_path / "work")
+    monkeypatch.setenv("SANDBOX_WORK_DIR", str(tmp_path / "work"))
+    get_settings.cache_clear()
 
     def setup(mode, doc=b""):
         monkeypatch.setenv("FAKE_MODE", mode)
@@ -282,7 +283,7 @@ async def test_disabled_503_and_health(store, monkeypatch):
     async with await _client(store) as c:
         r = await c.post("/v1/async/analyze", json={"file_id": "f" * 32, "question": "x"})
         assert r.status_code == 503 and "disabled" in r.text
-        assert (await c.get("/v1/health")).json() == {"status": "ok", "files": "ok", "db": "disabled", "analysis": "disabled"}
+        assert (await c.get("/v1/health")).json() == {"status": "ok", "files": "ok", "db": "disabled", "analysis": "disabled", "sandbox": "disabled"}
 
 
 async def test_queue_full_429_before_any_fetch_or_llm(store, fakes, monkeypatch):

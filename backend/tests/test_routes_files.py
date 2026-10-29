@@ -104,11 +104,11 @@ async def test_bad_ids_404(c):
 async def test_store_down_503(c, store):
     store.up = False
     assert (await up(c, "a.csv", b"1")).status_code == 503
-    assert (await c.get("/v1/health")).json() == {"status": "ok", "files": "unavailable", "db": "disabled"}
+    assert {k: v for k, v in (await c.get("/v1/health")).json().items() if k != "sandbox"} == {"status": "ok", "files": "unavailable", "db": "disabled"}
 
 
 async def test_health_ok_and_no_endpoint_503(c, monkeypatch):
-    assert (await c.get("/v1/health")).json() == {"status": "ok", "files": "ok", "db": "disabled"}
+    assert {k: v for k, v in (await c.get("/v1/health")).json().items() if k != "sandbox"} == {"status": "ok", "files": "ok", "db": "disabled"}
     monkeypatch.setenv("MINIO_ENDPOINT", "")
     get_settings.cache_clear()
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app()), base_url="http://t") as c2:

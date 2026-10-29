@@ -13,6 +13,7 @@ from scientist.runqueue import RunQueue
 from scientist.runs import RunService
 from scientist.routes_runs import router as runs_router
 from scientist.object_store import ObjectStore, create_store
+from scientist import sandbox
 from scientist.sandbox import sweep_sandboxes
 from scientist.hermes import BranchRunner, HermesRuntime, sweep_containers
 from scientist.routes_ask import router as ask_router
@@ -131,6 +132,9 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
             h["db"] = {"ok": "ok", "behind": "behind"}.get(st, "unavailable")
         if not settings.sandbox_enabled:
             h["analysis"] = "disabled"
+            h["sandbox"] = "disabled"
+        else:
+            h["sandbox"] = "ok" if await sandbox.docker_reachable() else "unreachable"
         return h
 
     return app
