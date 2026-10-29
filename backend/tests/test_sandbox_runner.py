@@ -169,5 +169,7 @@ async def test_docker_command_per_pack(tmp_path, monkeypatch):
     assert general[-1] == comm[-1] == "base:1" and chem[-1] == bio[-1] == "sci:1"
     assert extra(general) == extra(comm) == [] and extra(chem) == ["SANDBOX_EXTRA_IMPORTS=rdkit"]
     assert extra(bio) == ["SANDBOX_EXTRA_IMPORTS=scanpy,anndata"]
+    for c in cmds:  # joblib/loky stay in-process under the audit hook
+        assert "JOBLIB_MULTIPROCESSING=0" in c and "LOKY_MAX_CPU_COUNT=1" in c
     assert norm(general) == norm(comm) == norm(chem) == norm(bio)
     assert "--network" in general and general[general.index("--network") + 1] == "none" and "--read-only" in chem

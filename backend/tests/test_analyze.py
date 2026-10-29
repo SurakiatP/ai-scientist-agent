@@ -418,15 +418,15 @@ def test_science_dockerfile_shares_base_and_pins_with_the_base_image():
         [ln for ln in base.splitlines() if ln.startswith(("COPY runner", "USER", "ENTRYPOINT", "ENV"))]
     cons = (d / "constraints-science.txt").read_text()
     pins = [ln for ln in cons.splitlines() if ln and not ln.startswith(("#", " "))]
-    assert pins and all("==" in ln for ln in pins) and "-c /tmp/constraints-science.txt" in sci
+    assert pins and all("==" in ln for ln in pins) and "PIP_CONSTRAINT=/tmp/constraints-science.txt" in sci
 
 
 def _hook_source():  # the hook as written in runner.py (the file itself needs pandas/matplotlib, which the test venv lacks)
     import ast
     src = (Path(sandbox.__file__).parents[2] / "sandbox/runner.py").read_text()
     keep = [n for n in ast.parse(src).body if (isinstance(n, ast.FunctionDef) and n.name == "audit_block")
-            or (isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "BLOCKED_EVENTS")]
-    assert len(keep) == 2, "audit_block / BLOCKED_EVENTS missing from runner.py"
+            or (isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") in ("BLOCKED_EVENTS", "BLOCKED_SYMBOLS"))]
+    assert len(keep) == 3, "audit_block / BLOCKED_EVENTS / BLOCKED_SYMBOLS missing from runner.py"
     return "import sys, os\n" + "\n".join(ast.unparse(n) for n in keep) + "\nsys.addaudithook(audit_block)\n"
 
 
@@ -434,7 +434,10 @@ def _hook_source():  # the hook as written in runner.py (the file itself needs p
                                   "import subprocess; subprocess.Popen(['echo', 'x'])",
                                   "os.posix_spawn('/bin/echo', ['echo'], {})", "os.spawnv(0, '/bin/sh', ['sh', '-c', 'echo pwned'])",
                                   "import socket; socket.socket().connect(('127.0.0.1', 9))",
-                                  "import socket; socket.socket().bind(('127.0.0.1', 0))", "import ctypes; ctypes.CDLL(None)"])
+                                  "import socket; socket.socket().bind(('127.0.0.1', 0))",
+                                  "import ctypes; ctypes.pythonapi.system(b'echo pwned')",
+                                  "import ctypes; ctypes.CDLL(None).popen",
+                                  "import ctypes; ctypes.CDLL(None).fork()"])
 def test_runner_audit_hook_blocks_process_socket_and_dlopen(call):
     p = subprocess.run([sys.executable, "-I", "-c", _hook_source() + call], capture_output=True, text=True, timeout=30)
     assert "pwned" not in p.stdout and ("blocked by sandbox policy" in p.stderr or "spawnv" in call)  # spawnv: the forked child dies silently
@@ -450,3 +453,25 @@ def test_runner_audit_hook_leaves_imports_and_files_alone(tmp_path):
 def test_runner_installs_the_hook_before_exec():
     src = (Path(sandbox.__file__).parents[2] / "sandbox/runner.py").read_text()
     assert src.index("importlib.import_module(lib)") < src.index("sys.addaudithook(audit_block)") < src.index("exec(code, env)")
+
+
+def test_audit_hook_allows_dlopen_and_harmless_symbols_and_raises_oserror():
+    code = _hook_source() + """import ctypes, ctypes.util
+ctypes.CDLL(None)                      # threadpoolctl / numpy / rdkit load shared objects
+ctypes.CDLL(None).strlen               # harmless symbol
+try:
+    import subprocess; subprocess.Popen(['ldconfig', '-p'])   # find_library's probe
+except OSError as e:
+    print('degraded', type(e).__name__)
+try:
+    audit_block.__defaults__[0].add('x')
+except AttributeError:
+    print('frozen')
+BLOCKED_EVENTS = frozenset()           # rebinding the module name must not disarm the hook
+try:
+    os.system('echo pwned')
+except OSError:
+    print('still blocked')
+"""
+    p = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, timeout=30)
+    assert p.stdout.split() == ["degraded", "PermissionError", "frozen", "still", "blocked"], (p.stdout, p.stderr)

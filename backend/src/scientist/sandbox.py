@@ -275,6 +275,7 @@ async def run_analysis(script: str | None, data: bytes, ext: str, settings: Sett
                "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m", "-v", f"{inp}:/in:ro",
                "-e", f"SANDBOX_MAX_ROWS={s.sandbox_max_rows}", "-e", f"SANDBOX_MEM_BYTES={mem_bytes(s.sandbox_mem)}",
                "-e", f"SANDBOX_TIMEOUT_S={s.sandbox_timeout_s}",
+               "-e", "JOBLIB_MULTIPROCESSING=0", "-e", "LOKY_MAX_CPU_COUNT=1",  # no process pools: joblib runs in-process
                *(["-e", f"SANDBOX_EXTRA_IMPORTS={','.join(extra)}"] if (extra := extra_imports(pack)) else []),
                image_for(s, pack)]
         try:

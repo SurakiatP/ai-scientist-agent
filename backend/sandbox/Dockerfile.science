@@ -2,7 +2,7 @@
 # Dockerfile; only the pip set grows. The whole tree is pinned in constraints-science.txt (compiled from requirements-science.in).
 FROM python:3.13-slim@sha256:2d44738ebf4ce5f63b9d9ea871e9c7cfdc0426f7b0c97cac915fd88ded1d86bb
 COPY constraints-science.txt /tmp/constraints-science.txt
-RUN pip install --no-cache-dir -c /tmp/constraints-science.txt pandas==2.3.3 numpy==2.3.4 matplotlib==3.10.7 openpyxl==3.1.5 pyarrow==22.0.0 \
+RUN PIP_CONSTRAINT=/tmp/constraints-science.txt pip install --no-cache-dir pandas==2.3.3 numpy==2.3.4 matplotlib==3.10.7 openpyxl==3.1.5 pyarrow==22.0.0 \
     scanpy==1.12.4 anndata==0.13.4 rdkit==2026.9.1 pymc==6.3.2 pymatgen==2026.10.24 lifelines==0.30.3 \
     scikit-learn==1.9.1 shap==0.54.1 scipy==1.18.1 && rm /tmp/constraints-science.txt
 COPY runner.py /app/runner.py
