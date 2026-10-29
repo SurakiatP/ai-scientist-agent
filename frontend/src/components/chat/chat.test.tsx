@@ -64,7 +64,8 @@ describe("Composer", () => {
     expect(box().value).toBe("");
   });
 
-  it("the field picker defaults to General, sends the chosen pack, and is off in answer mode", () => {
+  it("the field picker defaults to All fields (th and en) and sends the chosen pack", () => {
+    expect([strings.th.packGeneral, strings.en.packGeneral]).toEqual(["ทุกสาขา", "All fields"]);
     const id = mk();
     render(<Composer sessionId={id} />);
     const chip = screen.getByRole("button", { name: `${t.packLabel}: ${t.packGeneral}` });

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { Box, Button, CircularProgress, IconButton, InputBase, Menu, MenuItem, Tooltip, Typography } from "@mui/material";
 import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
@@ -59,6 +59,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const mode: AskMode = picked === "chat" && !hasMemory ? "deep" : picked;
   const lastPack = useChatStore((s) => usablePack([...(s.sessions.find((x) => x.id === sessionId)?.turns ?? [])].reverse().find((x) => x.mode !== "chat")?.pack));
   const pack = usePack((s) => sessionId in s.by ? s.by[sessionId] : lastPack), setPack = usePack((s) => s.set), lang = usePrefs((s) => s.lang);
+  const packOffId = useId();
   const packText = (p: PackId | undefined) => p ? packName(p, lang) : t.packGeneral;
   const modeName = (m: AskMode) => m === "deep" ? t.modeDeep : m === "chat" ? t.modeChat : t.modeQuick;
   const [attachOff, setAttachOff] = useState(false); // backend says uploads/analysis cannot work: say so instead of failing after the upload
@@ -218,7 +219,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
             </Menu>
             {/* the field: same chip + menu pattern as the mode; outlined = General, tinted = a field is set. Answer-from-memory searches nothing, so it has no field */}
             <Tooltip title={packOff ? t.packOffChat : ""}>
-              <Button color="inherit" variant="outlined" aria-disabled={packOff || undefined} aria-haspopup="menu" aria-expanded={!!packAnchor} aria-describedby={packOff ? "pack-off" : undefined}
+              <Button color="inherit" variant="outlined" aria-disabled={packOff || undefined} aria-haspopup="menu" aria-expanded={!!packAnchor} aria-describedby={packOff ? packOffId : undefined}
                 aria-label={`${t.packLabel}: ${packText(pack)}`} onClick={(e) => { if (!packOff) setPackAnchor(e.currentTarget); }}
                 startIcon={<ScienceOutlinedIcon sx={{ color: packOff ? "inherit" : "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
                 sx={{
@@ -234,7 +235,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
                 <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis" }}>{packText(pack)}</Box>
               </Button>
             </Tooltip>
-            {packOff && <Box id="pack-off" component="span" hidden>{t.packOffChat}</Box>}
+            {packOff && <Box id={packOffId} component="span" hidden>{t.packOffChat}</Box>}
             <Menu anchorEl={packAnchor} open={!!packAnchor} onClose={() => setPackAnchor(null)} slotProps={{ list: { "aria-label": t.choosePack } }}>
               {([undefined, ...PACK_IDS] as (PackId | undefined)[]).map((p) => (
                 <MenuItem key={p ?? "general"} selected={p === pack} role="menuitemradio" aria-checked={p === pack} sx={{ minHeight: 44 }}
