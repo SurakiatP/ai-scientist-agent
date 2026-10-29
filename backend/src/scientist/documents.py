@@ -15,6 +15,9 @@ from scientist.db import Database
 
 CHUNK, OVERLAP = 1200, 150
 PER_DOC, TOP_K, MIN_HITS = 6, 12, 3  # at most 6 passages per document, 12 in total; fewer than 3 hits -> first chunks
+HOST_ERRORS = ("oom_or_crash", "timeout", "no_result")  # about the host, not the file: a failed row with one of these expires
+FAILED_TTL_S = 3600  # (unreadable, output_too_large, bad_output stay: the same bytes would fail the same way)
+_CTRL = re.compile("[\x00-\x08\x0e-\x1f\x7f]")  # NUL breaks the insert; the others are noise ( \t \n \r \v \f collapse as whitespace)
 
 
 def chunk_pages(pages: list[dict]) -> list[dict]:
@@ -22,7 +25,7 @@ def chunk_pages(pages: list[dict]) -> list[dict]:
     collapsed, so a stored chunk is a plain string a quote can be checked against."""
     out: list[dict] = []
     for p in pages:
-        text = " ".join(p["text"].split())
+        text = " ".join(_CTRL.sub("", p["text"]).split())
         start = 0
         while start < len(text):
             end = min(start + CHUNK, len(text))
@@ -49,6 +52,8 @@ async def ensure_index(db: Database, file_id: str, load: Callable[[], Awaitable[
     t, stale = m.doc_index, settings.sandbox_timeout_s * 2 + 60
     while True:
         async with db.session() as s, s.begin():
+            await s.execute(sa.delete(t).where(t.c.file_id == file_id, t.c.status == "failed", t.c.error.in_(HOST_ERRORS),
+                                               t.c.created_at < sa.func.now() - sa.func.make_interval(0, 0, 0, 0, 0, 0, FAILED_TTL_S)))
             claimed = (await s.execute(pg_insert(t).values(file_id=file_id, status="indexing").on_conflict_do_nothing()
                                        .returning(t.c.created_at))).first()
             if not claimed:
@@ -58,13 +63,16 @@ async def ensure_index(db: Database, file_id: str, load: Callable[[], Awaitable[
                     .returning(t.c.created_at))).first()
             row = None if claimed else (await s.execute(sa.select(t).where(t.c.file_id == file_id))).first()
         if claimed:
-            return await _index(db, file_id, claimed.created_at, load, settings, extract)
+            if (res := await _index(db, file_id, claimed.created_at, load, settings, extract)) is not None:
+                return res
+            await asyncio.sleep(0.2)  # taken over by another worker: wait for its result, never return a half-done row
+            continue
         if row is not None and row.status != "indexing":
             return _status(file_id, row)
         await asyncio.sleep(0.2)  # row vanished (retry after a transient failure) or still indexing: look again
 
 
-async def _index(db, file_id, token, load, settings, extract) -> dict:
+async def _index(db, file_id, token, load, settings, extract) -> dict | None:
     """token = our claim's created_at: every write is guarded by it, so an owner that was taken over cannot clobber the new one."""
     t = m.doc_index
     mine = sa.and_(t.c.file_id == file_id, t.c.status == "indexing", t.c.created_at == token)
@@ -87,9 +95,8 @@ async def _index(db, file_id, token, load, settings, extract) -> dict:
             vals = dict(status="ready", pages=len(r.pages), chunks=len(chunks), truncated=r.truncated, error=None, sha256=sha) if r.ok \
                 else dict(status="failed", error=r.error, sha256=sha)  # remembered: the same bytes are not re-run on every question
             row = (await s.execute(sa.update(t).where(mine).values(**vals).returning(t))).first()
-            if row is None:  # taken over meanwhile: report what the new owner wrote
-                row = (await s.execute(sa.select(t).where(t.c.file_id == file_id))).first()
-                return _status(file_id, row) if row else failed("superseded")
+            if row is None:  # taken over meanwhile: the caller goes back to polling for the new owner's result
+                return None
             if chunks:
                 await s.execute(sa.delete(m.doc_chunks).where(m.doc_chunks.c.file_id == file_id))
                 await s.execute(sa.insert(m.doc_chunks), [{"file_id": file_id, **c} for c in chunks])

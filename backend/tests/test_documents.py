@@ -172,6 +172,42 @@ async def test_stale_owner_cannot_clobber_a_newer_index(d):
     assert st["pages"] == 9 and sql(d.raw, "select text from doc_chunks where file_id=%s", f) == [("newer",)]
 
 
+async def test_nul_and_control_characters_are_stripped_and_indexing_succeeds(d):
+    assert documents.chunk_pages([{"page": 1, "text": "ab\x00c\x01 d\x7f e\tf\ng"}])[0]["text"] == "abc d e f g"
+    f, ex = mkfile(d), counting(ok("hello\x00 world", "page\x00two"))
+    st = await documents.ensure_index(d, f, loader(), S(), ex)
+    assert st["status"] == "ready" and st["chunks"] == 2 and len(ex.calls) == 1
+
+
+async def test_stale_owner_waits_for_the_new_owner_instead_of_returning_indexing(d):
+    f = mkfile(d)
+
+    async def takeover(data, settings):  # another worker takes the row over and is still indexing; finishes shortly after
+        sql(d.raw, "delete from doc_index where file_id=%s", f)
+        sql(d.raw, "insert into doc_index (file_id, status) values (%s, 'indexing')", f)
+
+        async def finish():
+            await asyncio.sleep(0.5)
+            sql(d.raw, "update doc_index set status='ready', pages=4 where file_id=%s", f)
+        asyncio.ensure_future(finish())
+        return ok("older")
+    st = await documents.ensure_index(d, f, loader(), S(), takeover)
+    assert st["status"] == "ready" and st["pages"] == 4
+
+
+async def test_host_failures_expire_after_an_hour_but_file_failures_do_not(d):
+    for err, expires in (("timeout", True), ("oom_or_crash", True), ("no_result", True), ("unreadable", False), ("bad_output", False), ("output_too_large", False)):
+        f = mkfile(d)
+        sql(d.raw, "insert into doc_index (file_id, status, error, created_at) values (%s, 'failed', %s, now() - interval '2 hours')", f, err)
+        ex = counting(ok("fine"))
+        st = await documents.ensure_index(d, f, loader(), S(), ex)
+        assert (st["status"] == "ready") is expires and len(ex.calls) == int(expires), err
+    g = mkfile(d)
+    sql(d.raw, "insert into doc_index (file_id, status, error) values (%s, 'failed', 'timeout')", g)  # fresh: still remembered
+    ex = counting(ok("fine"))
+    assert (await documents.ensure_index(d, g, loader(), S(), ex))["status"] == "failed" and not ex.calls
+
+
 async def test_chunk_index_is_unique_per_file(d):
     f = mkfile(d)
     sql(d.raw, "insert into doc_chunks (file_id, page, idx, text) values (%s, 1, 0, 'a')", f)
