@@ -27,7 +27,7 @@ export const statusText = (p: Progress, t: Strings) =>
 
 // "Plan adjusted: few results for “a”, “b”, searching 2 more terms": what was thin, and how many searches were added.
 export const replanText = (r: { thin: string[]; searches: unknown[] }, t: Strings) =>
-  t.replanLine.replace("{terms}", r.thin.join("”, “")).replace("{n}", String(r.searches.length));
+  (r.searches.length === 1 ? t.replanLine1 : t.replanLine).replace("{terms}", r.thin.join("”, “")).replace("{n}", String(r.searches.length));
 
 const mmss = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 
@@ -177,7 +177,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
           <Box>
             <PlanCard searches={turn.plan} editable={false} heading={t.planUsedTitle} rowState={rowState} onApprove={() => {}} onCancel={() => {}} />
             {p.reasoning && <Typography sx={{ mt: 1.5, fontSize: "0.875rem", lineHeight: 1.7, color: "text.secondary", overflowWrap: "anywhere" }}>{p.reasoning}</Typography>}
-            {p.replans?.length ? <SearchRows p={p} from={turn.plan.length} rows0={rows0} /> : null}
+            {p.replans?.length ? <SearchRows p={p} from={p.searches.length - p.replans.reduce((n, r) => n + r.searches.length, 0)} rows0={rows0} /> : null}
           </Box>
         ) : (
           (p.reasoning || p.searches.length > 0) && (
