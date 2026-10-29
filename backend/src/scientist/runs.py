@@ -8,12 +8,11 @@ import uuid
 from contextlib import aclosing
 
 import sqlalchemy as sa
+from fastapi import HTTPException
 from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from scientist import models as m
-from fastapi import HTTPException
-
 from scientist.docs_answer import answer_docs
 from scientist.events import Error
 from scientist.routes_analyze import _slot, prepare
@@ -170,6 +169,8 @@ class RunService:
             elif t.session_id != body.session_id:
                 raise Conflict("turn belongs to another session")
             elif t.status == "awaiting_plan" and not analyze:
+                if body.mode == "docs":
+                    raise HTTPException(422, "a plan review cannot become a docs turn")
                 turn = _row((await s.execute(sa.update(m.turns).where(m.turns.c.id == body.turn_id).values(
                     status="running", progress=EMPTY_PROGRESS, plan=plan or t.plan, run_id=rid, pack=body.pack, version=t.version + 1,
                     updated_at=sa.func.now()).returning(m.turns))).one())
@@ -434,6 +435,7 @@ def _outcome(out: dict | None, d: dict) -> dict | None:
     if t == "final_answer":
         return {"status": "done", "answer": {"content": d["content"], "references": d["references"], "records": d.get("records", []),
                                                          **({"doc_refs": d["doc_refs"]} if d.get("doc_refs") else {}),
+                                                         **({"empty_files": d["empty_files"]} if d.get("empty_files") else {}),
                                                          **({"usage": d["usage"]} if d.get("usage") else {}),
                                                          **({"provenance": d["provenance"]} if d.get("provenance") else {})}}
     if t == "refused":

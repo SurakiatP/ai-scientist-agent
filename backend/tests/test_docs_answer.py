@@ -127,7 +127,8 @@ async def test_image_only_pdf_says_no_extractable_text_without_a_model_call(d, s
     f = mkfile(d, "scan.pdf")
     fx["result"] = ok("", "")
     a = final(await run(d, settings, [f], Store(**{f: b"%PDF"})))
-    assert "scan.pdf" in a.content and "no extractable text" in a.content and a.doc_refs == [] and fx["calls"] == []
+    assert "no extractable text" in a.content and "scan.pdf" not in a.content and a.doc_refs == [] and fx["calls"] == []
+    assert [e.model_dump() for e in [a]][0]["empty_files"] == [{"file_id": f, "file_name": "scan.pdf"}]
 
 
 async def test_image_only_file_next_to_a_readable_one_is_named(d, settings, fx, monkeypatch):  # noqa: F811
@@ -139,7 +140,7 @@ async def test_image_only_file_next_to_a_readable_one_is_named(d, settings, fx, 
     monkeypatch.setattr(sandbox, "extract_pdf", extract)
     a = final(await run(d, settings, [f1, f2], Store(**{f1: b"scan", f2: b"text"})))
     assert a.doc_refs and a.doc_refs[0].file_name == "text.pdf"
-    assert "scan.pdf" in a.content and "no extractable text" in a.content
+    assert "scan.pdf" not in a.content and a.empty_files[0].file_id == f1 and a.empty_files[0].file_name == "scan.pdf"
 
 
 async def test_unreadable_pdf_is_an_error_naming_the_file(d, settings, fx):  # noqa: F811
@@ -243,3 +244,132 @@ async def test_five_documents_are_accepted_and_doc_ids_are_ignored_outside_docs_
         r2 = await post(c, {**dbody(sid, ids), "mode": "chat", "memory": [{"question": "q", "answer": "a", "references": []}]})
         assert r2.status_code == 202  # chat mode: doc_ids has no meaning
         await usage.drain()
+
+
+# --- fix round 1 ------------------------------------------------------------------------------------------------------
+async def test_grouped_citations_are_expanded_renumbered_and_invalid_ones_dropped(d, settings, fx):  # noqa: F811
+    f = mkfile(d)
+    fx["reply"] = reply("x [2, 1]. y [1-3]. z [9]. w [8, 9]. v [1\u20132].")
+    a = final(await run(d, settings, [f], Store(**{f: b"%PDF"})))
+    assert a.content == "x [1][2]. y [2][1]. z . w . v [2][1]."
+    assert [r.id for r in a.doc_refs] == ["1", "2"]
+
+
+async def test_markdown_links_are_stripped_before_citations(d, settings, fx):  # noqa: F811
+    f = mkfile(d)
+    fx["reply"] = reply("See [the paper](http://evil.example/x) and [1](http://evil.example/y).")
+    a = final(await run(d, settings, [f], Store(**{f: b"%PDF"})))
+    assert "http" not in a.content and "](" not in a.content and a.content == "See the paper and 1."
+
+
+async def test_empty_files_are_structured_and_names_never_enter_the_text(d, settings, fx, monkeypatch):  # noqa: F811
+    f1, f2 = mkfile(d, "scan.pdf"), mkfile(d, "text.pdf")
+    fx["reply"] = reply("ATP [1].")
+
+    async def extract(data, settings):
+        return ok("", "") if data == b"scan" else ok(CHUNK)
+    monkeypatch.setattr(sandbox, "extract_pdf", extract)
+    a = final(await run(d, settings, [f1, f2], Store(**{f1: b"scan", f2: b"text"})))
+    assert a.model_dump()["empty_files"] == [{"file_id": f1, "file_name": "scan.pdf"}] and "scan.pdf" not in a.content
+
+
+@pytest.mark.parametrize("err,retry", [("unreadable", False), ("bad_output", False), ("output_too_large", False), ("timeout", True)])
+async def test_failure_messages_say_retry_only_for_host_errors(d, settings, fx, err, retry):  # noqa: F811
+    f = mkfile(d, "b.pdf")
+    fx["result"] = sandbox.ExtractResult(ok=False, error=err)
+    ev = await run(d, settings, [f], Store(**{f: b"%PDF"}))
+    assert "b.pdf" in ev[-1].message and ("try again" in ev[-1].message) is retry
+
+
+async def test_exceptions_turned_into_errors_are_logged_with_traceback(d, settings, fx, caplog):  # noqa: F811
+    f = mkfile(d)
+    await run(d, settings, [f], Store())  # object missing
+    assert any(r.exc_info for r in caplog.records)
+    fx["reply"] = None  # model returns None -> parse fails later is fine; force the call to raise
+    async def boom(*a, **k): raise RuntimeError("x")
+    import scientist.llm as L
+    old, L.complete = L.complete, boom
+    try:
+        caplog.clear()
+        g = mkfile(d)
+        ev = await run(d, settings, [g], Store(**{g: b"%PDF"}))
+    finally:
+        L.complete = old
+    assert isinstance(ev[-1], Error) and any(r.exc_info for r in caplog.records)
+
+
+async def test_a_file_deleted_before_the_run_is_refused(d, settings, fx):  # noqa: F811
+    f = mkfile(d)
+    sql(d.raw, "update files set deleted_at = now() where id = %s", f)
+    ev = await run(d, settings, [f], Store(**{f: b"%PDF"}))
+    assert isinstance(ev[-1], Error) and fx["extract"] == 0
+
+
+async def test_docs_indexing_event_for_a_retried_host_failure_but_not_ready_or_permanent(d, settings, fx):  # noqa: F811
+    f = mkfile(d)
+    sql(d.raw, "insert into doc_index (file_id, status, error, created_at) values (%s, 'failed', 'timeout', now() - interval '1 day')", f)
+    fx["reply"] = reply("ok")
+    ev = await run(d, settings, [f], Store(**{f: b"%PDF"}))
+    assert [e for e in ev if isinstance(e, DocsIndexing)] and fx["extract"] == 1
+    g = mkfile(d)
+    sql(d.raw, "insert into doc_index (file_id, status, error) values (%s, 'failed', 'unreadable')", g)
+    ev = await run(d, settings, [g], Store(**{g: b"%PDF"}))
+    assert not [e for e in ev if isinstance(e, DocsIndexing)] and fx["extract"] == 1
+
+
+async def test_gate_slot_is_held_during_the_model_call(d, settings, fx):  # noqa: F811
+    f, g = mkfile(d), RunGate(1)
+    fx["reply"] = reply("ok")
+    seen = []
+    orig = llm.complete
+
+    async def complete(*a, **k):
+        seen.append(g.free)
+        return await orig(*a, **k)
+    llm.complete = complete
+    try:
+        await run(d, settings, [f], Store(**{f: b"%PDF"}), gate=g)
+    finally:
+        llm.complete = orig
+    assert seen == [0] and g.free == 1
+
+
+async def test_english_question_without_matching_words_uses_fallback_passages(d, settings, fx):  # noqa: F811
+    f = mkfile(d)
+    fx["reply"] = reply("The documents do not cover this.")
+    await run(d, settings, [f], Store(**{f: b"%PDF"}), q="Which tectonic plates collide beneath Iceland?")
+    assert CHUNK in fx["calls"][0]["user"]
+
+
+async def test_sandbox_disabled_is_503_for_docs(serve, fx):  # noqa: F811
+    async with serve(SANDBOX_ENABLED="false") as c:
+        sid, f = await mk_session(c), None
+        f = await mkpdf(c)
+        assert (await post(c, dbody(sid, [f]))).status_code == 503
+
+
+async def test_awaiting_plan_takeover_cannot_become_docs(serve, fx):  # noqa: F811
+    async with serve() as c:
+        sid, f = await mk_session(c), None
+        f = await mkpdf(c)
+        t = u()
+        assert (await c.put(f"/v1/store/sessions/{sid}/turns/{t}", json={"idx": 0, "question": "q", "mode": "deep", "status": "awaiting_plan", "plan": [{"term": "x", "instructions": ""}]})).status_code == 200
+        r = await post(c, {**dbody(sid, [f]), "turn_id": t})
+        assert r.status_code == 422
+
+
+async def test_async_ask_route_rejects_docs(serve, fx):  # noqa: F811
+    async with serve() as c:
+        sid = await mk_session(c)
+        f = await mkpdf(c)
+        r = await c.post("/v1/async/ask", json={"question": Q, "mode": "docs", "doc_ids": [f], "plan_only": True})
+        assert r.status_code == 422
+        r = await c.post("/v1/async/ask", json={"question": Q, "mode": "docs", "doc_ids": [f]})
+        assert r.status_code == 409
+
+
+def test_doc_ids_field_is_capped_at_five():
+    from pydantic import ValidationError
+    from scientist.routes_ask import AskRequest
+    with pytest.raises(ValidationError):
+        AskRequest(question=Q, mode="docs", doc_ids=["a" * 32] * 6)

@@ -294,6 +294,12 @@ class DocRef(BaseModel):
     quote: str | None = Field(default=None, max_length=600)
 
 
+class EmptyFile(BaseModel):
+    """A docs-mode PDF with no extractable text (a scan); the client words the notice."""
+    file_id: str
+    file_name: str
+
+
 class DocsIndexing(BaseModel):
     """docs mode: this file is being read (text extracted) now; sent only when the file was not indexed yet."""
     type: Literal["docs_indexing"] = "docs_indexing"
@@ -307,6 +313,7 @@ class FinalAnswer(BaseModel):
     references: list[Reference]
     records: list[DataRecord] = []
     doc_refs: list[DocRef] = []
+    empty_files: list[EmptyFile] = []
     usage: RunUsage | None = None
     provenance: Provenance | None = None
 
