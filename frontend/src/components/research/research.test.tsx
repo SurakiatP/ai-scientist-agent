@@ -121,7 +121,7 @@ describe("citations and inspector", () => {
   };
   beforeEach(() => { localStorage.clear(); useChatStore.getState().clearAll(); });
 
-  it("shows quoted evidence with its verdict, and the no-abstract line otherwise", () => {
+  it("shows quoted evidence with its verdict, for a cited reference", () => {
     const sid = useChatStore.getState().newSession();
     const r1 = { ...ref("1", { abstract: "abs" }), checks: [{ claim: "Drug X works", support: "unsupported" as const, quote: "it did not work" }, { claim: "Dose", support: "partial" as const, quote: null }] };
     const tn = turn({ phase: "done" }, { status: "done", answer: { content: "Claim [1] and [2].", references: [r1, ref("2")] } });
@@ -134,9 +134,6 @@ describe("citations and inspector", () => {
     expect(screen.getByText(t.supUnsupported)).toBeInTheDocument();
     expect(screen.getByText(t.supPartial)).toBeInTheDocument();
     unmount();
-    act(() => useInspector.getState().open({ sessionId: sid, turnId: tn.id, refId: "2" }));
-    render(<SourceInspector variant="panel" />);
-    expect(screen.getByText(t.evidenceNoAbstract)).toBeInTheDocument();
   });
   it("shows nothing extra for an uncited reference, or a cited one with an abstract but no checks", () => {
     const sid = useChatStore.getState().newSession();
@@ -151,6 +148,22 @@ describe("citations and inspector", () => {
     v.unmount(); v = view("3");
     expect(screen.queryByRole("heading", { name: t.evidenceTitle })).toBeNull();
     expect(screen.queryByText(t.evidenceNoAbstract)).toBeNull();
+  });
+  it("old-shape references show no evidence section; with the reviewer run, a cited reference with abstract null says so", () => {
+    const sid = useChatStore.getState().newSession();
+    const tn = turn({ phase: "done" }, { status: "done", answer: { content: "A [1] B [2].", references: [ref("1"), { ...ref("2", { abstract: null }) }] } });
+    useChatStore.getState().addTurn(sid, tn);
+    act(() => useInspector.getState().open({ sessionId: sid, turnId: tn.id, refId: "2" }));
+    const v = render(<SourceInspector variant="panel" />);
+    expect(screen.queryByText(t.evidenceTitle)).toBeNull();
+    expect(screen.queryByText(t.evidenceNoAbstract)).toBeNull();
+    v.unmount();
+    const sid2 = useChatStore.getState().newSession();
+    const tn2 = turn({ phase: "done" }, { id: "t2", status: "done", answer: { content: "A [1] B [2].", references: [{ ...ref("1", { abstract: "x" }), checks: [{ claim: "c", support: "supported" as const, quote: "q" }] }, ref("2", { abstract: null })] } });
+    useChatStore.getState().addTurn(sid2, tn2);
+    act(() => useInspector.getState().open({ sessionId: sid2, turnId: tn2.id, refId: "2" }));
+    render(<SourceInspector variant="panel" />);
+    expect(screen.getByText(t.evidenceNoAbstract)).toBeInTheDocument();
   });
   it("marks only unsupported references in the list", () => {
     const a = { ...ref("1"), checks: [{ claim: "c", support: "unsupported" as const, quote: null }] };

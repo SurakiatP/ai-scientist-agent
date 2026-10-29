@@ -56,7 +56,7 @@ export function cleanEvidence(r: Reference): Reference {
   const { checks, ...rest } = r;
   const paper = { ...r.paper };
   if (typeof paper.abstract === "string") paper.abstract = paper.abstract.slice(0, 2000);
-  else delete paper.abstract;
+  else if (paper.abstract !== null) delete paper.abstract; // null (cleared by the server) stays distinct from absent (old turn)
   const ok: Check[] = Array.isArray(checks)
     ? checks.filter((c) => !!c && typeof c.claim === "string" && SUPPORT.includes(c.support) && (c.quote === null || typeof c.quote === "string"))
       .slice(0, 5).map((c) => ({ claim: c.claim.slice(0, 400), support: c.support, quote: c.quote ? c.quote.slice(0, 600) : null }))

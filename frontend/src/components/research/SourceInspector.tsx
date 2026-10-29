@@ -21,7 +21,10 @@ function Body() {
   const r = useInspector((s) => s.ref);
   const close = useInspector((s) => s.close);
   const found = useChatStore((s) => find(s, r));
-  const cited = useChatStore((s) => !!r && !!found && !!s.sessions.find((x) => x.id === r.sessionId)?.turns.find((x) => x.id === r.turnId)?.answer?.content.includes(`[${found.id}]`));
+  const cited = useChatStore((s) => { // the reviewer ran when any reference in this answer has checks
+    const ans = r && found ? s.sessions.find((x) => x.id === r.sessionId)?.turns.find((x) => x.id === r.turnId)?.answer : undefined;
+    return !!ans && ans.content.includes(`[${found!.id}]`) && (!!found!.checks?.length || (found!.paper.abstract === null && ans.references.some((x) => !!x.checks?.length)));
+  });
   const btn = useRef<HTMLButtonElement>(null);
   useEffect(() => { btn.current?.focus(); }, [r?.refId, r?.turnId]);
   useEffect(() => {
@@ -54,7 +57,7 @@ function Body() {
         <Chip size="small" variant="outlined" label={checkLabel(found, t)} sx={{ color: ok ? "evidence.verified" : found.status === "unknown" ? "evidence.unknown" : "evidence.unverified", borderColor: "currentColor" }} />
         <Typography sx={{ mt: 1, fontSize: "0.8125rem", lineHeight: 1.6, color: "text.secondary" }}>{t.idCheckNote}</Typography>
       </Box>
-      {cited && (found.checks?.length || !p.abstract) && <Box component="section">
+      {cited && <Box component="section">
         <Typography component="h3" sx={{ fontSize: "0.75rem", color: "text.secondary", mb: 0.75 }}>{t.evidenceTitle}</Typography>
         {found.checks?.length ? (
           <Stack spacing={1.5} component="ul" sx={{ m: 0, p: 0, listStyle: "none" }}>
