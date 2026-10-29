@@ -9,7 +9,8 @@ from pydantic import ValidationError
 
 from scientist.config import Settings
 from scientist.events import HTTP_URL, BranchAnswer, Paper
-from scientist.hermes import BranchFailed, HermesRuntime, InvalidPaper, sweep_containers
+from scientist.events import DataRecord
+from scientist.hermes import BranchFailed, HermesRuntime, InvalidPaper, InvalidRecord, sweep_containers
 
 ROOT = Path(__file__).resolve().parents[2]
 FAKE = str(Path(__file__).parent / "fake_bridge.py")
@@ -195,3 +196,45 @@ async def test_stop_cancelled_twice_still_untracks_the_process(settings, tmp_pat
     assert proc not in rt.procs
     proc.kill()
     await proc.wait()
+
+
+RECORD = {"database": "uniprot", "id": "P04637", "title": "p53", "url": "https://www.uniprot.org/uniprotkb/P04637"}
+
+
+async def test_record_events_become_items(settings, tmp_path):
+    rt = runtime(settings, tmp_path, [
+        {"event": "paper", "paper": {**PAPER, "source": "Europe PMC"}},
+        {"event": "record", "record": RECORD},
+        {"event": "record", "record": {**RECORD, "id": "Q1", "url": "https://uniprot.org.evil.com/Q1"}},
+        {"event": "record_rejected", "record": {"database": "uniprot", "id": "Q2"}, "reason": "no"},
+        {"event": "answer", "content": "done"}])
+    items = await collect(rt)
+    assert items[0].source == "europepmc"
+    assert items[1] == DataRecord(**RECORD)
+    assert isinstance(items[2], InvalidRecord) and items[2].key == "uniprot:Q1" and "official host" in items[2].reason
+    assert items[3] == InvalidRecord(term="t", key="uniprot:Q2", reason="no")
+
+
+async def test_request_lists_keyless_databases_only(settings, tmp_path):
+    rt = runtime(settings, tmp_path, [{"echo_request": True}])
+    [answer] = await collect(rt)
+    sources = json.loads(answer.content)["data_sources"]
+    assert sources["uniprot"] == ["uniprot.org"] and "omim" not in sources
+
+
+def test_bridge_clean_record():
+    clean = load_bridge().clean_record
+    hosts = {"uniprot": ["uniprot.org"]}
+    assert clean(RECORD, hosts) == (RECORD, None)
+    assert clean({**RECORD, "id": 7}, hosts)[0]["id"] == "7"
+    for bad in ({**RECORD, "database": "omim"}, {**RECORD, "url": "https://uniprot.org.evil.com/x"},
+                {**RECORD, "url": "http://uniprot.org/x"}, {**RECORD, "url": "https://uniprot.org@evil.com/"},
+                {**RECORD, "title": ""}, {**RECORD, "title": "x" * 301}, {**RECORD, "summary": "x" * 601}):
+        record, error = clean(bad, hosts)
+        assert record is None and error
+    assert clean("x", hosts)[0] is None
+
+
+def test_bridge_keeps_paper_source():
+    assert load_bridge().clean_paper({"title": "T", "url": "https://x.org", "source": " PubMed Central "})[0]["source"] == "PubMed Central"
+    assert load_bridge().ALLOWED >= {"report_record"}

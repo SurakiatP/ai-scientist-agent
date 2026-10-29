@@ -2,7 +2,8 @@
 
 stdin: one JSON request line. stdout: JSON lines, {"event": "paper", "paper": {...}} while running,
 and {"event": "rejected", "paper": {ids}, "reason": str} when report_paper refuses a call,
-then {"event": "answer", "content": str} or {"event": "failed", "code": str}. See setup.md.
+{"event": "record", "record": {...}} / {"event": "record_rejected", "record": {database, id, url}, "reason": str}
+for report_record, then {"event": "answer", "content": str} or {"event": "failed", "code": str}. See setup.md.
 """
 import json
 import re
@@ -10,10 +11,13 @@ import signal
 import sys
 import threading
 import uuid
+from urllib.parse import urlsplit
 
 WIRE = sys.stdout
 LOCK = threading.Lock()
-ALLOWED = {"terminal", "skills_list", "skill_view", "report_paper"}
+PAPER_SOURCES = ("pubmed", "pmc", "europepmc", "biorxiv", "medrxiv", "arxiv", "openalex", "crossref", "semanticscholar",
+                 "core", "unpaywall", "opencitations", "pubtator3", "zenodo", "figshare", "ror", "biostudies", "doaj")
+ALLOWED = {"terminal", "skills_list", "skill_view", "report_paper", "report_record"}
 HTTP_URL = re.compile(r"https?://(?:[^\s/?#@]+@)?[^\s/?#@]+[^\s]*", re.I)  # identical to scientist.events
 PAPER_SCHEMA = {
     "name": "report_paper",
@@ -25,6 +29,19 @@ PAPER_SCHEMA = {
         "doi": {"type": "string", "description": "DOI without the https://doi.org/ prefix, if known"},
         "pmid": {"type": "string", "description": "PubMed ID, if known"},
         "url": {"type": "string", "description": "Landing page; https://doi.org/<doi> when nothing better"},
+        "source": {"type": "string", "description": "The paper-lookup API you got it from: " + ", ".join(PAPER_SOURCES)},
+    }},
+}
+RECORD_SCHEMA = {
+    "name": "report_record",
+    "description": "Record one entry you retrieved from a public scientific database (a protein, compound, trial, "
+                   "dataset...). Call once per entry. Only the databases the request lists are accepted.",
+    "parameters": {"type": "object", "required": ["database", "id", "title", "url"], "properties": {
+        "database": {"type": "string", "description": "Database id, as listed for this request"},
+        "id": {"type": "string", "description": "The database's own identifier, e.g. P04637"},
+        "title": {"type": "string"},
+        "url": {"type": "string", "description": "https link to the entry on the database's official site"},
+        "summary": {"type": "string", "description": "One or two sentences on what the entry says"},
     }},
 }
 
@@ -40,6 +57,8 @@ def clean_paper(args):
     if not isinstance(url, str) or not HTTP_URL.fullmatch(url.strip()):
         return None, "url must be an http(s) link, e.g. https://doi.org/<doi>"
     paper["title"], paper["url"] = title.strip(), url.strip()
+    if isinstance(args.get("source"), str):  # advisory: the backend normalizes it, a bad one never rejects the paper
+        paper["source"] = args["source"].strip()
     authors, year, doi, pmid = (args.get(k) for k in ("authors", "year", "doi", "pmid"))
     if authors is not None:
         if not isinstance(authors, list) or not all(isinstance(a, str) for a in authors):
@@ -58,6 +77,36 @@ def clean_paper(args):
             return None, "pmid must be a string"
         paper["pmid"] = str(pmid).strip()
     return paper, None
+
+
+def clean_record(args, data_sources):
+    """(record, None) or (None, error). data_sources: {database id: [official hosts]} from the request, keyless only;
+    the backend validates again (scientist.events.DataRecord), this just lets the model retry."""
+    if not isinstance(args, dict):
+        return None, "arguments must be an object"
+    rec = {}
+    for key, limit in (("database", 100), ("id", 100), ("title", 300), ("url", 2000), ("summary", 600)):
+        v = args.get(key)
+        if key == "summary" and v is None:
+            continue
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and key == "id":
+            v = str(v)
+        if not isinstance(v, str) or not v.strip():
+            return None, f"{key} is required and must be a string"
+        if len(v.strip()) > limit:
+            return None, f"{key} is longer than {limit} characters"
+        rec[key] = v.strip()
+    hosts = data_sources.get(rec["database"])
+    if hosts is None:
+        return None, "database is not available for this request; use one of: " + ", ".join(sorted(data_sources))
+    try:
+        parts = urlsplit(rec["url"])
+        host, _ = parts.hostname, parts.port  # .port raises on a malformed port
+    except ValueError:
+        parts = host = None
+    if parts is None or parts.scheme != "https" or not host or "@" in parts.netloc or not any(host == h or host.endswith("." + h) for h in hosts):
+        return None, "url must be an https link on the official site of the database: " + ", ".join(hosts)
+    return rec, None
 
 
 def emit(value):
@@ -88,7 +137,19 @@ def main():
         emit({"event": "paper", "paper": paper})
         return json.dumps({"recorded": True})
 
+    def report_record(args, **_):
+        record, error = clean_record(args, request.get("data_sources") or {})
+        if error:
+            ids = args if isinstance(args, dict) else {}
+            emit({"event": "record_rejected", "reason": error, "record": {
+                k: str(v)[:500] for k in ("database", "id", "url")
+                if isinstance(v := ids.get(k), (str, int)) and not isinstance(v, bool)}})
+            return json.dumps({"error": f"record not recorded: {error}. Fix the arguments and call again."})
+        emit({"event": "record", "record": record})
+        return json.dumps({"recorded": True})
+
     registry.register(name="report_paper", toolset="scientist", schema=PAPER_SCHEMA, handler=report_paper)
+    registry.register(name="report_record", toolset="scientist", schema=RECORD_SCHEMA, handler=report_record)
     dispatch = registry.dispatch
 
     def restricted(name, args, **kwargs):

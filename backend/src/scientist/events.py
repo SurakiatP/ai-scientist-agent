@@ -1,7 +1,9 @@
 import re
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_serializer
+from pydantic import BaseModel, Field, field_validator, model_serializer, model_validator
+
+from scientist.sources import DATA_SOURCES, normalize_source, record_host_ok
 
 # http(s) only, a real host (optional userinfo@ before it), no whitespace: the frontend renders url as a link.
 # infra/hermes/native_bridge.py keeps an identical copy (a test checks they match).
@@ -64,6 +66,12 @@ class Paper(BaseModel):
     doi: str | None = None
     pmid: str | None = None
     url: str
+    source: str | None = None  # which paper-lookup API it came from; unknown or garbage -> None, never a rejection
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def _source(cls, v):
+        return normalize_source(v)
 
     @field_validator("authors", mode="before")
     @classmethod
@@ -87,6 +95,34 @@ class Paper(BaseModel):
         if not isinstance(v, str) or not HTTP_URL.fullmatch(v):
             raise ValueError("url must be an http(s) link")
         return v
+
+
+class DataRecord(BaseModel):
+    """One entry from a public scientific database; the url must be on that database's official host."""
+    database: str
+    id: str = Field(min_length=1, max_length=100)
+    title: str = Field(min_length=1, max_length=300)
+    url: str
+    summary: str = Field(default="", max_length=600)
+
+    @field_validator("database", mode="after")
+    @classmethod
+    def _database(cls, v):
+        if v not in DATA_SOURCES:
+            raise ValueError("unknown database")
+        return v
+
+    @model_validator(mode="after")
+    def _host(self):
+        if not record_host_ok(self.database, self.url):
+            raise ValueError("url must be https on the official host of the database")
+        return self
+
+
+class Records(BaseModel):
+    type: Literal["records"] = "records"
+    term: str
+    records: list[DataRecord]
 
 
 class Reference(BaseModel):

@@ -14,8 +14,9 @@ from typing import Protocol
 from pydantic import BaseModel, ValidationError
 
 from scientist.config import Settings
-from scientist.events import BranchAnswer, Paper, paper_key
+from scientist.events import BranchAnswer, DataRecord, Paper, paper_key
 from scientist.proc import kill_and_reap
+from scientist.sources import DATA_SOURCES
 
 ROOT = Path(__file__).resolve().parents[3]
 CACHE = Path.home() / ".cache/scientist"
@@ -46,7 +47,23 @@ def _invalid(term: str, raw: object, reason: str) -> InvalidPaper:
     return InvalidPaper(term=term, key=key, reason=reason[:300])
 
 
-BranchItem = Paper | InvalidPaper | BranchAnswer | BranchFailed
+class InvalidRecord(BaseModel):
+    """A database record rejected (unknown database, off-site url...); counted, never silently dropped."""
+    term: str
+    key: str | None  # "database:id", None when either is unknown
+    reason: str
+
+
+def _invalid_record(term: str, raw: object, reason: str) -> InvalidRecord:
+    raw = raw if isinstance(raw, dict) else {}
+    parts = [str(raw[k]).strip() for k in ("database", "id") if isinstance(raw.get(k), (str, int)) and str(raw[k]).strip()]
+    return InvalidRecord(term=term, key=":".join(parts) if len(parts) == 2 else None, reason=reason[:300])
+
+
+# ids of the databases that need no API key, with their official hosts: all the bridge may accept (it has no keys)
+KEYLESS_SOURCES = {k: list(d.hosts) for k, d in DATA_SOURCES.items() if not d.needs_key}
+
+BranchItem = Paper | InvalidPaper | DataRecord | InvalidRecord | BranchAnswer | BranchFailed
 
 
 class BranchRunner(Protocol):
@@ -118,7 +135,7 @@ class HermesRuntime(BranchRunner):
         request = {"term": term, "instructions": instructions, "system": SYSTEM, "model": s.model,
                    "api_key": s.openrouter_api_key, "base_url": OPENROUTER_URL,
                    "max_iterations": s.branch_max_rounds, "max_tokens": s.branch_token_cap,
-                   "budget_seconds": BRANCH_TIMEOUT_S - 30}
+                   "budget_seconds": BRANCH_TIMEOUT_S - 30, "data_sources": KEYLESS_SOURCES}
         proc = await asyncio.create_subprocess_exec(
             *self.command, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL, env=self.env, limit=1024 * 1024)
@@ -140,6 +157,14 @@ class HermesRuntime(BranchRunner):
                             item = _invalid(term, msg.get("paper"), f"{'.'.join(map(str, err['loc'])) or 'paper'}: {err['msg']}")
                     elif event == "rejected":  # bridge refused a report_paper call; the model may retry
                         item = _invalid(term, msg.get("paper"), str(msg.get("reason") or "rejected"))
+                    elif event == "record":
+                        try:
+                            item = DataRecord.model_validate(msg.get("record"))
+                        except ValidationError as e:
+                            err = e.errors()[0]
+                            item = _invalid_record(term, msg.get("record"), f"{'.'.join(map(str, err['loc'])) or 'record'}: {err['msg']}")
+                    elif event == "record_rejected":
+                        item = _invalid_record(term, msg.get("record"), str(msg.get("reason") or "rejected"))
                     elif event == "answer":
                         item = BranchAnswer(term=term, content=str(msg["content"]))
                     elif event == "failed":
