@@ -38,6 +38,17 @@ describe("run controller", () => {
     expect(last(chat)).toMatchObject({ status: "done", answer: { content: "ans", references: [ref] } });
     expect(run.canStart(sid)).toEqual({ ok: true });
   });
+  it("a final answer keeps its database records and the sources seen during the run", async () => {
+    const { chat, run, sid } = await setup();
+    const paper = { title: "P", authors: [], year: null, doi: null, pmid: null, url: "u" };
+    const rec = { database: "uniprot", id: "P04637", title: "p53", url: "https://uniprot.org/P04637", summary: "" };
+    script = gen([
+      { type: "sources", term: "a", papers: [{ ...paper, source: "europepmc" }, { ...paper, source: null }] },
+      { type: "records", term: "a", records: [rec] },
+      { type: "final_answer", content: "ans", references: [ref], records: [rec] }, { type: "complete" }]);
+    await run.startRun(sid, "q");
+    expect(last(chat)).toMatchObject({ status: "done", answer: { content: "ans", references: [ref], records: [rec] }, progress: { seen: ["europepmc", "uniprot"] } });
+  });
   it("history has the last three answered turns, skipping unfinished ones", async () => {
     const { chat, run, sid } = await setup();
     const add = (q: string, p: Partial<Turn> = {}) =>

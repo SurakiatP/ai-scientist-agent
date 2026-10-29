@@ -3,7 +3,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { DEFER_HYDRATION, gate } from "./config";
 import { dataStorage, isItem, newId, safeStorage, storageFull, useHistoryStore } from "./history";
 import type { Progress } from "./progress";
-import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, Reference, Search } from "./sse";
+import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, DataRecord, Reference, Search } from "./sse";
 
 // What the analyze stream taught us about this turn. Every field is optional because events arrive one at a time.
 export type TurnAnalysis = {
@@ -25,7 +25,7 @@ export type Turn = {
   mode?: AskMode;
   kind?: "analysis";
   plan?: Search[]; // the approved plan: stored while awaiting review and kept as "the plan used" after approval
-  answer?: { content: string; references: Reference[] };
+  answer?: { content: string; references: Reference[]; records?: DataRecord[] }; // records: absent on turns saved before database records existed
   analysis?: TurnAnalysis;
   refused?: string; refusedCode?: RefusalCode; error?: string;
   runId?: string; // the server-side run that owns this turn: the server writes it, this browser only shows it
@@ -50,6 +50,7 @@ const STATUSES = ["running", "awaiting_plan", "done", "refused", "error", "stopp
 
 const isStr = (v: unknown, max = Infinity): v is string => typeof v === "string" && v.length <= max;
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const RECORDS = 100; // the server's limit for one answer
 const TERM = 2000, REASON = 20_000, ANSWER = 200_000, REFS = 200, N = 50;
 const isProgress = (v: unknown): v is Progress => {
   const p = v as Progress | null;
@@ -58,6 +59,7 @@ const isProgress = (v: unknown): v is Progress => {
     !!p.sources && typeof p.sources === "object" && !Array.isArray(p.sources) && Object.keys(p.sources).length <= N &&
     Object.entries(p.sources).every(([k, n]) => k.length <= TERM && isNum(n)) &&
     Array.isArray(p.answered) && p.answered.length <= N && p.answered.every((x) => isStr(x, TERM)) &&
+    (p.seen === undefined || (Array.isArray(p.seen) && p.seen.length <= 100 && p.seen.every((x) => isStr(x, 100)))) &&
     typeof p.writing === "boolean" && ["waiting", "planning", "searching", "writing", "done"].includes(p.phase);
 };
 // Write side: clamp to the read limits above so a persisted turn can never fail validation on reload.
@@ -66,11 +68,14 @@ const clampProgress = (p: Progress): Progress => ({
   searches: p.searches.slice(0, N).map((x) => ({ term: x.term.slice(0, TERM), instructions: x.instructions.slice(0, TERM) })),
   sources: Object.fromEntries(Object.entries(p.sources).slice(0, N).map(([k, n]) => [k.slice(0, TERM), n])),
   answered: p.answered.slice(0, N).map((x) => x.slice(0, TERM)),
+  ...(p.seen && { seen: p.seen.slice(0, 100).map((x) => x.slice(0, 100)) }),
 });
+const clampRecord = (r: DataRecord): DataRecord => ({ database: r.database.slice(0, 100), id: r.id.slice(0, 500), title: r.title.slice(0, 300), url: r.url.slice(0, 2048), summary: r.summary.slice(0, 600) });
 const clampRef = (r: Reference): Reference => ({
   ...r, id: r.id.slice(0, 20),
   paper: {
     ...r.paper, title: r.paper.title.slice(0, 500), authors: r.paper.authors.slice(0, 50).map((a) => a.slice(0, 200)),
+    ...(typeof r.paper.source === "string" && { source: r.paper.source.slice(0, 100) }),
     doi: r.paper.doi?.slice(0, 2048) ?? null, pmid: r.paper.pmid?.slice(0, 2048) ?? null, url: (r.paper.url ?? "").slice(0, 2048),
   },
 });
@@ -163,7 +168,7 @@ const clampPatch = (p: Partial<Turn>): Partial<Turn> => ({
   ...(p.progress && { progress: clampProgress(p.progress) }),
   ...(p.error !== undefined && { error: p.error.slice(0, 2048) }),
   ...(p.refused !== undefined && { refused: p.refused.slice(0, REASON) }),
-  ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef) } }),
+  ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef), ...(p.answer.records && { records: p.answer.records.slice(0, RECORDS).map(clampRecord) }) } }),
   ...(p.analysis && { analysis: clampAnalysis(p.analysis) }),
   ...(p.plan !== undefined && { plan: clampPlan(p.plan) }),
 });

@@ -10,6 +10,7 @@ import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
 import SearchOffRoundedIcon from "@mui/icons-material/SearchOffRounded";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import { AnswerView } from "@/components/AnswerView";
+import { DataRecords } from "@/components/DataRecords";
 import { ReferenceList } from "@/components/ReferenceList";
 import { AnalysisArtifact } from "@/components/research/AnalysisArtifact";
 import { queueText } from "@/components/research/ProgressCard";
@@ -125,6 +126,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
           {turn.mode === "chat" && <Typography sx={{ mb: 1, fontSize: "0.8125rem", color: "text.secondary" }}>{t.chatCaption}</Typography>}
           <Box role={refs.length ? "tabpanel" : undefined} id={`panel-answer-${turn.id}`} aria-labelledby={refs.length ? `tab-answer-${turn.id}` : undefined} hidden={tab !== "answer"}>
             <AnswerView content={turn.answer.content} references={turn.answer.references} scope={scope} reveal={wasRunning} />
+            <DataRecords records={turn.answer.records} t={t} />
           </Box>
           {refs.length > 0 && (
             <Box role="tabpanel" id={`panel-sources-${turn.id}`} aria-labelledby={`tab-sources-${turn.id}`} hidden={tab !== "sources"}>

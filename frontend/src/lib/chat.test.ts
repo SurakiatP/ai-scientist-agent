@@ -272,6 +272,18 @@ describe("newSession blank reuse", () => {
     expect(dump()).not.toContain(SECRET);
     expect(s.getState().sessions).toEqual([]);
   });
+  it("a client save of a finished turn keeps its records and the sources seen; old turns need neither", async () => {
+    const s = await load();
+    const id = s.getState().newSession();
+    const rec = { database: "uniprot", id: "P04637", title: "p53", url: "https://uniprot.org/P04637", summary: "x".repeat(900) };
+    s.getState().addTurn(id, turn("t", "running") as never);
+    s.getState().patchTurn(id, "t", { status: "done", progress: { ...prog, seen: ["pubmed", "uniprot"] } as never, answer: { content: "a", references: [], records: [rec] } });
+    const t = s.getState().sessions.find((x) => x.id === id)!.turns[0];
+    expect(t.answer?.records).toEqual([{ ...rec, summary: "x".repeat(600) }]);
+    expect(t.progress.seen).toEqual(["pubmed", "uniprot"]);
+    s.getState().patchTurn(id, "t", { answer: { content: "b", references: [] } });
+    expect(s.getState().sessions[0].turns[0].answer).toEqual({ content: "b", references: [] });
+  });
   it("deleting a project keeps its chats (moved to Personal), so their memory stays with them", async () => {
     const s = await load();
     const p = s.getState().addProject("Lab");

@@ -7,7 +7,9 @@ export type Paper = {
   doi: string | null;
   pmid: string | null;
   url: string;
+  source?: string | null; // id of the paper source that found it (see lib/sources.ts); absent on older turns
 };
+export type DataRecord = { database: string; id: string; title: string; url: string; summary: string }; // one record from a scientific database; database = id in lib/sources.ts
 export type Reference = { id: string; paper: Paper; status: "verified" | "unverified" | "unknown" };
 export type Search = { term: string; instructions: string };
 export type AskMode = "deep" | "quick" | "chat"; // chat = answer from the session's own earlier results, no search
@@ -25,8 +27,9 @@ export type AskEvent =
   | { type: "waiting"; position: number; eta_seconds?: number }
   | { type: "strategy"; reasoning: string; searches: Search[] }
   | { type: "sources"; term: string; papers: Paper[] }
+  | { type: "records"; term: string; records: DataRecord[] }
   | { type: "answer"; term: string; content: string }
-  | { type: "final_answer"; content: string; references: Reference[] }
+  | { type: "final_answer"; content: string; references: Reference[]; records?: DataRecord[] }
   | { type: "complete" }
   | StreamError;
 

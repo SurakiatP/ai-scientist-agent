@@ -30,6 +30,12 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("ProgressCard", () => {
+  it("lists the sources seen so far by name, and nothing before one is known", () => {
+    const { rerender } = render(<ProgressCard turn={turn(busy)} />);
+    expect(screen.queryByText(/Sources used/)).toBeNull();
+    rerender(<ProgressCard turn={turn({ ...busy, seen: ["pubmed", "arxiv", "uniprot"] })} />);
+    expect(screen.getByText("Sources used: PubMed · arXiv · UniProt")).toBeInTheDocument();
+  });
   it("highlights the stage from the phase and shows real counts only", () => {
     const { container } = render(<ProgressCard turn={turn(busy)} />);
     const items = [...container.querySelectorAll("[data-stage]")];

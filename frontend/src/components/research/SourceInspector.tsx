@@ -8,6 +8,7 @@ import { useChatStore, type ChatState } from "@/lib/chat";
 import { enterSlide } from "@/lib/motion";
 import { useInspector, type InspectorRef } from "@/lib/inspector";
 import { useT } from "@/lib/prefs";
+import { sourceName } from "@/lib/sources";
 import { checkLabel, doiOf, httpUrl, paperLink } from "@/lib/refs";
 
 const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
@@ -40,7 +41,7 @@ function Body() {
       </Stack>
       <Typography sx={{ fontWeight: 700, fontSize: "1.0625rem", lineHeight: 1.45, overflowWrap: "anywhere" }}>{p.title}</Typography>
       <Box component="dl" sx={{ m: 0, display: "grid", gap: 1 }}>
-        {([[t.authors, p.authors.join(", ")], [t.year, p.year ? String(p.year) : ""], [t.sourceHost, h], [t.doi, doi], [t.pmid, p.pmid?.trim() ?? ""]] as const).filter(([, v]) => v).map(([k, v]) => (
+        {([[t.authors, p.authors.join(", ")], [t.year, p.year ? String(p.year) : ""], [t.sourceHost, h], [t.foundVia, sourceName(p.source)], [t.doi, doi], [t.pmid, p.pmid?.trim() ?? ""]] as const).filter(([, v]) => v).map(([k, v]) => (
           <Box key={k}>
             <Box component="dt" sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{k}</Box>
             <Box component="dd" sx={{ m: 0, fontSize: "0.875rem", overflowWrap: "anywhere" }}>{v}</Box>

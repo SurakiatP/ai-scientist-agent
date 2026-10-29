@@ -9,6 +9,7 @@ import { useT } from "@/lib/prefs";
 import { stopTurn, useForeign, useSending, useStoppable, useTurnLocked } from "@/lib/run";
 import type { Progress } from "@/lib/progress";
 import { ease, enterRise, prefersReduced, stageCheckSx, stageDotSx, stageFillSx, stageRingSx, stageSettleSx } from "@/lib/motion";
+import { sourceName, sourceNames } from "@/lib/sources";
 import { PlanCard, type RowState } from "./PlanCard";
 import { ResearchScan } from "./ResearchScan";
 import type { Strings } from "@/lib/strings";
@@ -137,6 +138,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
         {other && <Typography sx={{ mt: -1, fontSize: "0.8125rem", color: "text.secondary" }}>{t.otherDevice}</Typography>}
         {/* >= lg the right-hand ProgressPanel already carries the stage list */}
         <Box sx={{ display: { xs: "block", lg: "none" } }}><Stages p={p} running={running} /></Box>
+        {p.seen?.some(sourceName) && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{t.sourcesUsed} {sourceNames(p.seen)}</Typography>}
         {turn.plan ? (
           // The run goes by the plan the user reviewed: show it read-only, in place of a model-proposed listing.
           <Box>

@@ -7,6 +7,7 @@ import { enterFlash } from "@/lib/motion";
 import { useInspector } from "@/lib/inspector";
 import type { Reference } from "@/lib/sse";
 import { checkLabel, hasId, paperLink } from "@/lib/refs";
+import { sourceName } from "@/lib/sources";
 import type { Strings } from "@/lib/strings";
 
 export const anchorId = (turnId: string | undefined, refId: string) => (turnId ? `ref-${turnId}-${refId}` : `ref-${refId}`);
@@ -24,7 +25,7 @@ export function ReferenceList({ references, t, scope }: { references: Reference[
     <List disablePadding sx={{ display: "grid" }}>
       {references.map((r, i) => {
         const href = paperLink(r.paper);
-        const meta = [r.paper.authors.slice(0, 3).join(", ") + (r.paper.authors.length > 3 ? ` ${t.etAl}` : ""), r.paper.year]
+        const meta = [r.paper.authors.slice(0, 3).join(", ") + (r.paper.authors.length > 3 ? ` ${t.etAl}` : ""), r.paper.year, sourceName(r.paper.source) && `${t.foundVia} ${sourceName(r.paper.source)}`]
           .filter(Boolean)
           .join(" · ");
         const verified = r.status === "verified";
