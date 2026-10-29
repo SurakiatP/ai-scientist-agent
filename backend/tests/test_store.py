@@ -290,6 +290,7 @@ async def test_import_idempotent_and_clamped(api, monkeypatch):
     t = s["turns"][0]
     assert len(s["title"]) == 200 and len(snap["projects"][0]["name"]) == 120 and len(snap["files"][0]["name"]) == 120
     assert len(t["question"]) == 4000 and len(t["answer"]["content"]) == 60000 and len(t["answer"]["references"]) == 100
+    assert t["answer"].get("records", []) == []  # an old turn may have no records key at all
     assert s["project_id"] == pid and s["created_at"].startswith("2023-11-14")
     assert next(x for x in snap["sessions"] if x["title"] == "orphan")["project_id"] is None
     again = (await api.post("/v1/store/import", json=body)).json()
@@ -598,3 +599,14 @@ async def test_m7_file_size_bound(api):
 async def test_m9_usage_retention(api):
     sql(api.db, "insert into usage_events(at, mode, ok) values (now() - interval '200 days', 'deep', true), (now(), 'deep', true)")
     assert await api.app.state.data.purge_usage() == 1
+
+
+async def test_turn_answer_keeps_records_and_caps_them(api):
+    sid = await mk_session(api)
+    rec = {"database": "uniprot", "id": "P1", "title": "p", "url": "https://uniprot.org/P1", "summary": ""}
+    tid = u()
+    r = await api.put(f"/v1/store/sessions/{sid}/turns/{tid}", json=turn(answer={"content": "c", "references": [], "records": [rec]}))
+    assert r.status_code == 200, r.text
+    s = next(x for x in (await api.get("/v1/store/snapshot")).json()["sessions"] if x["id"] == sid)
+    assert s["turns"][0]["answer"]["records"] == [rec]
+    assert (await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(1, answer={"content": "c", "records": [rec] * 101}))).status_code == 422

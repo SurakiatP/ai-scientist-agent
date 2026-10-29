@@ -396,7 +396,7 @@ def _outcome(out: dict | None, d: dict) -> dict | None:
     """Terminal turn fields so far, folded like run.ts does (later events win; an analysis stays 'done' once it is)."""
     t = d["type"]
     if t == "final_answer":
-        return {"status": "done", "answer": {"content": d["content"], "references": d["references"]}}
+        return {"status": "done", "answer": {"content": d["content"], "references": d["references"], "records": d.get("records", [])}}
     if t == "refused":
         code = d.get("code")
         return {"status": "refused", "refused": d["reason"][:4000], **({"_code": code} if code in REFUSAL_CODES else {})}

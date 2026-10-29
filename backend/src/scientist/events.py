@@ -179,6 +179,7 @@ class FinalAnswer(BaseModel):
     type: Literal["final_answer"] = "final_answer"
     content: str
     references: list[Reference]
+    records: list[DataRecord] = []
 
 
 class Complete(BaseModel):

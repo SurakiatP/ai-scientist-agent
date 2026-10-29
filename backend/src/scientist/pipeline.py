@@ -12,8 +12,8 @@ from pydantic import ValidationError
 from scientist import llm
 from scientist.citations import verify_references
 from scientist.config import Settings
-from scientist.events import (BranchAnswer, DataRecord, Paper, Complete, Error, Event, FinalAnswer, Reference, Refused, Search,
-                              Sources, Strategy, Waiting, arxiv_id, paper_key)
+from scientist.events import (BranchAnswer, Complete, DataRecord, Error, Event, FinalAnswer, Paper, Records, Reference, Refused,
+                              Search, Sources, Strategy, Waiting, arxiv_id, paper_key)
 from scientist.gate import RunGate
 from scientist.guardrail import guard
 from scientist.hermes import BranchFailed, BranchRunner, InvalidPaper, InvalidRecord
@@ -53,8 +53,9 @@ async def _strategy(question: str, settings: Settings, history: list = ()) -> St
     return Strategy(reasoning=reasoning, searches=searches) if searches else None
 
 
-def _data_block(references: list[Reference], answers: list[BranchAnswer]) -> str:
+def _data_block(references: list[Reference], answers: list[BranchAnswer], records: list[DataRecord] = ()) -> str:
     data = {"references": [{"id": r.id, "status": r.status, **r.paper.model_dump()} for r in references],
+            "records": [r.model_dump() for r in records],  # fields are already length-capped by DataRecord
             "findings": [{"search": a.term, "summary": a.content} for a in answers]}
     # JSON keeps the text a string; escaping "<" stops it from closing the block early
     return "<data>\n" + json.dumps(data, ensure_ascii=False, indent=1).replace("<", "\\u003c") + "\n</data>"
@@ -143,6 +144,10 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     unkeyed = 0  # rejections with no identity at all
     per_branch: dict[str, int] = {}
     capped = 0  # papers past max_papers_per_branch
+    records: dict[tuple[str, str], DataRecord] = {}
+    rec_per_branch: dict[str, int] = {}
+    rec_capped = 0
+    rec_invalid: set = set()  # database:id of rejected records, or a unique marker when unidentified
     try:
         while (msg := await queue.get()) is not DONE:
             term, item = msg
@@ -155,8 +160,16 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
                     unkeyed += 1
             elif isinstance(item, BranchAnswer):
                 answers.append(item)  # held back so all sources events come before the answers
-            elif isinstance(item, (DataRecord, InvalidRecord)):
-                continue  # ponytail: records are ignored until plan 2 task 2 wires them in
+            elif isinstance(item, InvalidRecord):
+                rec_invalid.add(item.key or object())
+            elif isinstance(item, DataRecord):
+                if (n := rec_per_branch.get(term, 0)) >= settings.max_records_per_branch:
+                    rec_capped += 1
+                else:
+                    rec_per_branch[term] = n + 1
+                    if (item.database, item.id) not in records:  # the same entry from two searches is one record
+                        records[item.database, item.id] = item
+                        yield Records(term=term, records=[item])
             elif (n := per_branch.get(term, 0)) >= settings.max_papers_per_branch:
                 capped += 1
             else:
@@ -185,6 +198,11 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     note = "".join(f'\n\nNote: the search for "{t}" failed, so this answer does not cover it.' for t in failed)
     if dropped:
         note += f"\n\nNote: {dropped} paper(s) were left out because their metadata was invalid."
+    if rec_invalid:
+        note += f"\n\nNote: {len(rec_invalid)} database record(s) were left out because their data was invalid."
+    if rec_capped:
+        note += (f"\n\nNote: {rec_capped} database record(s) were left out because a search reported more than "
+                 f"{settings.max_records_per_branch}.")
     if capped:
         note += (f"\n\nNote: {capped} paper(s) were left out because a search reported more than "
                  f"{settings.max_papers_per_branch}.")
@@ -200,10 +218,10 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     if not answers:  # papers but no branch summary: say so plainly; never synthesise a comparison from titles alone
         yield FinalAnswer(content=f"Found {len(refs)} paper(s), but the search did not finish summarising them. "
                                   "The references below were found and checked; try again or narrow the question."
-                                  + note, references=refs)
+                                  + note, references=refs, records=list(records.values()))
         yield Complete()
         return
-    user = (_history_block(history) + _data_block(refs, answers)
+    user = (_history_block(history) + _data_block(refs, answers, list(records.values()))
             + "".join(f'\nThe search for "{t}" failed and returned no findings.' for t in failed)
             + f"\n\nQuestion:\n{question}")
     try:
@@ -211,7 +229,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     except Exception:
         yield Error(message="Could not write the answer. Please try again.")
         return
-    yield FinalAnswer(content=r.text.strip() + note, references=refs)
+    yield FinalAnswer(content=r.text.strip() + note, references=refs, records=list(records.values()))
     yield Complete()
 
 

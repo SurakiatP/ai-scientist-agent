@@ -673,3 +673,10 @@ async def test_default_caps_allow_three_running_and_one_queued_per_browser(serve
         assert r.status_code == 429 and r.json()["code"] == "client_busy"
         for rid in rids:
             await c.post(f"/v1/runs/{rid}/cancel", headers={"x-client-id": a})
+
+
+def test_outcome_carries_records_and_old_final_answer_has_none():
+    from scientist.runs import _outcome
+    r = {"database": "uniprot", "id": "P1", "title": "p", "url": "https://uniprot.org/P1", "summary": ""}
+    assert _outcome(None, {"type": "final_answer", "content": "c", "references": [], "records": [r]})["answer"]["records"] == [r]
+    assert _outcome(None, {"type": "final_answer", "content": "c", "references": []})["answer"]["records"] == []

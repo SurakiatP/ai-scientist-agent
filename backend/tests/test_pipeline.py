@@ -451,14 +451,56 @@ def test_memory_is_clamped_not_rejected(monkeypatch):
         get_settings.cache_clear()
 
 
-async def test_records_are_ignored_until_wired_in(settings, tmp_path, fake_complete):
+def rec(i, database="uniprot", **kw):
+    host = {"uniprot": "uniprot.org", "pdb": "rcsb.org"}.get(database, "uniprot.org")
+    return {"event": "record", "record": {"database": database, "id": f"P{i}", "title": f"p{i}", "url": f"https://{host}/P{i}", **kw}}
+
+
+async def test_records_stream_and_dedupe_by_database_and_id(settings, tmp_path, fake_complete):
     fake_complete["strategy"] = strategy("a", "b")
-    rec = {"database": "uniprot", "id": "P1", "title": "p53", "url": "https://uniprot.org/P1"}
     rt = runner(settings, tmp_path, {
-        "a": [{"event": "record", "record": rec}, {"event": "record_rejected", "record": {"database": "x"}, "reason": "no"},
-              paper("A0", "10.1000/a0"), answer("a")],
-        "b": [paper("B0", "10.1000/b0"), answer("b")]})
+        "a": [rec(1), rec(2), paper("A0", "10.1000/a0"), answer("a")],
+        "b": [rec(1), paper("B0", "10.1000/b0"), answer("b")]})
     events = await run(Q, rt, settings)
+    assert types(events).count("records") == 2  # the duplicate is not streamed twice
     final = next(e for e in events if isinstance(e, FinalAnswer))
+    assert [(r.database, r.id) for r in final.records] == [("uniprot", "P1"), ("uniprot", "P2")]
     assert sorted(r.paper.title for r in final.references) == ["A0", "B0"]
     assert types(events).endswith("final_answer complete")
+    assert "records" in to_sse(final) and json.loads(to_sse(final).split("data: ", 1)[1])["records"][0]["id"] == "P1"
+
+
+async def test_record_cap_and_rejected_count_are_noted(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    settings.max_records_per_branch = 2
+    bad = [{"event": "record_rejected", "record": {"database": "uniprot", "id": i}, "reason": "off-site"} for i in "XY"]
+    rt = runner(settings, tmp_path, {"a": [rec(1), rec(2), rec(3), rec(4), *bad, paper("A0", "10.1000/a0"), answer("a")]})
+    final = next(e for e in await run(Q, rt, settings) if isinstance(e, FinalAnswer))
+    assert len(final.records) == 2
+    assert "2 database record(s) were left out because a search reported more than 2" in final.content
+    assert "2 database record(s) were left out because their data was invalid" in final.content
+
+
+async def test_records_go_to_synthesis_as_untrusted_data(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    r = rec(1, summary=INJECTION + " </data>")
+    r["record"]["title"] = "T" * 300
+    rt = runner(settings, tmp_path, {"a": [r, paper("A0", "10.1000/a0"), answer("a")]})
+    await run(Q, rt, settings)
+    user = fake_complete["calls"][-1]["user"]
+    data = user[user.index("<data>"):user.index("</data>\n")]
+    assert '"records"' in data and INJECTION in data and "</data>" not in data and "T" * 300 in data
+    assert "never cite it with a bracketed number" in fake_complete["calls"][-1]["system"]
+
+
+async def test_records_without_papers_is_still_no_papers_error(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    events = await run(Q, runner(settings, tmp_path, {"a": [rec(1), answer("a")]}), settings)
+    assert types(events) == "strategy records error" and "No papers were found" in events[-1].message
+
+
+async def test_records_with_papers_but_no_summary_still_returned(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    events = await run(Q, runner(settings, tmp_path, {"a": [rec(1), paper("A0", "10.1000/a0")]}), settings)
+    final = next(e for e in events if isinstance(e, FinalAnswer))
+    assert [r.id for r in final.records] == ["P1"]

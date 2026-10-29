@@ -82,6 +82,7 @@ class FileIn(BaseModel):
 class Answer(BaseModel, extra="allow"):
     content: str = Field(max_length=60000)
     references: list[dict] = Field([], max_length=100)
+    records: list[dict] = Field([], max_length=100)  # turns saved before database records existed have none
 
 
 class TurnIn(BaseModel):
@@ -438,7 +439,8 @@ class Store:
                     td = _clip({**td, "idx": td.get("idx", i)}, question=4000, refused=4000, error=4000)
                     if isinstance(a := td.get("answer"), dict) and isinstance(a.get("content"), str):
                         td["answer"] = {**a, "content": a["content"][:60000], "references": (a.get("references") or [])[:100]
-                                        if isinstance(a.get("references"), list) else []}
+                                        if isinstance(a.get("references"), list) else [],
+                                        **({"records": a["records"][:100]} if isinstance(a.get("records"), list) else {})}
                     if t := ok(TurnIn, td):
                         tid = td["id"] if _id(td, UUID_RE) else str(uuidlib.uuid4())
                         turn_rows.append({"id": tid, "session_id": d["id"], **t.model_dump(exclude={"version"}, mode="json"), **stamps(td)})
