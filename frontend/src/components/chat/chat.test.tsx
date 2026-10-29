@@ -238,6 +238,22 @@ describe("Thread", () => {
     expect(screen.getByText("final answer").closest("[aria-live]")).toBeNull();
   });
 
+  it("an old finished turn (no records, no source on references) renders without the records section", () => {
+    const old = { id: "1", status: "verified" as const, paper: { title: "Old paper", authors: [], year: null, doi: null, pmid: null, url: "https://example.com" } };
+    render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "old answer", references: [old] } })} />);
+    expect(screen.getByText("old answer")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: t.recordsTitle })).toBeNull();
+    expect(screen.queryByText(/Sources used|แหล่งที่ใช้/)).toBeNull();
+  });
+  it("a finished research answer lists the sources it used (references and records); an analysis turn never does", () => {
+    const r = { id: "1", status: "verified" as const, paper: { title: "P", authors: [], year: null, doi: null, pmid: null, url: "https://example.com", source: "europepmc" } };
+    const rec = { database: "uniprot", id: "P1", title: "p53", url: "https://uniprot.org/P1", summary: "" };
+    const { unmount } = render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "a", references: [r], records: [rec] } })} />);
+    expect(screen.getByText(`${t.sourcesUsed} Europe PMC · UniProt`)).toBeInTheDocument();
+    unmount();
+    render(<AgentMessage sessionId="s" turn={turn("done", { analysis: { fileId: "f", steps: [] }, answer: { content: "a", references: [r], records: [rec] } })} />);
+    expect(screen.queryByText(/Europe PMC/)).toBeNull();
+  });
   it("retry is disabled with a reason while a run is active", () => {
     run.sessionId = "s"; run.turnId = "x";
     render(<AgentMessage sessionId="s" turn={turn("error", { error: "e" })} />);

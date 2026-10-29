@@ -12,7 +12,8 @@ import type { Strings } from "@/lib/strings";
 
 export const anchorId = (turnId: string | undefined, refId: string) => (turnId ? `ref-${turnId}-${refId}` : `ref-${refId}`);
 
-const idChipSx = { fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: "0.6875rem" };
+export const monoFont = 'ui-monospace, "SF Mono", Menlo, monospace';
+const idChipSx = { fontFamily: monoFont, fontSize: "0.6875rem" };
 const tint = (token: string, pct = 14) => `color-mix(in srgb, var(--mui-palette-${token}) ${pct}%, transparent)`;
 const chipSx = (token: string) => ({
   bgcolor: tint(token), borderColor: tint(token, 40), color: `${token.replace("-", ".")}`,
@@ -25,7 +26,8 @@ export function ReferenceList({ references, t, scope }: { references: Reference[
     <List disablePadding sx={{ display: "grid" }}>
       {references.map((r, i) => {
         const href = paperLink(r.paper);
-        const meta = [r.paper.authors.slice(0, 3).join(", ") + (r.paper.authors.length > 3 ? ` ${t.etAl}` : ""), r.paper.year, sourceName(r.paper.source) && `${t.foundVia} ${sourceName(r.paper.source)}`]
+        const via = sourceName(r.paper.source);
+        const meta = [r.paper.authors.slice(0, 3).join(", ") + (r.paper.authors.length > 3 ? ` ${t.etAl}` : ""), r.paper.year, via && `${t.foundVia} ${via}`]
           .filter(Boolean)
           .join(" · ");
         const verified = r.status === "verified";

@@ -10,6 +10,8 @@ import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
 import SearchOffRoundedIcon from "@mui/icons-material/SearchOffRounded";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import { AnswerView } from "@/components/AnswerView";
+import { SourcesUsed } from "@/components/research/SourcesUsed";
+import { answerSourceIds } from "@/lib/sources";
 import { DataRecords } from "@/components/DataRecords";
 import { ReferenceList } from "@/components/ReferenceList";
 import { AnalysisArtifact } from "@/components/research/AnalysisArtifact";
@@ -133,7 +135,8 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
               <ReferenceList references={refs} t={t} scope={scope} />
             </Box>
           )}
-          <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 2, flexWrap: "wrap" }}>
+          <Box sx={{ mt: 1.5 }}><SourcesUsed ids={answerSourceIds(turn.answer)} /></Box>
+          <Stack direction="row" spacing={1} useFlexGap sx={{ mt: 1, flexWrap: "wrap" }}>
             <Button variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={() => { useMode.getState().set("chat"); focusComposer(); }}>{t.askFollowUp}</Button>
             <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={refs.length === 0} sx={{ borderColor: "divider" }}
               onClick={(e) => openInspector({ ...scope, refId: refs[0].id }, e.currentTarget)}>{t.openEvidence}</Button>

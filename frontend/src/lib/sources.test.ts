@@ -15,7 +15,8 @@ describe("source names", () => {
     expect(sourceNames(undefined)).toBe("");
   });
   // Cross-language check: the table must list exactly the backend's ids and names (parsed from sources.py).
-  it.skipIf(!existsSync(PY))("matches backend/src/scientist/sources.py", () => {
+  it.skipIf(!existsSync(PY) && !process.env.CI)("matches backend/src/scientist/sources.py", () => {
+    expect(existsSync(PY)).toBe(true); // in CI a missing backend file fails instead of skipping
     const py = readFileSync(PY, "utf8");
     const papers = py.slice(py.indexOf("PAPER_SOURCES: dict"), py.indexOf("def _squash"));
     const data = py.slice(py.indexOf("DATA_SOURCES: dict"), py.indexOf("def record_host_ok"));

@@ -284,6 +284,18 @@ describe("newSession blank reuse", () => {
     s.getState().patchTurn(id, "t", { answer: { content: "b", references: [] } });
     expect(s.getState().sessions[0].turns[0].answer).toEqual({ content: "b", references: [] });
   });
+  it("loads a persisted turn with malformed records, keeping only the valid ones", async () => {
+    const ok = { database: "uniprot", id: "P1", title: "p53", url: "https://uniprot.org/P1", summary: "" };
+    const withRecords = (records: unknown) => ({ ...turn("t"), answer: { content: "a", references: [], records } });
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [withRecords([null, 5, { title: 1 }, ok])]), sess("s2", [withRecords("nope")])], activeId: "s" } }));
+    const s = await load();
+    expect(s.getState().sessions.find((x) => x.id === "s")!.turns[0].answer?.records).toEqual([ok]);
+    expect(s.getState().sessions.find((x) => x.id === "s2")!.turns[0].answer?.records ?? []).toEqual([]);
+    const id = s.getState().newSession();
+    s.getState().addTurn(id, turn("t3", "running") as never);
+    expect(() => s.getState().patchTurn(id, "t3", { answer: { content: "a", references: [], records: [null, ok] as never } })).not.toThrow();
+    expect(s.getState().sessions.find((x) => x.id === id)!.turns[0].answer?.records).toEqual([ok]);
+  });
   it("deleting a project keeps its chats (moved to Personal), so their memory stays with them", async () => {
     const s = await load();
     const p = s.getState().addProject("Lab");

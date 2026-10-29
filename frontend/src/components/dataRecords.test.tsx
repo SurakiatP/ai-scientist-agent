@@ -23,10 +23,15 @@ describe("DataRecords", () => {
     expect(a).toHaveAttribute("href", "https://uniprot.org/P04637");
     expect(a).toHaveAttribute("target", "_blank");
     expect(a).toHaveAttribute("rel", "noopener noreferrer");
-    expect(a).toHaveAccessibleName(/opens in a new tab/);
+    expect(a).toHaveAccessibleName("Cellular tumor antigen p53, opens in a new tab");
     expect(screen.getByText("UniProt", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("P04637")).toBeInTheDocument();
     expect(screen.getByText("Acts as a tumor suppressor.")).toBeInTheDocument();
+  });
+  it("gives each section its own heading id (two answers on one page)", () => {
+    const { container } = render(<><DataRecords records={[rec]} t={strings.en} /><DataRecords records={[rec]} t={strings.en} /></>);
+    const ids = [...container.querySelectorAll("h2")].map((h) => h.id);
+    expect(new Set(ids).size).toBe(2);
   });
   it("links only http(s); other schemes and junk entries are plain text or dropped; Thai heading", () => {
     render(<DataRecords records={[{ ...rec, url: "javascript:alert(1)" }, null, 5, { ...rec, title: "  " }]} t={strings.th} />);

@@ -1,3 +1,5 @@
+import type { DataRecord } from "./sse";
+
 // Display names of the evidence sources the backend reports by id. Kept in sync with backend/src/scientist/sources.py
 // (sources.test.ts parses that file and fails when the two lists differ).
 export const SOURCE_NAMES: Record<string, string> = {
@@ -89,3 +91,16 @@ export const sourceName = (id: string | null | undefined): string => (id && Obje
 
 /** "PubMed · arXiv · UniProt": names of the sources seen so far in a run, in the order they appeared; unknown ids are left out. */
 export const sourceNames = (ids: readonly string[] | undefined): string => (ids ?? []).map(sourceName).filter(Boolean).join(" · ");
+
+const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+/** Stored records are unvalidated dicts: keep the usable ones (an object with a title), every field a trimmed string. Never throws. */
+export const usableRecords = (records: unknown): DataRecord[] =>
+  (Array.isArray(records) ? records : []).flatMap((r: unknown) => {
+    const x = (r && typeof r === "object" ? r : {}) as Record<string, unknown>;
+    const title = str(x.title);
+    return title ? [{ database: str(x.database), id: str(x.id), title, url: str(x.url), summary: str(x.summary) }] : [];
+  });
+
+/** Distinct source ids of a finished answer, first appearance first: its references' papers, then its records' databases. */
+export const answerSourceIds = (answer: { references: { paper: { source?: string | null } }[]; records?: unknown }): string[] =>
+  [...new Set([...answer.references.map((r) => r.paper?.source), ...usableRecords(answer.records).map((r) => r.database)].filter((i): i is string => !!i))];
