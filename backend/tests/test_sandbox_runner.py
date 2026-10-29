@@ -1,4 +1,5 @@
 import asyncio
+import time
 from pathlib import Path
 
 import httpx
@@ -60,11 +61,15 @@ def test_bridge_env_passes_tls_settings(tmp_path, monkeypatch):
     assert {k: env[k] for k in TLS} == TLS
 
 
-@pytest.mark.parametrize("reachable,enabled,want", [(True, "true", "ok"), (False, "true", "unreachable"),
-                                                    (True, "false", "disabled")])
-async def test_health_reports_sandbox(monkeypatch, reachable, enabled, want):
+@pytest.mark.parametrize("reachable,enabled,host,want", [(True, "true", None, "ok"), (False, "true", None, "unreachable"),
+                                                         (True, "false", None, "disabled"), (True, "false", "tcp://x:1", "ok"),
+                                                         (False, "false", "tcp://x:1", "unreachable")])
+async def test_health_reports_sandbox(monkeypatch, reachable, enabled, host, want):
     for k, v in ENV.items():
         monkeypatch.setenv(k, v)
+    monkeypatch.delenv("DOCKER_HOST", raising=False)
+    if host:
+        monkeypatch.setenv("DOCKER_HOST", host)
     monkeypatch.setenv("SANDBOX_ENABLED", enabled)
     get_settings.cache_clear()
     calls = []
@@ -76,7 +81,7 @@ async def test_health_reports_sandbox(monkeypatch, reachable, enabled, want):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app()), base_url="http://t") as c:
         r = await c.get("/v1/health")
     assert r.status_code == 200 and r.json()["sandbox"] == want
-    assert bool(calls) == (enabled == "true")
+    assert bool(calls) == (want != "disabled")
 
 
 async def test_docker_reachable_caches(monkeypatch):
@@ -104,3 +109,32 @@ def test_sandbox_init_pulls_the_hermes_image_verbatim():
     from scientist.hermes import SANDBOX_IMAGE
     init = Path(__file__).resolve().parents[2] / "infra/deploy/sandbox-init.sh"
     assert SANDBOX_IMAGE in init.read_text()
+
+
+async def test_daemon_connection_failure_maps_to_docker_unavailable(monkeypatch, tmp_path):
+    class R:
+        def __init__(self, data): self.data = data
+        async def read(self, n): d, self.data = self.data, b""; return d
+
+    class P:
+        returncode = 1
+        stdout = R(b"")
+        stderr = R(b"Cannot connect to the Docker daemon at tcp://sandbox:2376. Is the docker daemon running?")
+        async def wait(self): return 1
+
+    async def exec_(*a, **k): return P()
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", exec_)
+    s = S(sandbox_work_dir=tmp_path)
+    r = await sandbox.run_analysis(None, b"a\n1\n", "csv", s)
+    assert not r.ok and r.error == "docker_unavailable"
+
+
+def test_sweep_stale_runs_removes_only_old_run_dirs(tmp_path):
+    import os
+    old, new, other = tmp_path / "run-old", tmp_path / "run-new", tmp_path / "keep"
+    for d in (old, new, other):
+        d.mkdir()
+    t = time.time() - 7200
+    os.utime(old, (t, t)), os.utime(other, (t, t))
+    sandbox.sweep_stale_runs(S(sandbox_work_dir=tmp_path))
+    assert not old.exists() and new.exists() and other.exists()

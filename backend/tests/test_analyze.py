@@ -279,6 +279,7 @@ async def _client(store, **env):
 
 async def test_disabled_503_and_health(store, monkeypatch):
     monkeypatch.setenv("SANDBOX_ENABLED", "false")
+    monkeypatch.delenv("DOCKER_HOST", raising=False)
     get_settings.cache_clear()
     async with await _client(store) as c:
         r = await c.post("/v1/async/analyze", json={"file_id": "f" * 32, "question": "x"})

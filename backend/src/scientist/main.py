@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager, suppress
 
 import httpx
@@ -41,6 +42,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     async def lifespan(app: FastAPI):
         if runner is None:
             sweep_containers()
+            await asyncio.to_thread(sandbox.sweep_stale_runs, settings)
         rt = runner or HermesRuntime(settings)
         async with client or httpx.AsyncClient() as c:
             app.state.runner, app.state.client = rt, c
@@ -122,19 +124,24 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                 h["files"] = "ok"
             except Exception:
                 h["files"] = "unavailable"
-        if app.state.db is None:
-            h["db"] = "disabled"
-        else:  # never fails the endpoint; bounded so the container healthcheck (2 s) is not held by a dead DB
-            try:
+        probe_docker = settings.sandbox_enabled or bool(os.environ.get("DOCKER_HOST"))  # branches need it even with analysis off
+
+        async def db_state():
+            if app.state.db is None:
+                return "disabled"
+            try:  # never fails the endpoint; bounded so the container healthcheck (2 s) is not held by a dead DB
                 st = await asyncio.wait_for(app.state.db.schema_state(), 1.5)
             except Exception:
                 st = "unreachable"
-            h["db"] = {"ok": "ok", "behind": "behind"}.get(st, "unavailable")
+            return {"ok": "ok", "behind": "behind"}.get(st, "unavailable")
+
+        async def docker_state():
+            if not probe_docker:
+                return "disabled"
+            return "ok" if await sandbox.docker_reachable() else "unreachable"  # its own 1.5 s bound, cached 30 s
+        h["db"], h["sandbox"] = await asyncio.gather(db_state(), docker_state())
         if not settings.sandbox_enabled:
             h["analysis"] = "disabled"
-            h["sandbox"] = "disabled"
-        else:
-            h["sandbox"] = "ok" if await sandbox.docker_reachable() else "unreachable"
         return h
 
     return app

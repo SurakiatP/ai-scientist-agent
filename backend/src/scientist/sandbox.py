@@ -79,6 +79,19 @@ def work_dir(settings: Settings) -> Path:
     return settings.sandbox_work_dir or Path.home() / ".cache/scientist/sandbox"
 
 
+def sweep_stale_runs(settings: Settings, max_age_s: float = 3600) -> None:
+    """Remove run-* dirs older than max_age_s (a SIGKILLed backend leaves them on the durable volume)."""
+    import shutil
+    base = work_dir(settings)
+    now = time.time()
+    for d in base.glob("run-*") if base.is_dir() else ():
+        try:
+            if d.is_dir() and now - d.stat().st_mtime > max_age_s:
+                shutil.rmtree(d, ignore_errors=True)
+        except OSError:
+            pass
+
+
 _reach = [0.0, False]  # monotonic time of the last probe, its result
 
 
@@ -90,7 +103,7 @@ async def docker_reachable() -> bool:
         p = await asyncio.create_subprocess_exec("docker", "version", "--format", "{{.Server.Version}}",
                                                  stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
         try:
-            ok = await asyncio.wait_for(p.wait(), 3) == 0
+            ok = await asyncio.wait_for(p.wait(), 1.5) == 0
         except TimeoutError:
             await kill_and_reap(p)
     except OSError:
@@ -279,6 +292,8 @@ async def run_analysis(script: str | None, data: bytes, ext: str, settings: Sett
             out_t.cancel()
             err_t.cancel()
         tail = err.decode(errors="replace")
+        if not out and proc.returncode and ("Cannot connect to the Docker daemon" in tail or "error during connect" in tail):
+            return AnalysisResult(ok=False, error="docker_unavailable", stderr_tail=tail)
         if not out:  # OOM-killed or crashed before printing
             return AnalysisResult(ok=False, error="oom_or_crash" if proc.returncode in (125, 137) else "no_result",
                                   stderr_tail=tail)
