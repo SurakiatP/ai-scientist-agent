@@ -11,7 +11,7 @@ import SearchOffRoundedIcon from "@mui/icons-material/SearchOffRounded";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import { AnswerView } from "@/components/AnswerView";
 import { SourcesUsed } from "@/components/research/SourcesUsed";
-import { answerSourceIds, sourceNames } from "@/lib/sources";
+import { answerSourceIds, sourceNames, usableUsage } from "@/lib/sources";
 import { DataRecords } from "@/components/DataRecords";
 import { ReferenceList } from "@/components/ReferenceList";
 import { AnalysisArtifact } from "@/components/research/AnalysisArtifact";
@@ -23,7 +23,7 @@ import { ReportArtifact, reportId } from "@/components/research/ReportArtifact";
 import type { RefusalCode, Turn } from "@/lib/chat";
 import { useReportPanel } from "@/lib/exportReport";
 import { useInspector } from "@/lib/inspector";
-import { useT } from "@/lib/prefs";
+import { usePrefs, useT } from "@/lib/prefs";
 import { strings, type Strings } from "@/lib/strings";
 import { LogoMark } from "@/components/landing/Dropdown";
 import { approvePlan, cancelPlan, startAnalysis, startError, startRun, stopTurn, useRunState, useSending, useStoppable } from "@/lib/run";
@@ -39,6 +39,7 @@ const REFUSAL_TEXT: Partial<Record<RefusalCode, keyof Strings>> = {
 
 function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }) {
   const t = useT();
+  const lang = usePrefs((s) => s.lang);
   const openReport = useReportPanel((s) => s.open);
   const [copied, setCopied] = useState<"ok" | "fail" | null>(null);
   const [wasRunning] = useState(turn.status === "running"); // only an answer that arrives live is revealed part by part; reloads render at once
@@ -65,6 +66,10 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const text = status === "refused" ? (coded ? t[coded] : t === strings.th ? t.refused : turn.refused) : status === "error" ? errText ?? turn.error : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
   const refs = turn.answer?.references ?? [];
   const ids = turn.answer ? answerSourceIds(turn.answer) : [];
+  const usage = usableUsage(turn.answer?.usage);
+  const cost = usage && (usage.cost_usd === null ? t.runTokens : t.runCost)
+    .replace("{cost}", `${usage.estimated ? "~" : ""}$${(usage.cost_usd ?? 0).toFixed(3)}`)
+    .replace("{tokens}", (usage.prompt_tokens + usage.completion_tokens).toLocaleString(lang === "en" ? "en-US" : "th-TH"));
   const sourceIds = sourceNames(ids) ? ids : null; // no wrapper at all when no known source is to be named
   const [tab, setTab] = useState<"answer" | "sources">("answer");
   const openInspector = useInspector((x) => x.open);
@@ -137,8 +142,13 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
               <ReferenceList references={refs} t={t} scope={scope} />
             </Box>
           )}
-          {sourceIds && <Box sx={{ mt: 1.5 }}><SourcesUsed ids={sourceIds} /></Box>}
-          <Stack direction="row" spacing={1} useFlexGap sx={{ mt: sourceIds ? 1 : 2, flexWrap: "wrap" }}>
+          {(sourceIds || cost) && (
+            <Box sx={{ mt: 1.5 }}>
+              {sourceIds && <SourcesUsed ids={sourceIds} />}
+              {cost && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{cost}</Typography>}
+            </Box>
+          )}
+          <Stack direction="row" spacing={1} useFlexGap sx={{ mt: sourceIds || cost ? 1 : 2, flexWrap: "wrap" }}>
             <Button variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={() => { useMode.getState().set("chat"); focusComposer(); }}>{t.askFollowUp}</Button>
             <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={refs.length === 0} sx={{ borderColor: "divider" }}
               onClick={(e) => openInspector({ ...scope, refId: refs[0].id }, e.currentTarget)}>{t.openEvidence}</Button>

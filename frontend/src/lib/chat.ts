@@ -3,8 +3,8 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { DEFER_HYDRATION, gate } from "./config";
 import { dataStorage, isItem, newId, safeStorage, storageFull, useHistoryStore } from "./history";
 import type { Progress } from "./progress";
-import { usableRecords } from "./sources";
-import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, DataRecord, Reference, Search } from "./sse";
+import { usableRecords, usableUsage } from "./sources";
+import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, DataRecord, Reference, RunUsage, Search } from "./sse";
 
 // What the analyze stream taught us about this turn. Every field is optional because events arrive one at a time.
 export type TurnAnalysis = {
@@ -26,7 +26,7 @@ export type Turn = {
   mode?: AskMode;
   kind?: "analysis";
   plan?: Search[]; // the approved plan: stored while awaiting review and kept as "the plan used" after approval
-  answer?: { content: string; references: Reference[]; records?: DataRecord[] }; // records: absent on turns saved before database records existed
+  answer?: { content: string; references: Reference[]; records?: DataRecord[]; usage?: RunUsage }; // usage: the run's tokens and cost, absent on older turns; records: absent on turns saved before database records existed
   analysis?: TurnAnalysis;
   refused?: string; refusedCode?: RefusalCode; error?: string;
   runId?: string; // the server-side run that owns this turn: the server writes it, this browser only shows it
@@ -175,12 +175,17 @@ const clampPatch = (p: Partial<Turn>): Partial<Turn> => ({
   ...(p.progress && { progress: clampProgress(p.progress) }),
   ...(p.error !== undefined && { error: p.error.slice(0, 2048) }),
   ...(p.refused !== undefined && { refused: p.refused.slice(0, REASON) }),
-  ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef), ...(p.answer.records !== undefined && { records: usableRecords(p.answer.records).slice(0, RECORDS).map(clampRecord) }) } }),
+  ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef), ...(p.answer.records !== undefined && { records: usableRecords(p.answer.records).slice(0, RECORDS).map(clampRecord) }), ...(usableUsage(p.answer.usage) && { usage: usableUsage(p.answer.usage) }) } }),
   ...(p.analysis && { analysis: clampAnalysis(p.analysis) }),
   ...(p.plan !== undefined && { plan: clampPlan(p.plan) }),
 });
 // A stored answer's records are unvalidated: keep the usable ones, drop the field when it is not a list.
-const cleanRecords = (t: Turn): Turn => (t.answer && t.answer.records !== undefined ? { ...t, answer: { ...t.answer, records: usableRecords(t.answer.records) } } : t);
+const cleanRecords = (t: Turn): Turn => {
+  if (!t.answer) return t;
+  const { usage, ...a } = t.answer;
+  const u = usableUsage(usage);
+  return { ...t, answer: { ...a, ...(a.records !== undefined && { records: usableRecords(a.records) }), ...(u && { usage: u }) } };
+};
 // Reuses history's item validator for the answer + references (its question/id/createdAt are filled in).
 export const isTurn = (v: unknown): v is Turn => {
   const t = v as Turn | null;

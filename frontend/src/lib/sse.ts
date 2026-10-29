@@ -9,6 +9,7 @@ export type Paper = {
   url: string;
   source?: string | null; // id of the paper source that found it (see lib/sources.ts); absent on older turns
 };
+export type RunUsage = { prompt_tokens: number; completion_tokens: number; cost_usd: number | null; estimated: boolean }; // the whole run so far; cost null = unknown
 export type DataRecord = { database: string; id: string; title: string; url: string; summary: string }; // one record from a scientific database; database = id in lib/sources.ts
 export type Reference = { id: string; paper: Paper; status: "verified" | "unverified" | "unknown" };
 export type Search = { term: string; instructions: string };
@@ -30,7 +31,7 @@ export type AskEvent =
   | { type: "sources"; term: string; papers: Paper[] }
   | { type: "records"; term: string; records: DataRecord[] }
   | { type: "answer"; term: string; content: string }
-  | { type: "final_answer"; content: string; references: Reference[]; records?: DataRecord[] }
+  | { type: "final_answer"; content: string; references: Reference[]; records?: DataRecord[]; usage?: RunUsage | null }
   | { type: "complete" }
   | StreamError;
 

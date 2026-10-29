@@ -1,4 +1,4 @@
-import type { DataRecord } from "./sse";
+import type { DataRecord, RunUsage } from "./sse";
 
 // Display names of the evidence sources the backend reports by id. Kept in sync with backend/src/scientist/sources.py
 // (sources.test.ts parses that file and fails when the two lists differ).
@@ -104,3 +104,10 @@ export const usableRecords = (records: unknown): DataRecord[] =>
 /** Distinct source ids of a finished answer, first appearance first: its references' papers, then its records' databases. */
 export const answerSourceIds = (answer: { references: { paper: { source?: string | null } }[]; records?: unknown }): string[] =>
   [...new Set([...answer.references.map((r) => r.paper?.source), ...usableRecords(answer.records).map((r) => r.database)].filter((i): i is string => !!i))];
+
+/** A stored/streamed usage is unvalidated: the object when every field is well-formed, else undefined (the turn stays, the line hides). */
+export const usableUsage = (u: unknown): RunUsage | undefined => {
+  const x = u as Partial<Record<keyof RunUsage, unknown>> | null;
+  const n = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0;
+  return x && typeof x === "object" && n(x.prompt_tokens) && n(x.completion_tokens) && (x.cost_usd === null || n(x.cost_usd)) && typeof x.estimated === "boolean" ? (x as RunUsage) : undefined;
+};

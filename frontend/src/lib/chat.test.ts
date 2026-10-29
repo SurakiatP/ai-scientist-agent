@@ -309,6 +309,20 @@ describe("newSession blank reuse", () => {
     expect(() => s.getState().patchTurn(id, "t3", { answer: { content: "a", references: [], records: [null, ok] as never } })).not.toThrow();
     expect(s.getState().sessions.find((x) => x.id === id)!.turns[0].answer?.records).toEqual([ok]);
   });
+  it("usage on a stored or saved answer is kept when well-formed and dropped (not the turn) when malformed", async () => {
+    const u = { prompt_tokens: 5, completion_tokens: 2, cost_usd: null, estimated: true };
+    const withUsage = (usage: unknown) => ({ ...turn("t"), answer: { content: "a", references: [], usage } });
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [withUsage(u)]), sess("s2", [withUsage({ prompt_tokens: -1 })])], activeId: "s" } }));
+    const s = await load();
+    expect(s.getState().sessions.find((x) => x.id === "s")!.turns[0].answer?.usage).toEqual(u);
+    const bad = s.getState().sessions.find((x) => x.id === "s2")!.turns[0];
+    expect(bad.answer?.content).toBe("a");
+    expect(bad.answer?.usage).toBeUndefined();
+    const id = s.getState().newSession();
+    s.getState().addTurn(id, turn("t3", "running") as never);
+    s.getState().patchTurn(id, "t3", { answer: { content: "a", references: [], usage: u } });
+    expect(s.getState().sessions.find((x) => x.id === id)!.turns[0].answer?.usage).toEqual(u);
+  });
   it("deleting a project keeps its chats (moved to Personal), so their memory stays with them", async () => {
     const s = await load();
     const p = s.getState().addProject("Lab");

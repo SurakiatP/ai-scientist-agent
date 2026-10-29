@@ -262,6 +262,21 @@ describe("Thread", () => {
     render(<AgentMessage sessionId="s" turn={turn("done", { analysis: { fileId: "f", steps: [] }, answer: { content: "a", references: [r], records: [rec] } })} />);
     expect(screen.queryByText(/Europe PMC/)).toBeNull();
   });
+  it("a finished answer shows the run cost and tokens; ~ only when estimated; tokens only when cost unknown; hidden without usage", () => {
+    const answer = (usage: unknown) => ({ answer: { content: "a", references: [], usage: usage as never } });
+    const u = { prompt_tokens: 60000, completion_tokens: 1230, cost_usd: 0.0421, estimated: false };
+    const { unmount } = render(<AgentMessage sessionId="s" turn={turn("done", answer(u))} />);
+    expect(screen.getByText(t.runCost.replace("{cost}", "$0.042").replace("{tokens}", (61230).toLocaleString("th-TH")))).toBeInTheDocument();
+    unmount();
+    const e = render(<AgentMessage sessionId="s" turn={turn("done", answer({ ...u, estimated: true }))} />);
+    expect(screen.getByText(/~\$0\.042/)).toBeInTheDocument();
+    e.unmount();
+    const n = render(<AgentMessage sessionId="s" turn={turn("done", answer({ ...u, cost_usd: null, estimated: true }))} />);
+    expect(screen.getByText(t.runTokens.replace("{tokens}", (61230).toLocaleString("th-TH")))).toBeInTheDocument();
+    n.unmount();
+    render(<AgentMessage sessionId="s" turn={turn("done", answer({ prompt_tokens: "x" }))} />);
+    expect(screen.queryByText(/\$/)).toBeNull();
+  });
   it("retry is disabled with a reason while a run is active", () => {
     run.sessionId = "s"; run.turnId = "x";
     render(<AgentMessage sessionId="s" turn={turn("error", { error: "e" })} />);
