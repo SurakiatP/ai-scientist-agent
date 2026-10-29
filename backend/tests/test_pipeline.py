@@ -135,6 +135,7 @@ async def test_papers_but_every_branch_failed_lists_references_without_synthesis
     fake_complete["strategy"] = strategy("x", "y")
     rt = runner(settings, tmp_path, {"x": [paper("P", "10.1000/p"), {"die": True}],
                                      "y": [paper("Q", pmid="123"), {"die": True}]})
+    settings = settings.model_copy(update={"replan_rounds": 0})  # this test counts model calls; a re-plan would add one
     events = await run(Q, rt, settings)
     assert types(events) == "strategy sources sources final_answer complete"
     final = events[-2]
@@ -147,7 +148,7 @@ async def test_papers_but_every_branch_failed_lists_references_without_synthesis
 
 async def test_token_budgets_reach_complete(settings, tmp_path, fake_complete):
     fake_complete["strategy"] = strategy("a")
-    s = settings.model_copy(update={"strategy_max_tokens": 111, "synthesis_max_tokens": 222})
+    s = settings.model_copy(update={"strategy_max_tokens": 111, "synthesis_max_tokens": 222, "replan_rounds": 0})
     await run(Q, runner(s, tmp_path, {"a": [paper("P", "10.1/p"), answer("ok")]}), s)
     assert [c["max_tokens"] for c in fake_complete["calls"]] == [111, 222]
 
@@ -546,3 +547,162 @@ async def test_final_records_never_exceed_the_stores_limit(settings, tmp_path, f
     rt = runner(settings, tmp_path, {"a": [*[rec(i) for i in range(120)], paper("A0", "10.1000/a0"), answer("a")]})
     final = next(e for e in await run(Q, rt, settings) if isinstance(e, FinalAnswer))
     assert len(final.records) == 100
+
+
+# --- adaptive re-plan: thin searches get one extra round ----------------------------------------------------------------
+def replan_reply(*terms):
+    return json.dumps({"reasoning": "broaden", "searches": [{"term": t, "instructions": f"extract {t}"} for t in terms]})
+
+
+def replan_calls(fake_complete):
+    return [c for c in fake_complete["calls"] if c["system"].startswith("You re-plan")]
+
+
+async def test_thin_search_gets_a_second_round(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("rich", "thin")
+    fake_complete["replan"] = replan_reply("wider topic", "other field words")
+    rt = runner(settings, tmp_path, {
+        "rich": [paper("R1", "10.1/r1"), paper("R2", "10.1/r2"), answer("rich")],
+        "thin": [paper("T1", "10.1/t1"), answer("thin")],  # 1 paper < replan_min_papers
+        "wider topic": [paper("W1", "10.1/w1"), paper("W2", "10.1/w2"), answer("wide")],
+        "other field words": [answer("none")],
+    })
+    events = await run(Q, rt, settings)
+    t = types(events)
+    assert re.fullmatch(r"strategy( sources)+ replan( sources)+( answer)+ final_answer complete", t), t
+    [rp] = [e for e in events if e.type == "replan"]
+    assert rp.model_dump() == {"type": "replan", "reasoning": "broaden", "thin": ["thin"],
+                               "searches": [{"term": "wider topic", "instructions": "extract wider topic"},
+                                            {"term": "other field words", "instructions": "extract other field words"}]}
+    assert events.index(rp) > max(i for i, e in enumerate(events) if e.type == "sources" and e.term in ("rich", "thin"))
+    assert events.index(rp) < min(i for i, e in enumerate(events) if e.type == "sources" and e.term == "wider topic")
+    assert events.index(rp) < min(i for i, e in enumerate(events) if e.type == "answer")
+    final = next(e for e in events if isinstance(e, FinalAnswer))
+    assert {r.paper.title for r in final.references} == {"R1", "R2", "T1", "W1", "W2"}
+    assert "wide" in fake_complete["calls"][-1]["user"]
+
+
+async def test_replan_prompt_has_only_question_terms_and_counts(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("rich", "thin")
+    fake_complete["replan"] = replan_reply("wider")
+    rt = runner(settings, tmp_path, {"rich": [paper("SECRET TITLE", "10.1/r1"), paper("R2", "10.1/r2"), answer("rich summary")],
+                                     "thin": [paper("T1", "10.1/t1"), answer("thin summary")], "wider": [answer("x")]})
+    await run(Q, rt, settings)
+    [call] = replan_calls(fake_complete)
+    assert call["json_mode"] and call["user"].rstrip().endswith(Q)
+    assert re.search(r'"term": "thin",\s+"papers_found": 1', call["user"])
+    assert '"rich"' in call["user"]  # tried list
+    for secret in ("SECRET TITLE", "T1", "rich summary", "thin summary"):
+        assert secret not in call["user"]
+
+
+@pytest.mark.parametrize("script,failed", [
+    ({"a": [answer("s")], "b": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")]}, "a"),  # 0 papers
+    ({"a": [paper("A1", "10.1/a1"), answer("s")], "b": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")]}, "a"),  # 1 paper
+    ({"a": [paper("A0", "10.1/a0"), {"die": True}], "b": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")]}, "a"),  # failed
+    ({"a": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")], "b": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")]}, "b"),  # duplicates only
+])
+async def test_thin_detection(settings, tmp_path, fake_complete, script, failed):
+    fake_complete["strategy"] = strategy("a", "b")
+    fake_complete["replan"] = replan_reply("c")
+    script["c"] = [paper("C1", "10.1/c1"), answer("s")]
+    events = await run(Q, runner(settings, tmp_path, script), settings)
+    [rp] = [e for e in events if e.type == "replan"]
+    assert rp.thin == [failed]
+
+
+async def test_no_thin_search_no_replan(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    rt = runner(settings, tmp_path, {"a": [paper("A1", "10.1/a1"), paper("A2", "10.1/a2"), answer("s")]})
+    events = await run(Q, rt, settings)
+    assert "replan" not in types(events) and replan_calls(fake_complete) == []
+
+
+@pytest.mark.parametrize("reply", [strategy("a"), replan_reply("A ", "  a"), replan_reply("การตัดต่อยีน"), "not json", "{}",
+                                   llm.LlmEmptyError("blank")])
+async def test_unusable_replan_changes_nothing(settings, tmp_path, fake_complete, reply):
+    fake_complete["strategy"] = strategy("a")
+    fake_complete["replan"] = reply
+    rt = runner(settings, tmp_path, {"a": [paper("A1", "10.1/a1"), answer("s")]})
+    events = await run(Q, rt, settings)
+    assert types(events) == "strategy sources answer final_answer complete"
+    assert len(replan_calls(fake_complete)) == 1
+
+
+async def test_replan_disabled_or_not_deep_is_todays_sequence(tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a", "b")
+    fake_complete["replan"] = replan_reply("c")
+    script = {"*": [paper("A1", "10.1/a1"), answer("s")], "c": [paper("C1", "10.1/c1"), answer("s")]}
+    for kw, mode in (({"replan_rounds": 0}, "deep"), ({}, "quick")):
+        st = Settings(openrouter_api_key="k", model="m", fallback_model="small", hermes_source_path=".", hermes_revision="x", **kw)
+        events = [e async for e in ask(Q, runner(st, tmp_path, script), settings=st, client=crossref(), gate=RunGate(4), mode=mode)]
+        assert types(events) == "strategy sources sources answer answer final_answer complete", (kw, mode)
+    assert replan_calls(fake_complete) == []
+
+
+async def test_round_two_duplicate_counted_once_and_still_thin(tmp_path, fake_complete):
+    st = Settings(openrouter_api_key="k", model="m", fallback_model="small", hermes_source_path=".", hermes_revision="x",
+                  replan_rounds=2)
+    fake_complete["strategy"] = strategy("a")
+    fake_complete["replan"] = replan_reply("b")
+    rt = runner(st, tmp_path, {"a": [paper("A1", "10.1/a1"), answer("s")],
+                               "b": [paper("A1", "10.1/a1"), paper("B1", "10.1/b1"), answer("s")]})
+    events = [e async for e in start(Q, rt, st)]
+    final = next(e for e in events if isinstance(e, FinalAnswer))
+    assert [r.paper.title for r in final.references] == ["A1", "B1"]  # one A1
+    # b found 1 new paper (A1 is a duplicate), so it is thin again and the second re-plan runs
+    [c1, c2] = replan_calls(fake_complete)
+    assert re.search(r'"term": "b",\s+"papers_found": 1', c2["user"]) and '"a"' in c2["user"]
+
+
+async def test_round_two_failure_is_named_in_the_note(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    fake_complete["replan"] = replan_reply("b", "c")
+    rt = runner(settings, tmp_path, {"a": [paper("A1", "10.1/a1"), answer("s")],
+                                     "b": [{"die": True}], "c": [paper("C1", "10.1/c1"), paper("C2", "10.1/c2"), answer("c ok")]})
+    events = await run(Q, rt, settings)
+    final = next(e for e in events if isinstance(e, FinalAnswer))
+    assert 'the search for "b" failed' in final.content and '"b"' in fake_complete["calls"][-1]["user"]
+    assert len(final.references) == 3
+
+
+async def test_replan_ceiling(tmp_path, fake_complete):
+    st = Settings(openrouter_api_key="k", model="m", fallback_model="small", hermes_source_path=".", hermes_revision="x",
+                  replan_max_searches=2)
+    fake_complete["strategy"] = strategy("a")
+    fake_complete["replan"] = replan_reply("b1", "b2", "b3", "b4")
+    rt = runner(st, tmp_path, {"*": [paper("P", "10.1/p"), answer("s")]})
+    events = [e async for e in start(Q, rt, st)]
+    [rp] = [e for e in events if e.type == "replan"]
+    assert [s.term for s in rp.searches] == ["b1", "b2"]
+    assert len(replan_calls(fake_complete)) == 1  # replan_rounds=1: no second re-plan
+
+
+async def test_stop_during_replan_call_and_round_two_kills_bridges(settings, tmp_path, fake_complete, monkeypatch):
+    fake_complete["strategy"] = strategy("a")
+    fake_complete["replan"] = replan_reply("b")
+    rt = runner(settings, tmp_path, {"a": [paper("A1", "10.1/a1"), answer("s")], "b": [paper("B1", "10.1/b1"), {"sleep": 30}]})
+    gate = RunGate(1)
+    stream = start(Q, rt, settings, gate=gate)
+    assert [(await anext(stream)).type for _ in range(3)] == ["strategy", "sources", "replan"]
+    assert (await anext(stream)).type == "sources"  # round two is running
+    assert rt.procs
+    await asyncio.wait_for(stream.aclose(), timeout=20)
+    assert not rt.procs and gate.free == 1
+
+    # cancelled while the re-plan call itself is pending
+    started = asyncio.Event()
+
+    async def hang(system, user, *, model=None, max_tokens, json_mode=False, settings=None):
+        if system.startswith("You re-plan"):
+            started.set()
+            await asyncio.sleep(60)
+        return llm.LlmResult(text=strategy("a"), prompt_tokens=1, completion_tokens=1, cached_tokens=0)
+    monkeypatch.setattr(llm, "complete", hang)
+    rt = runner(settings, tmp_path, {"a": [answer("s")]})
+    task = asyncio.create_task(run(Q, rt, settings))
+    await asyncio.wait_for(started.wait(), timeout=20)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not rt.procs

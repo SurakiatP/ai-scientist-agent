@@ -162,6 +162,14 @@ class Strategy(BaseModel):
     searches: list[Search]
 
 
+class Replan(BaseModel):
+    """Thin searches found too little: the extra searches that join the run (emitted before their branches start)."""
+    type: Literal["replan"] = "replan"
+    reasoning: str
+    thin: list[str]
+    searches: list[Search]
+
+
 class Sources(BaseModel):
     """One event per paper, as a branch reports it."""
     type: Literal["sources"] = "sources"
@@ -225,7 +233,7 @@ class AnalysisResult(BaseModel):
     artifacts: list[Artifact]
 
 
-Event = Annotated[Refused | Waiting | Strategy | Sources | BranchAnswer | FinalAnswer | Complete | Error
+Event = Annotated[Refused | Waiting | Strategy | Replan | Sources | BranchAnswer | FinalAnswer | Complete | Error
                   | AnalysisStep | AnalysisScript | AnalysisResult,
                   Field(discriminator="type")]
 

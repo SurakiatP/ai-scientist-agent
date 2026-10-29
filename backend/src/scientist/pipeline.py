@@ -13,7 +13,7 @@ from scientist import llm
 from scientist.citations import verify_references
 from scientist.config import Settings
 from scientist.events import (BranchAnswer, Complete, DataRecord, Error, Event, FinalAnswer, Paper, Records, Reference, Refused,
-                              Search, Sources, Strategy, Waiting, arxiv_id, paper_key)
+                              Replan, Search, Sources, Strategy, Waiting, arxiv_id, paper_key)
 from scientist.gate import RunGate
 from scientist.guardrail import guard
 from scientist.hermes import BranchFailed, BranchRunner, InvalidPaper, InvalidRecord
@@ -21,6 +21,7 @@ from scientist.sources import DATA_SOURCES
 
 PROMPTS = Path(__file__).parent / "prompts"
 STRATEGY = (PROMPTS / "strategy.md").read_text()
+REPLAN = (PROMPTS / "replan.md").read_text()
 SYNTHESIS = (PROMPTS / "synthesis.md").read_text()
 CHAT = (PROMPTS / "chat.md").read_text()
 THAI = re.compile("[฀-๿]")
@@ -52,6 +53,36 @@ async def _strategy(question: str, settings: Settings, history: list = ()) -> St
     # scholarly APIs are searched in English; a Thai term is a model slip, drop it
     searches = [s for s in searches if s.term and not THAI.search(s.term)][:settings.max_branches]
     return Strategy(reasoning=reasoning, searches=searches) if searches else None
+
+
+def _norm(term: str) -> str:
+    return " ".join(term.lower().split())
+
+
+async def _replan(question: str, thin: list[tuple[str, int]], tried: list[str], settings: Settings,
+                  history: list = ()) -> Replan | None:
+    """Extra English searches for the thin ones, none already tried. Gets only the question, terms and counts (never
+    paper text, which is untrusted). Any failure or nothing new is None: the run goes on without it."""
+    user = (f"{_history_block(history)}<searches>\n"
+            + json.dumps({"thin": [{"term": t, "papers_found": n} for t, n in thin], "already_tried": tried},
+                         ensure_ascii=False, indent=1).replace("<", "\\u003c")
+            + f"\n</searches>\n\nQuestion:\n{question}")
+    try:
+        r = await llm.complete(REPLAN, user, max_tokens=settings.strategy_max_tokens, json_mode=True, settings=settings)
+        data = json.loads(r.text)
+        found = [Search(term=str(s.get("term") or "").strip(), instructions=str(s.get("instructions") or "").strip())
+                 for s in data["searches"]]
+        reasoning = str(data.get("reasoning") or "")
+    except Exception:
+        return None
+    seen = {_norm(t) for t in tried}
+    searches = []
+    for s in found:
+        if s.term and not THAI.search(s.term) and _norm(s.term) not in seen:
+            seen.add(_norm(s.term))
+            searches.append(s)
+    searches = searches[:settings.replan_max_searches]
+    return Replan(reasoning=reasoning, thin=[t for t, _ in thin], searches=searches) if searches else None
 
 
 def _data_block(references: list[Reference], answers: list[BranchAnswer], records: list[DataRecord] = ()) -> str:
@@ -121,72 +152,91 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
         return
     yield plan
 
-    queue: asyncio.Queue = asyncio.Queue()
-
-    async def branch(s: Search) -> None:
+    async def branch(queue: asyncio.Queue, s: Search) -> None:
         try:
             async for item in runner.run(s.term, s.instructions):
                 await queue.put((s.term, item))
         except Exception as e:  # a runner bug in one branch must not stop the others
             await queue.put((s.term, BranchFailed(term=s.term, reason=type(e).__name__)))
 
-    async def run_all() -> None:
+    async def run_all(queue: asyncio.Queue, searches: list[Search]) -> None:
         try:
             # return_exceptions: on cancel, wait for every branch to stop its bridge (without it gather ends at the first one)
-            await asyncio.gather(*(branch(s) for s in plan.searches), return_exceptions=True)
+            await asyncio.gather(*(branch(queue, s) for s in searches), return_exceptions=True)
         finally:
             queue.put_nowait(DONE)
 
-    task = asyncio.create_task(run_all())
     references: dict[str, Reference] = {}
     answers: list[BranchAnswer] = []
     failed: list[str] = []
     rejected: set[str] = set()
     unkeyed = 0  # rejections with no identity at all
     per_branch: dict[str, int] = {}
+    new_per_branch: dict[str, int] = {}  # papers a search was first to find (a re-plan trigger when few)
     capped = 0  # papers past max_papers_per_branch
     records: dict[tuple[str, str], DataRecord] = {}
     rec_per_branch: dict[str, int] = {}
     rec_capped = 0
     gated: set[str] = set()  # names of key-gated databases the model tried to use
     rec_invalid: set = set()  # database:id of rejected records, or a unique marker when unidentified
-    try:
-        while (msg := await queue.get()) is not DONE:
-            term, item = msg
-            if isinstance(item, BranchFailed):
-                failed.append(term)
-            elif isinstance(item, InvalidPaper):
-                if item.key:
-                    rejected.add(item.key)
+    searches = plan.searches
+    tried = [s.term for s in searches]
+    extra_rounds = settings.replan_rounds if mode == "deep" else 0
+    for round_no in range(extra_rounds + 1):
+        queue: asyncio.Queue = asyncio.Queue()
+        task = asyncio.create_task(run_all(queue, searches))
+        failed_before = len(failed)
+        try:
+            while (msg := await queue.get()) is not DONE:
+                term, item = msg
+                if isinstance(item, BranchFailed):
+                    failed.append(term)
+                elif isinstance(item, InvalidPaper):
+                    if item.key:
+                        rejected.add(item.key)
+                    else:
+                        unkeyed += 1
+                elif isinstance(item, BranchAnswer):
+                    answers.append(item)  # held back so all sources events come before the answers
+                elif isinstance(item, InvalidRecord):
+                    if item.code == "needs_key":
+                        if (db := DATA_SOURCES.get((item.key or "").split(":", 1)[0])) is not None:
+                            gated.add(db.name)
+                    else:
+                        rec_invalid.add(item.key or object())
+                elif isinstance(item, DataRecord):
+                    if (item.database, item.id) in records:  # the same entry again is one record and takes no slot
+                        continue
+                    if (n := rec_per_branch.get(term, 0)) >= settings.max_records_per_branch:
+                        rec_capped += 1
+                    else:
+                        rec_per_branch[term] = n + 1
+                        records[item.database, item.id] = item
+                        yield Records(term=term, records=[item])
+                elif (n := per_branch.get(term, 0)) >= settings.max_papers_per_branch:
+                    capped += 1
                 else:
-                    unkeyed += 1
-            elif isinstance(item, BranchAnswer):
-                answers.append(item)  # held back so all sources events come before the answers
-            elif isinstance(item, InvalidRecord):
-                if item.code == "needs_key":
-                    if (db := DATA_SOURCES.get((item.key or "").split(":", 1)[0])) is not None:
-                        gated.add(db.name)
-                else:
-                    rec_invalid.add(item.key or object())
-            elif isinstance(item, DataRecord):
-                if (item.database, item.id) in records:  # the same entry again is one record and takes no slot
-                    continue
-                if (n := rec_per_branch.get(term, 0)) >= settings.max_records_per_branch:
-                    rec_capped += 1
-                else:
-                    rec_per_branch[term] = n + 1
-                    records[item.database, item.id] = item
-                    yield Records(term=term, records=[item])
-            elif (n := per_branch.get(term, 0)) >= settings.max_papers_per_branch:
-                capped += 1
-            else:
-                per_branch[term] = n + 1
-                references.setdefault(paper_key(item.doi, item.pmid, item.title, item.url), Reference(id=str(len(references) + 1), paper=item, status="unknown"))
-                yield Sources(term=term, papers=[item])
-    finally:
-        task.cancel()  # consumer gone (client disconnect): stop branches, which kills their bridges
-        with suppress(asyncio.CancelledError):
-            await task
+                    per_branch[term] = n + 1
+                    key = paper_key(item.doi, item.pmid, item.title, item.url)
+                    if key not in references:
+                        new_per_branch[term] = new_per_branch.get(term, 0) + 1
+                    references.setdefault(key, Reference(id=str(len(references) + 1), paper=item, status="unknown"))
+                    yield Sources(term=term, papers=[item])
+        finally:
+            task.cancel()  # consumer gone (client disconnect): stop branches, which kills their bridges
+            with suppress(asyncio.CancelledError):
+                await task
+        if round_no == extra_rounds:
+            break
+        thin = [(s.term, new_per_branch.get(s.term, 0)) for s in searches
+                if new_per_branch.get(s.term, 0) < settings.replan_min_papers or s.term in failed[failed_before:]]
+        thin = list(dict(thin).items())
+        # a cancel during this call finds no branch alive: the finally above already stopped them
+        if not thin or not (replan := await _replan(question, thin, tried, settings, history)):
+            break
+        yield replan
+        searches = replan.searches
+        tried += [s.term for s in searches]
 
     dropped = len(rejected - references.keys()) + unkeyed  # a corrected retry is not a drop
     if not references and dropped:

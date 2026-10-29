@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     sse_ping_seconds: float = 15  # comment line while a run waits, so proxies keep the stream open
     max_records_per_branch: int = Field(20, ge=0)  # database records past this per branch are ignored (counted in the final note)
     max_papers_per_branch: int = 30  # papers past this per branch are ignored (counted in the final note)
+    # adaptive re-plan (deep mode): searches that find fewer than replan_min_papers new papers get up to replan_rounds extra rounds of at most replan_max_searches new terms; 0 rounds = off
+    replan_rounds: int = Field(1, ge=0, le=2)
+    replan_min_papers: int = Field(2, ge=1)
+    replan_max_searches: int = Field(3, ge=1, le=5)
     # max_tokens per call; reasoning models spend part of it thinking, so small values come back blank
     guardrail_max_tokens: int = 256
     strategy_max_tokens: int = 1500

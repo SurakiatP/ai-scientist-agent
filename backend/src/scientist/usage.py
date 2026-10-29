@@ -10,12 +10,12 @@ import anyio
 import sqlalchemy as sa
 
 from scientist import models as m
-from scientist.events import AnalysisResult, AnalysisStep, BranchAnswer, Complete, Error, Event, FinalAnswer, Refused, Sources, Strategy, Waiting
+from scientist.events import AnalysisResult, AnalysisStep, BranchAnswer, Complete, Error, Event, FinalAnswer, Refused, Replan, Sources, Strategy, Waiting
 
 log = logging.getLogger(__name__)
 PENDING: set[asyncio.Task] = set()
 CURRENT: ContextVar["Acc | None"] = ContextVar("usage", default=None)
-END_LABEL = {Waiting: "queue", Strategy: "strategy", Sources: "search", BranchAnswer: "search",
+END_LABEL = {Waiting: "queue", Strategy: "strategy", Replan: "strategy", Sources: "search", BranchAnswer: "search",
              FinalAnswer: "synthesis", Refused: "scope", AnalysisStep: "setup", AnalysisResult: "finish"}
 
 
