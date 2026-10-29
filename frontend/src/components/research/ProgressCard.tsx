@@ -25,7 +25,7 @@ export const queueText = (p: Progress, t: Strings) => {
 export const statusText = (p: Progress, t: Strings) =>
   p.phase === "waiting" ? queueText(p, t) : p.phase === "planning" ? t.planning : p.phase === "writing" ? t.writing : p.phase === "done" ? t.done : t.searching;
 
-// "Plan adjusted: few results for “a”, “b”, searching 2 more terms": what was thin, and how many searches were added.
+// "Plan adjusted: few results for “a”, “b”, searched 2 more terms": what was thin, and how many searches were added.
 export const replanText = (r: { thin: string[]; searches: unknown[] }, t: Strings) =>
   (r.searches.length === 1 ? t.replanLine1 : t.replanLine).replace("{terms}", r.thin.join("”, “")).replace("{n}", String(r.searches.length));
 

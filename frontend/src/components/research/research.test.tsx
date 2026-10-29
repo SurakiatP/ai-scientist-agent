@@ -59,7 +59,7 @@ describe("ProgressCard", () => {
   it("states the plan change and marks the added searches in text, and a finished turn keeps it", () => {
     const rp = prog({ ...busy, searches: [...busy.searches, { term: "gamma", instructions: "" }], replans: [{ reasoning: "broaden", thin: ["beta"], searches: [{ term: "gamma", instructions: "" }] }] });
     const { rerender } = render(<ProgressCard turn={turn(rp)} />);
-    expect(screen.getByText("Plan adjusted: few results for “beta”, searching 1 more term")).toBeInTheDocument();
+    expect(screen.getByText("Plan adjusted: few results for “beta”, searched 1 more term")).toBeInTheDocument();
     expect(screen.getAllByText(t.replanAdded)).toHaveLength(1);
     expect(screen.getByText("gamma")).toBeInTheDocument();
     rerender(<ProgressCard turn={turn({ ...rp, phase: "done" }, { status: "done" })} />);
@@ -70,7 +70,7 @@ describe("ProgressCard", () => {
     const rp = prog({ ...busy, searches: [...busy.searches, { term: "g1", instructions: "" }, { term: "g2", instructions: "" }],
       replans: [{ reasoning: "x", thin: ["alpha", "beta"], searches: [{ term: "g1", instructions: "" }, { term: "g2", instructions: "" }] }] });
     render(<ProgressCard turn={turn(rp, { plan: [busy.searches[0]] })} />);
-    expect(screen.getByText("Plan adjusted: few results for “alpha”, “beta”, searching 2 more terms")).toBeInTheDocument();
+    expect(screen.getByText("Plan adjusted: few results for “alpha”, “beta”, searched 2 more terms")).toBeInTheDocument();
     expect(screen.getAllByText(t.replanAdded)).toHaveLength(2);
     expect(screen.queryByText("beta", { selector: "p" })).toBeNull();
   });
