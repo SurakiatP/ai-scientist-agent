@@ -350,7 +350,7 @@ async def test_a_cancel_requested_run_of_a_dead_process_is_stopped_not_restarted
     a = await fake.make(max_concurrent_runs=1)
     rid = await submit(fake, a, u(), "c1")
     await until(ran(fake, 1))
-    sql(fake.db, "update runs set cancel_requested = true where id = %s", rid)
+    await asyncio.to_thread(sql, fake.db, "update runs set cancel_requested = true where id = %s", rid)
     await die(a)
     await fake.make(max_concurrent_runs=1)
     await until(is_status(fake, rid, "stopped"), 20)
@@ -412,7 +412,7 @@ async def test_a_released_and_a_swept_cancel_notify_followers_at_once(cluster):
     a = await fake.make(max_concurrent_runs=1)
     rid = await submit(fake, a, u(), "c1")
     await until(ran(fake, 1))
-    sql(fake.db, "update runs set cancel_requested = true where id = %s", rid)
+    await asyncio.to_thread(sql, fake.db, "update runs set cancel_requested = true where id = %s", rid)
     async with a.st.pgbus.subscribe("run_events") as it:
         await a.shutdown()  # releases: a requested cancel stops the run
         seen = []
