@@ -15,6 +15,10 @@ jobs:
     strategy:
       matrix:
         image: [backend, frontend]
+        context: ['.']
+        include:
+          - image: sandbox # analysis image; its Dockerfile COPYs runner.py relative to its own dir
+            context: backend/sandbox
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - id: meta
@@ -33,8 +37,8 @@ jobs:
       - id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
-          context: .
-          file: ${{ matrix.image }}/Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.image == 'sandbox' && 'backend/sandbox' || matrix.image }}/Dockerfile
           push: true
           tags: |
             ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.ref_tag }}

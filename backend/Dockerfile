@@ -1,8 +1,12 @@
 # Build from the repo root: docker build -f backend/Dockerfile .
 FROM ghcr.io/astral-sh/uv:0.8.17 AS uv
 
+# docker CLI only (no daemon): docker:28.5.2-cli index digest, resolved 2026-10-29 via `docker buildx imagetools inspect docker:28.5.2-cli`
+FROM docker:28.5.2-cli@sha256:625d9431a9f54c5a2bc90f24f0e1c3d55b1349fd857dd85035f98c2c9acbdd4d AS dockercli
+
 FROM python:3.12.11-slim-bookworm
 COPY --from=uv /uv /usr/local/bin/uv
+COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never \
     PATH="/app/backend/.venv/bin:$PATH" HOME=/home/app PYTHONUNBUFFERED=1
 # git: HermesRuntime verifies the pinned Hermes/skills checkouts with `git rev-parse` / `git status`
