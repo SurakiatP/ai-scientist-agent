@@ -151,7 +151,9 @@ const clampCell = (v: unknown): string | number | boolean | null => {
     return String(v).slice(0, CELL);
   }
 };
-const clampAnalysis = (a: TurnAnalysis): TurnAnalysis => ({
+const clampAnalysis = (a: TurnAnalysis): TurnAnalysis => {
+  const prov = usableProvenance(a.provenance);
+  return {
   fileId: a.fileId.slice(0, FILE),
   ...(a.fileName !== undefined && { fileName: a.fileName.slice(0, FILE_NAME) }),
   steps: a.steps.filter(isStep).slice(0, STEP_MAX).filter((s, i, all) => all.indexOf(s) === i),
@@ -171,19 +173,23 @@ const clampAnalysis = (a: TurnAnalysis): TurnAnalysis => ({
   ...(a.findings && { findings: a.findings.slice(0, FINDINGS).map((f) => f.slice(0, FINDING)) }),
   ...(a.timings && { timings: Object.fromEntries(Object.entries(a.timings).slice(0, TIMINGS).filter(([, n]) => isNum(n) && n >= 0).map(([k, n]) => [k.slice(0, 100), n])) }),
   ...(a.artifacts && { artifacts: a.artifacts.slice(0, ARTIFACTS).map((x) => ({ id: x.id.slice(0, FILE), name: x.name.slice(0, 300), kind: x.kind, url: x.url.slice(0, 2048) })) }),
-  ...(usableProvenance(a.provenance) && { provenance: usableProvenance(a.provenance) }),
-});
-const clampPatch = (p: Partial<Turn>): Partial<Turn> => ({
+  ...(prov && { provenance: prov }),
+  };
+};
+const clampPatch = (p: Partial<Turn>): Partial<Turn> => {
+  const usage = usableUsage(p.answer?.usage), prov = usableProvenance(p.answer?.provenance);
+  return {
   ...p,
   ...(p.progress && { progress: clampProgress(p.progress) }),
   ...(p.error !== undefined && { error: p.error.slice(0, 2048) }),
   ...(p.refused !== undefined && { refused: p.refused.slice(0, REASON) }),
-  ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef), ...(p.answer.records !== undefined && { records: usableRecords(p.answer.records).slice(0, RECORDS).map(clampRecord) }), ...(usableUsage(p.answer.usage) && { usage: usableUsage(p.answer.usage) }), ...(usableProvenance(p.answer.provenance) && { provenance: usableProvenance(p.answer.provenance) }) } }),
+  ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef), ...(p.answer.records !== undefined && { records: usableRecords(p.answer.records).slice(0, RECORDS).map(clampRecord) }), ...(usage && { usage }), ...(prov && { provenance: prov }) } }),
   ...(p.analysis && { analysis: clampAnalysis(p.analysis) }),
   ...(p.plan !== undefined && { plan: clampPlan(p.plan) }),
-});
+  };
+};
 // A stored answer's records are unvalidated: keep the usable ones, drop the field when it is not a list.
-const cleanRecords = (t: Turn): Turn => {
+const cleanTurn = (t: Turn): Turn => {
   const { provenance: ap, ...an } = t.analysis ?? ({} as Partial<TurnAnalysis>);
   const pa = usableProvenance(ap);
   const base = t.analysis ? { ...t, analysis: { ...(an as TurnAnalysis), ...(pa && { provenance: pa }) } } : t;
@@ -327,7 +333,7 @@ export const useChatStore = create<State>()(
           (Array.isArray(p.sessions) ? p.sessions.filter(isSession) : []).map((x) => ({
             ...x, // bad/excess turns are dropped individually, not the whole session
             projectId: ids.has(x.projectId) ? x.projectId : PERSONAL,
-            turns: x.turns.filter(isTurn).slice(-MAX_TURNS).map(cleanRecords).map((t) => (t.status === "running" ? { ...t, status: "interrupted" as const } : t)),
+            turns: x.turns.filter(isTurn).slice(-MAX_TURNS).map(cleanTurn).map((t) => (t.status === "running" ? { ...t, status: "interrupted" as const } : t)),
           })),
         );
         const active = sessions.find((x) => x.id === p.activeId);

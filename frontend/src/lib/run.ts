@@ -111,10 +111,14 @@ const errorOutcome = (e: ApiError): Patch =>
   e.code === "stopped" ? { status: "stopped" } : e.code === "interrupted" ? { status: "interrupted" }
   : e.code === "cut_off" || e.code === "failed" ? { status: "error", error: e.message.slice(0, 2048) || cutOffText(), errCode: e.code }
   : (e.runCode === "use_runs" && void reprobeSync().catch(() => {}), { status: "error", error: errorText(e) }); // the server has the shared database after all: look again so a retry takes the queue
-const askOutcome = (e: AskEvent): Patch | null =>
-  e.type === "final_answer" ? { status: "done", answer: { content: e.content, references: e.references, ...(e.records?.length ? { records: e.records } : {}), ...(usableUsage(e.usage) ? { usage: usableUsage(e.usage) } : {}), ...(usableProvenance(e.provenance) ? { provenance: usableProvenance(e.provenance) } : {}) } }
-  : e.type === "refused" ? { status: "refused", refused: e.reason, refusedCode: refusalCode(e.code) }
+const askOutcome = (e: AskEvent): Patch | null => {
+  if (e.type === "final_answer") {
+    const usage = usableUsage(e.usage), provenance = usableProvenance(e.provenance);
+    return { status: "done", answer: { content: e.content, references: e.references, ...(e.records?.length ? { records: e.records } : {}), ...(usage ? { usage } : {}), ...(provenance ? { provenance } : {}) } };
+  }
+  return e.type === "refused" ? { status: "refused", refused: e.reason, refusedCode: refusalCode(e.code) }
   : e.type === "error" ? errorOutcome(e) : null;
+};
 
 // The real ask stream, shared by startRun (direct runs) and approvePlan (a reviewed plan).
 async function runAsk(question: string, c: AbortController, opts: { mode: AskMode; history: HistoryTurn[]; plan?: Search[]; memory?: MemoryTurn[] }, patch: (p: Patch) => void): Promise<void> {
@@ -382,10 +386,10 @@ function reduceAnalysis(a: TurnAnalysis, e: AnalyzeEvent): TurnAnalysis {
   switch (e.type) {
     case "analysis_step": return a.steps.includes(e.step) ? a : { ...a, steps: [...a.steps, e.step] };
     case "analysis_script": return { ...a, script: e.code };
-    case "analysis_result": return {
-      ...a, quality: e.quality, tables: e.tables, findings: e.findings, timings: e.timings, artifacts: e.artifacts,
-      ...(usableProvenance(e.provenance) ? { provenance: usableProvenance(e.provenance) } : {}),
-    };
+    case "analysis_result": {
+      const provenance = usableProvenance(e.provenance);
+      return { ...a, quality: e.quality, tables: e.tables, findings: e.findings, timings: e.timings, artifacts: e.artifacts, ...(provenance ? { provenance } : {}) };
+    }
     default: return a;
   }
 }

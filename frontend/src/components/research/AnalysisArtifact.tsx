@@ -9,7 +9,7 @@ import WarningAmberRoundedIcon from "@mui/icons-material/WarningAmberRounded";
 import { ARTIFACT_URL, type Turn, type TurnAnalysis } from "@/lib/chat";
 import { API_BASE } from "@/lib/config";
 import { useT } from "@/lib/prefs";
-import { downloadProvenance } from "@/lib/provenance";
+import { downloadProvenance, provenanceOf } from "@/lib/provenance";
 import { queueText } from "./ProgressCard";
 import type { AnalysisArtifact as AnalysisArtifactItem, AnalysisStep } from "@/lib/sse";
 import type { Strings } from "@/lib/strings";
@@ -345,7 +345,7 @@ export function AnalysisArtifact({ turn }: { turn: Turn }) {
               )}
             </Stack>
           </Box>
-          {a.provenance && (
+          {provenanceOf(turn) && (
             <Button variant="outlined" color="inherit" startIcon={<FileDownloadOutlinedIcon />} onClick={() => downloadProvenance(turn)} sx={{ minHeight: 44, flexShrink: 0, alignSelf: "center", borderColor: "divider" }}>
               {t.downloadProvenance}
             </Button>

@@ -59,6 +59,15 @@ describe("run controller", () => {
     await run.startRun(sid, "q2");
     expect(last(chat).answer).toEqual({ content: "ans2", references: [ref] });
   });
+  it("a final answer keeps a valid provenance and drops a malformed one", async () => {
+    const { chat, run, sid } = await setup();
+    script = gen([{ type: "final_answer", content: "ans", references: [ref], provenance: { schema: 1, prompts: {} } }, { type: "complete" }]);
+    await run.startRun(sid, "q");
+    expect(last(chat).answer?.provenance).toEqual({ schema: 1, prompts: {} });
+    script = gen([{ type: "final_answer", content: "ans2", references: [ref], provenance: { schema: 2 } as never }, { type: "complete" }]);
+    await run.startRun(sid, "q2");
+    expect(last(chat).answer).toEqual({ content: "ans2", references: [ref] });
+  });
   it("history has the last three answered turns, skipping unfinished ones", async () => {
     const { chat, run, sid } = await setup();
     const add = (q: string, p: Partial<Turn> = {}) =>
