@@ -42,6 +42,7 @@ export function UserMessage({ sessionId, turn }: { sessionId: string; turn: Turn
   const t = useT();
   const question = turn.question;
   const busy = !!useRunState(sessionId).turnId;
+  const noDocs = turn.mode === "docs" && docsOf(turn).length === 0; // the PDFs cannot be recovered: retry and edit say so
   const [copied, setCopied] = useState<"ok" | "fail" | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(question);
@@ -127,11 +128,11 @@ export function UserMessage({ sessionId, turn }: { sessionId: string; turn: Turn
           <Tooltip title={t.copyMsg}>
             <IconButton aria-label={`${t.copyMsg}: ${name}`} onClick={copy} sx={btn}><ContentCopyRoundedIcon fontSize="small" /></IconButton>
           </Tooltip>
-          <Tooltip title={busy ? t.retryBusy : t.retryMsg}>
-            <span><IconButton aria-label={`${t.retryMsg}: ${name}`} onClick={retry} disabled={busy} sx={btn}><ReplayRoundedIcon fontSize="small" /></IconButton></span>
+          <Tooltip title={noDocs ? t.docsAttachAgain : busy ? t.retryBusy : t.retryMsg}>
+            <span><IconButton aria-label={`${t.retryMsg}: ${name}`} onClick={retry} disabled={busy || noDocs} sx={btn}><ReplayRoundedIcon fontSize="small" /></IconButton></span>
           </Tooltip>
-          <Tooltip title={busy ? t.editBusy : t.editMsg}>
-            <span><IconButton ref={editBtn} aria-label={`${t.editMsg}: ${name}`} onClick={open} disabled={busy} sx={btn}><EditOutlinedIcon fontSize="small" /></IconButton></span>
+          <Tooltip title={noDocs ? t.docsAttachAgain : busy ? t.editBusy : t.editMsg}>
+            <span><IconButton ref={editBtn} aria-label={`${t.editMsg}: ${name}`} onClick={open} disabled={busy || noDocs} sx={btn}><EditOutlinedIcon fontSize="small" /></IconButton></span>
           </Tooltip>
         </Stack>
       )}

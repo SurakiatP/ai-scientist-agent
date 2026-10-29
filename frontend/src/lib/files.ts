@@ -68,7 +68,8 @@ export const registerUpload = (up: { id: string; name: string; size: number }, p
 export const isPdf = (name: string) => kindOf(name) === "pdf";
 
 // "Analyze" / "Ask about this document" hand a library file to the composer without uploading again. In memory only.
-export const useAttach = create<{ file: { id: string; name: string; size: number } | null }>(() => ({ file: null }));
+export type Handoff = { id: string; name: string; size: number };
+export const useAttach = create<{ file: Handoff | null; rest?: Handoff[] }>(() => ({ file: null })); // rest: more PDFs for a docs follow-up
 
 // Same rules as the server (PATCH /v1/files/{id}) so most mistakes are caught before the request.
 export type NameProblem = "empty" | "long" | "chars" | "ext";

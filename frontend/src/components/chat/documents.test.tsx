@@ -93,6 +93,30 @@ describe("Composer with PDFs", () => {
     expect(run.startDocs).toHaveBeenCalledWith(id, "go", [{ id: "f".repeat(32), name: "paper.pdf" }]);
   });
 
+  it("remove 4 of 5 picked PDFs before they upload: only the kept one is uploaded", async () => {
+    render(<Composer sessionId={mk()} />);
+    pick(...["a", "b", "c", "d", "e"].map((n) => pdf(`${n}.pdf`)));
+    for (const n of ["b", "c", "d", "e"]) fireEvent.click(screen.getByRole("button", { name: `${t.removeFile}: ${n}.pdf` }));
+    await screen.findByText("10 B");
+    expect(upload.fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("a sixth PDF from My files is refused with the limit note, the first five stay", async () => {
+    render(<Composer sessionId={mk()} />);
+    pick(...["a", "b", "c", "d", "e"].map((n) => pdf(`${n}.pdf`)));
+    await screen.findByText("e.pdf");
+    act(() => useAttach.setState({ file: { id: "f".repeat(32), name: "six.pdf", size: 1 } }));
+    expect(await screen.findByText(t.docsMax)).toBeInTheDocument();
+    expect(screen.queryByText("six.pdf")).toBeNull();
+    expect(screen.getByText("a.pdf")).toBeInTheDocument();
+  });
+
+  it("the field chip's last pack ignores docs turns", () => {
+    const id = mk([turn("done", { mode: "deep", pack: "med", answer: { content: "a", references: [] } }), turn("done", { id: "t2", mode: "docs", answer: { content: "b", references: [] } })]);
+    render(<Composer sessionId={id} />);
+    expect(screen.getByRole("button", { name: new RegExp(`${t.packLabel}: `) }).getAttribute("aria-label")).not.toContain(t.packGeneral);
+  });
+
   it("a data file still analyses", async () => {
     const id = mk();
     render(<Composer sessionId={id} />);
@@ -136,7 +160,47 @@ describe("docs answer", () => {
     cleanup();
     usePrefs.setState({ lang: "en" });
     render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "x", references: [], empty_files: [{ file_id: "b".repeat(32), file_name: "scan.pdf" }] } })} />);
-    expect(screen.getByText("scan.pdf has no extractable text")).toBeInTheDocument();
+    expect(screen.getByText(strings.en.docsEmptyFile.replace("{name}", "scan.pdf"))).toBeInTheDocument();
+  });
+
+  it("an uncited PDF stays in the caption when the turn carries its docs", () => {
+    render(<AgentMessage sessionId="s" turn={turn("done", { docs: [{ id: ref.file_id, name: "bio.pdf" }, { id: "c".repeat(32), name: "uncited.pdf" }], answer: { content: "x [1]", references: [], doc_refs: [ref] } })} />);
+    expect(screen.getByText(t.docsCaption.replace("{names}", "bio.pdf, uncited.pdf"))).toBeInTheDocument();
+  });
+
+  it("retry with no recoverable PDFs is disabled and says why", () => {
+    render(<AgentMessage sessionId="s" turn={turn("error", { error: "boom" })} />);
+    expect(screen.getByRole("button", { name: t.retry })).toBeDisabled();
+    expect(screen.getByText(t.docsAttachAgain)).toBeInTheDocument();
+  });
+
+  it("the unreadable-PDF error is shown in the UI language", () => {
+    render(<AgentMessage sessionId="s" turn={turn("error", { error: 'The file "scan.pdf" cannot be read.' })} />);
+    expect(screen.getByText(t.docsUnreadable.replace("{name}", "scan.pdf"))).toBeInTheDocument();
+    cleanup();
+    render(<AgentMessage sessionId="s" turn={turn("error", { error: 'The file "scan.pdf" could not be read right now. Please try again.' })} />);
+    expect(screen.getByText(t.docsReadLater.replace("{name}", "scan.pdf"))).toBeInTheDocument();
+  });
+
+  it("the pill names the file and page; the empty-file notice is quiet text and says why", () => {
+    render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "ATP [1].", references: [], doc_refs: [ref], empty_files: [{ file_id: "b".repeat(32), file_name: "scan.pdf" }] } })} />);
+    expect(screen.getByRole("link", { name: new RegExp(`bio.pdf.*${t.docPage.replace("{n}", "3")}`) })).toBeInTheDocument();
+    expect(t.docsEmptyFile).toContain("สแกน");
+  });
+
+  it("in a docs answer only citations are links: markdown links and bare URLs render as text", () => {
+    render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "see [x](http://e.example) and http://evil.example ok [1]", references: [], doc_refs: [ref] } })} />);
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute("href")).toMatch(/^#ref-/);
+    expect(screen.getByText("evil.example", { exact: false })).toBeInTheDocument();
+  });
+
+  it("Ask follow-up on a docs answer starts a docs question with the same PDFs", () => {
+    const docs = [{ id: ref.file_id, name: "bio.pdf" }];
+    render(<AgentMessage sessionId="s" turn={turn("done", { docs, answer: { content: "x", references: [], doc_refs: [ref] } })} />);
+    fireEvent.click(screen.getByRole("button", { name: t.askFollowUp }));
+    expect(useAttach.getState().file).toMatchObject({ id: ref.file_id, name: "bio.pdf" });
   });
 
   it("retry on a docs turn asks the same PDFs", () => {

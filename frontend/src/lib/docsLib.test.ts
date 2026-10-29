@@ -2,17 +2,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyProgress, reduce } from "./progress";
 import { cleanDocs, docsOf, usableDocRefs, usableEmptyFiles } from "./sources";
-import type { AskEvent, AskOptions } from "./sse";
 
-let script: (signal: AbortSignal) => AsyncGenerator<AskEvent>;
-let asks: { question: string; opts: AskOptions | undefined }[] = [];
-vi.mock("./sse", () => ({ streamAsk: (question: string, signal: AbortSignal, opts?: AskOptions) => { asks.push({ question, opts }); return script(signal); }, streamAnalyze: vi.fn() }));
-const gen = (evs: AskEvent[]) => async function* () { for (const e of evs) yield e; };
+const asks: unknown[] = [];
+vi.mock("./sse", () => ({ streamAsk: () => { asks.push(1); return (async function* () {})(); }, streamAnalyze: vi.fn() }));
 
 const good = { id: "1", file_id: "a".repeat(32), file_name: "bio.pdf", page: 2, text: "t", quote: "q" };
 const prog = { waiting: null, reasoning: "", searches: [], sources: {}, answered: [], writing: false, phase: "planning" };
 
-beforeEach(() => { localStorage.clear(); vi.resetModules(); asks = []; });
+beforeEach(() => { localStorage.clear(); vi.resetModules(); asks.length = 0; });
 
 describe("doc citations are validated", () => {
   it("drops bad entries, keeps good ones, bounds the text", () => {
@@ -30,6 +27,14 @@ describe("doc citations are validated", () => {
   it("docsOf prefers the stored list, else rebuilds from the answer", () => {
     expect(docsOf({ docs: [{ id: "x", name: "n.pdf" }] })).toEqual([{ id: "x", name: "n.pdf" }]);
     expect(docsOf({ answer: { doc_refs: [good, good], empty_files: [{ file_id: "b", file_name: "s.pdf" }] } })).toEqual([{ id: good.file_id, name: "bio.pdf" }, { id: "b", name: "s.pdf" }]);
+  });
+});
+
+describe("progress reading text", () => {
+  it("clears at the first event after indexing", () => {
+    const p = reduce(emptyProgress, { type: "docs_indexing", file_id: "a", file_name: "bio.pdf" });
+    expect(reduce(p, { type: "docs_indexing", file_id: "b", file_name: "c.pdf" }).indexing).toBe("c.pdf");
+    expect(reduce(p, { type: "waiting", position: 1 }).indexing).toBeUndefined();
   });
 });
 
@@ -64,25 +69,33 @@ describe("chat store keeps doc citations", () => {
 });
 
 describe("startDocs", () => {
-  it("direct run: sends mode docs with doc ids and keeps doc_refs from the final answer", async () => {
-    const chat = (await import("./chat")).useChatStore, run = await import("./run");
+  it("without the shared database it fails with a localized ApiError and leaves no turn", async () => {
+    const chat = (await import("./chat")).useChatStore, run = await import("./run"), { strings } = await import("./strings");
     const sid = chat.getState().newSession();
-    script = gen([
-      { type: "docs_indexing", file_id: "a", file_name: "bio.pdf" },
-      { type: "final_answer", content: "A [1]", references: [], doc_refs: [good, { bad: true } as never], empty_files: [{ file_id: "b", file_name: "s.pdf" }] },
-      { type: "complete" },
-    ]);
-    await run.startDocs(sid, "q?", [{ id: good.file_id, name: "bio.pdf" }]);
-    expect(asks.at(-1)).toEqual({ question: "q?", opts: { mode: "docs", history: [], docIds: [good.file_id] } });
-    const t = chat.getState().sessions[0].turns[0];
-    expect(t).toMatchObject({ mode: "docs", status: "done", docs: [{ id: good.file_id, name: "bio.pdf" }] });
-    expect(t.answer?.doc_refs).toEqual([good]);
-    expect(t.answer?.empty_files).toEqual([{ file_id: "b", file_name: "s.pdf" }]);
-    expect(t.progress.indexing).toBeUndefined();
+    const err = await run.startDocs(sid, "q?", [{ id: good.file_id, name: "bio.pdf" }]).catch((e) => e);
+    expect(run.startError(err)).toBe(strings.th.docsNeedsDb);
+    expect(chat.getState().sessions[0].turns).toHaveLength(0);
+    expect(run.canStart(sid)).toEqual({ ok: true });
+    expect(asks).toEqual([]);
   });
-  it("refuses to start without documents", async () => {
-    const chat = (await import("./chat")).useChatStore, run = await import("./run");
-    await expect(run.startDocs(chat.getState().newSession(), "q", [])).rejects.toThrow();
+  it("with no documents it fails with the attach-again message", async () => {
+    const chat = (await import("./chat")).useChatStore, run = await import("./run"), { strings } = await import("./strings");
+    const err = await run.startDocs(chat.getState().newSession(), "q", []).catch((e) => e);
+    expect(run.startError(err)).toBe(strings.th.docsAttachAgain);
+  });
+});
+
+describe("sync toTurn keeps the attached PDFs", () => {
+  const row = (docs: unknown) => ({ id: "t1", question: "q", mode: "docs", status: "done", created_at: "2026-01-01T00:00:00Z", progress: { ...prog, _docs: docs }, answer: { content: "c", references: [] } }) as never;
+  it("pops progress._docs into turn.docs (validated) and turnBody writes it back", async () => {
+    const { toTurn, turnBody } = await import("./sync");
+    const id = "a".repeat(32);
+    const t = toTurn(row([{ id, name: "x.pdf" }, { id: "bad", name: "y.pdf" }, { id: "b".repeat(32), name: 3 }]))!;
+    expect(t.docs).toEqual([{ id, name: "x.pdf" }]);
+    expect(t.progress).not.toHaveProperty("_docs");
+    expect(turnBody(t, 0).progress).toMatchObject({ _docs: [{ id, name: "x.pdf" }] });
+    expect(toTurn(row("junk"))).not.toHaveProperty("docs");
+    expect(toTurn(row(Array.from({ length: 6 }, () => ({ id, name: "n" }))))).not.toHaveProperty("docs");
   });
 });
 

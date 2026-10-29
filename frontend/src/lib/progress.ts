@@ -24,7 +24,9 @@ const seenPatch = (p: Progress, ids: (string | null | undefined)[]): { seen?: st
 };
 
 // Backend sends all `sources` before any `answer`, so the first `answer` means writing has started.
-export function reduce(p: Progress, e: AskEvent): Progress {
+export function reduce(p0: Progress, e: AskEvent): Progress {
+  const { indexing, ...rest } = p0; // the reading note is for the moment of indexing only: any later event ends it
+  const p: Progress = e.type === "docs_indexing" ? p0 : (indexing === undefined ? p0 : rest);
   switch (e.type) {
     case "waiting": return { ...p, waiting: e.position, eta: typeof e.eta_seconds === "number" ? e.eta_seconds : null, phase: "waiting" };
     case "strategy": return { ...p, reasoning: e.reasoning, searches: e.searches, phase: "searching" };
@@ -33,7 +35,7 @@ export function reduce(p: Progress, e: AskEvent): Progress {
     case "records": return { ...p, ...seenPatch(p, (e.records ?? []).map((r) => r.database)) };
     case "answer": return { ...p, answered: [...p.answered, e.term], writing: true, phase: "writing" };
     case "docs_indexing": return { ...p, indexing: e.file_name, phase: "searching" };
-    case "final_answer": case "complete": return ({ ...p, indexing: undefined, writing: false, phase: "done" });
+    case "final_answer": case "complete": return ({ ...p, writing: false, phase: "done" });
     default: return p;
   }
 }

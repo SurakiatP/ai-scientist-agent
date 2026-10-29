@@ -13,7 +13,8 @@ import SearchOffRoundedIcon from "@mui/icons-material/SearchOffRounded";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import { AnswerView } from "@/components/AnswerView";
 import { SourcesUsed } from "@/components/research/SourcesUsed";
-import { answerSourceIds, docsOf, sourceNames, usableUsage } from "@/lib/sources";
+import { answerSourceIds, docsErrorText, docsOf, sourceNames, usableUsage } from "@/lib/sources";
+import { useAttach } from "@/lib/files";
 import { DataRecords } from "@/components/DataRecords";
 import { ReferenceList } from "@/components/ReferenceList";
 import { AnalysisArtifact } from "@/components/research/AnalysisArtifact";
@@ -61,7 +62,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const retry = () => {
     setRetryErr(null);
     const fail = (e: unknown) => setRetryErr(startError(e));
-    if (docsTurn) startDocs(sessionId, turn.question, docsOf(turn)).catch(fail);
+    if (docsTurn) startDocs(sessionId, turn.question, docList).catch(fail);
     else if (analysis) startAnalysis(sessionId, turn.question, analysis.fileId, analysis.fileName, usablePack(turn.pack)).catch(fail);
     else startRun(sessionId, turn.question, { mode: turn.mode, pack: usablePack(turn.pack) }).catch(fail);
   };
@@ -69,10 +70,11 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   // the backend reason is English-only; Thai UI shows the localized scope message instead
   const coded = status === "refused" && turn.refusedCode ? REFUSAL_TEXT[turn.refusedCode] : undefined;
   const errText = turn.errCode === "cut_off" ? t.cutOff : turn.errCode === "failed" ? t.runFailed : turn.errCode === "interrupted" ? t.interrupted : turn.errCode === "stopped" ? t.stoppedHelp : undefined; // the server's neutral English `error` is the fallback
-  const text = status === "refused" ? (coded ? t[coded] : t === strings.th ? t.refused : turn.refused) : status === "error" ? errText ?? turn.error : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
+  const text = status === "refused" ? (coded ? t[coded] : t === strings.th ? t.refused : turn.refused) : status === "error" ? errText ?? (docsTurn && turn.error ? docsErrorText(turn.error, t) : turn.error) : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
   const refs = turn.answer?.references ?? [];
   const docRefs = turn.answer?.doc_refs ?? [], emptyFiles = turn.answer?.empty_files ?? [];
-  const docNames = docsTurn ? [...new Set(docsOf(turn).map((d) => d.name))].join(", ") : "";
+  const docList = docsTurn ? docsOf(turn) : [], noDocs = docsTurn && docList.length === 0; // nothing to re-ask: Retry says so
+  const docNames = docsTurn ? [...new Set(docList.map((d) => d.name))].join(", ") : "";
   const firstSource = refs[0]?.id ?? docRefs[0]?.id;
   const ids = turn.answer ? answerSourceIds(turn.answer) : [];
   const usage = usableUsage(turn.answer?.usage);
@@ -150,9 +152,9 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
           {turn.mode === "chat" && <Typography sx={{ mb: 1, fontSize: "0.8125rem", color: "text.secondary" }}>{t.chatCaption}</Typography>}
           {docsTurn && docNames && <Typography sx={{ mb: 1, fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{t.docsCaption.replace("{names}", docNames)}</Typography>}
           <Box role={refs.length ? "tabpanel" : undefined} id={`panel-answer-${turn.id}`} aria-labelledby={refs.length ? `tab-answer-${turn.id}` : undefined} hidden={tab !== "answer"}>
-            <AnswerView content={turn.answer.content} references={docsTurn ? docRefs.map((d) => ({ id: d.id })) : turn.answer.references} scope={scope} reveal={wasRunning} />
+            <AnswerView content={turn.answer.content} references={docsTurn ? docRefs.map((d) => ({ id: d.id, label: `${d.file_name}, ${t.docPage.replace("{n}", String(d.page))}` })) : turn.answer.references} plainLinks={docsTurn} scope={scope} reveal={wasRunning} />
             <DataRecords records={turn.answer.records} t={t} />
-            {emptyFiles.map((f) => <Typography key={f.file_id} role="note" sx={{ mt: 1, fontSize: "0.8125rem", color: "evidence.unverified", overflowWrap: "anywhere" }}>{t.docsEmptyFile.replace("{name}", f.file_name)}</Typography>)}
+            {emptyFiles.map((f) => <Typography key={f.file_id} role="note" sx={{ mt: 1, fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{t.docsEmptyFile.replace("{name}", f.file_name)}</Typography>)}
           </Box>
           {refs.length > 0 && (
             <Box role="tabpanel" id={`panel-sources-${turn.id}`} aria-labelledby={`tab-sources-${turn.id}`} hidden={tab !== "sources"}>
@@ -168,7 +170,10 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
             </Box>
           )}
           <Stack direction="row" spacing={1} useFlexGap sx={{ mt: sourceIds || cost || field || replans.length ? 1 : 2, flexWrap: "wrap" }}>
-            <Button variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={() => { useMode.getState().set("chat"); focusComposer(); }}>{t.askFollowUp}</Button>
+            <Button variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={() => {
+              if (docList.length) { const [first, ...rest] = docList; useAttach.setState({ file: { id: first.id, name: first.name, size: 0 }, rest: rest.map((d) => ({ id: d.id, name: d.name, size: 0 })) }); } // same PDFs, a new docs question
+              else { useMode.getState().set("chat"); focusComposer(); }
+            }}>{t.askFollowUp}</Button>
             <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={!firstSource} sx={{ borderColor: "divider" }}
               onClick={(e) => firstSource && openInspector({ ...scope, refId: firstSource }, e.currentTarget)}>{t.openEvidence}</Button>
             {!bare && <Button variant="outlined" color="inherit" startIcon={<BarChartRoundedIcon />} sx={{ borderColor: "divider" }} aria-controls={reportId(turn.id)} onClick={() => openReport(sessionId, turn.id)}>{t.makeReport}</Button>}
@@ -180,8 +185,8 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
                 <IconButton aria-label={t.downloadProvenance} onClick={() => downloadProvenance(turn)} sx={{ width: 44, height: 44, color: "text.secondary" }}><FileDownloadOutlinedIcon fontSize="small" /></IconButton>
               </Tooltip>
             )}
-            <Tooltip title={busy ? t.retryBusy : t.regen}>
-              <span><IconButton aria-label={t.regen} onClick={retry} disabled={busy} sx={{ width: 44, height: 44, color: "text.secondary" }}><ReplayRoundedIcon fontSize="small" /></IconButton></span>
+            <Tooltip title={noDocs ? t.docsAttachAgain : busy ? t.retryBusy : t.regen}>
+              <span><IconButton aria-label={t.regen} onClick={retry} disabled={busy || noDocs} sx={{ width: 44, height: 44, color: "text.secondary" }}><ReplayRoundedIcon fontSize="small" /></IconButton></span>
             </Tooltip>
           </Stack>
           <Box role="status" sx={{ fontSize: "0.75rem", color: "text.secondary", minHeight: copied ? undefined : 0 }}>{copied === "fail" ? t.copyFailed : copied === "ok" ? t.copied : ""}</Box>
@@ -200,7 +205,8 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
       {status === "refused" && !analysis && <Box sx={{ mt: 2 }}><Typography sx={{ mb: 1, color: "text.secondary", fontSize: "0.875rem" }}>{t.backToResearch}</Typography><Starters label={t.examplesLabel} sessionId={sessionId} /></Box>}
       {(status === "error" || status === "interrupted" || status === "stopped") && (
         <Stack direction="row" spacing={1.5} useFlexGap sx={{ mt: 1.5, alignItems: "center", flexWrap: "wrap" }}>
-          <Button variant="outlined" startIcon={<ReplayRoundedIcon />} onClick={retry} disabled={busy}>{t.retry}</Button>
+          <Button variant="outlined" startIcon={<ReplayRoundedIcon />} onClick={retry} disabled={busy || noDocs}>{t.retry}</Button>
+          {noDocs && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>{t.docsAttachAgain}</Typography>}
           {busy && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>{t.retryBusy}</Typography>}
           {retryErr && <Typography role="status" sx={{ fontSize: "0.8125rem", color: "error.main" }}>{retryErr}</Typography>}
         </Stack>

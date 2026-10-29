@@ -75,6 +75,9 @@ export const toTurn = (r: Row): Turn | null => {
   const prog = (r.progress && typeof r.progress === "object" && !Array.isArray(r.progress) ? { ...(r.progress as Row) } : {}) as Row;
   const code = prog._code; delete prog._code;
   const err = prog._err; delete prog._err;
+  const stash = prog._docs; delete prog._docs; // the PDFs a docs question was asked about
+  const kept = (Array.isArray(stash) ? stash : []).filter((d) => !!d && typeof d.id === "string" && /^[0-9a-f]{32}$/.test(d.id) && typeof d.name === "string" && d.name.length > 0 && d.name.length <= 500);
+  const docs = kept.length > 0 && kept.length <= 5 ? kept.map((d: { id: string; name: string }) => ({ id: d.id, name: d.name })) : undefined;
   const runId = typeof r.run_id === "string" && isUuid(r.run_id) ? r.run_id : undefined;
   const analysis = r.mode === "analysis";
   let status = str(r.status) as Turn["status"];
@@ -83,7 +86,7 @@ export const toTurn = (r: Row): Turn | null => {
     id: str(r.id), question: str(r.question), createdAt: ms(r.created_at), status, progress: { ...emptyProgress, ...prog } as Turn["progress"],
     ...(r.mode === "deep" || r.mode === "quick" || r.mode === "chat" || r.mode === "docs" ? { mode: r.mode } : {}),
     ...(usablePack(r.pack) ? { pack: usablePack(r.pack) } : {}),
-    ...(analysis ? { kind: "analysis" as const } : {}),
+    ...(analysis ? { kind: "analysis" as const } : {}), ...(docs ? { docs } : {}),
     ...(runId ? { runId } : {}), ...(err === "cut_off" || err === "failed" || err === "interrupted" || err === "stopped" ? { errCode: err } : {}),
     ...(r.plan ? { plan: r.plan } : {}), ...(r.answer ? { answer: r.answer && typeof r.answer === "object" && !Array.isArray(r.answer) ? cleanDocs(r.answer) : r.answer } : {}), ...(r.analysis ? { analysis: r.analysis } : {}),
     ...(r.refused ? { refused: str(r.refused) } : {}), ...(typeof code === "string" ? { refusedCode: code as RefusalCode } : {}), ...(r.error ? { error: str(r.error) } : {}),
@@ -92,7 +95,7 @@ export const toTurn = (r: Row): Turn | null => {
 };
 export const turnBody = (t: Turn, idx: number) => ({
   idx, question: t.question.slice(0, 4000), mode: t.kind === "analysis" ? "analysis" : t.mode ?? null, status: t.status,
-  answer: t.answer ?? null, progress: t.refusedCode ? { ...t.progress, _code: t.refusedCode } : t.progress, pack: t.pack ?? null, plan: t.plan ?? null, analysis: t.analysis ?? null,
+  answer: t.answer ?? null, progress: { ...t.progress, ...(t.refusedCode ? { _code: t.refusedCode } : {}), ...(t.docs?.length ? { _docs: t.docs } : {}) }, pack: t.pack ?? null, plan: t.plan ?? null, analysis: t.analysis ?? null,
   refused: t.refused ?? null, error: t.error ?? null,
 });
 const toSession = (r: Row, local?: Session): Session => {

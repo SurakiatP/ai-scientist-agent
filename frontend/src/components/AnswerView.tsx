@@ -27,7 +27,7 @@ export function cite(s: string, ids: Set<string>, prefix = "ref-") {
 const safeUrl = (u: string) => (/^#ref-\S+$/.test(u) || /^https?:\/\//i.test(u) ? defaultUrlTransform(u) : "");
 
 // With `scope`, anchors are unique per turn (ref-<turnId>-N) and a pill opens the source inspector.
-export function AnswerView({ content, references = [], scope, reveal }: { content: string; references?: { id: string; paper?: Reference["paper"] }[]; scope?: { sessionId: string; turnId: string }; reveal?: boolean }) {
+export function AnswerView({ content, references = [], scope, reveal, plainLinks }: { content: string; references?: { id: string; paper?: Reference["paper"]; label?: string }[]; scope?: { sessionId: string; turnId: string }; reveal?: boolean; plainLinks?: boolean }) {
   const t = useT();
   const open = useInspector((s) => s.open);
   const ids = new Set(references.map((r) => r.id));
@@ -39,7 +39,7 @@ export function AnswerView({ content, references = [], scope, reveal }: { conten
     const list = text.split(",").filter(Boolean);
     const first = byId.get(list[0] ?? "");
     const host = first?.paper ? citeLabel(first.paper) : "";
-    const label = first ? `${t.citeRef} ${list.join(", ")}${first.paper ? `: ${first.paper.title}` : ""}` : undefined;
+    const label = first ? `${t.citeRef} ${list.join(", ")}${first.paper ? `: ${first.paper.title}` : first.label ? `: ${first.label}` : ""}` : undefined;
     return { label, body: host ? <><span className="cite-host">{host}</span>{list.length > 1 && <span className="cite-more">+{list.length - 1}</span>}</> : `[${list.join(",")}]` };
   };
   return (
@@ -113,7 +113,7 @@ export function AnswerView({ content, references = [], scope, reveal }: { conten
                 if (!h.startsWith(`#${prefix}`) || !ids.has(h.slice(1 + prefix.length))) return; // not one of this turn's refs
                 e.preventDefault(); open({ ...scope, refId: h.slice(1 + prefix.length) }, e.currentTarget);
               } : undefined}>{chip(children).body}</a>
-            ) : href ? (
+            ) : href && !plainLinks ? ( // plainLinks (document answers): only citations are links
               <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
             ) : (
               <>{children}</>

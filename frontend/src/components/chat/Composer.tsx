@@ -58,7 +58,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   // "Answer research" needs this session's own finished answers; without them the pill shows (and sends) deep
   const hasMemory = useChatStore((s) => !!s.sessions.find((x) => x.id === sessionId)?.turns.some((x) => x.status === "done" && !!x.answer?.content.trim()));
   const mode: AskMode = picked === "chat" && !hasMemory ? "deep" : picked;
-  const lastPack = useChatStore((s) => usablePack([...(s.sessions.find((x) => x.id === sessionId)?.turns ?? [])].reverse().find((x) => x.mode !== "chat")?.pack));
+  const lastPack = useChatStore((s) => usablePack([...(s.sessions.find((x) => x.id === sessionId)?.turns ?? [])].reverse().find((x) => x.mode !== "chat" && x.mode !== "docs")?.pack));
   const pack = usePack((s) => sessionId in s.by ? s.by[sessionId] : lastPack), setPack = usePack((s) => s.set), lang = usePrefs((s) => s.lang);
   const packOffId = useId();
   const packText = (p: PackId | undefined) => p ? packName(p, lang) : t.packGeneral;
@@ -82,8 +82,10 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const packOffText = docs ? t.packOffDocs : t.packOffChat;
   const picker = useRef<HTMLInputElement>(null);
   const uploads = useRef(new Map<string, AbortController>());
-  useEffect(() => { const u = uploads.current; return () => u.forEach((a) => a.abort()); }, []);
+  useEffect(() => { const u = uploads.current, l = live.current; return () => { u.forEach((a) => a.abort()); l.clear(); }; }, []);
   const seq = useRef(0);
+  const live = useRef(new Set<string>()); // keys still attached: an upload step for a chip removed meanwhile is skipped
+  useEffect(() => { for (const k of live.current) if (!files.some((f) => f.key === k)) live.current.delete(k); }, [files]);
   const patchFile = (key: string, p: Partial<Attached>) => setFiles((fs) => fs.map((f) => (f.key === key ? { ...f, ...p } : f)));
   const mine = !!run.turnId, busy = mine; // this session has a live run here; other sessions run on their own
   // icon pops only on a send<->stop change in this session, never on mount or session switch
@@ -92,6 +94,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const over = text.length > MAX_QUESTION;
   const fileReady = files.every((f) => f.status === "ready" && !!f.fileId);
   const canSend = !busy && !over && fileReady && text.trim().length > 0;
+  const removeAll = () => { uploads.current.forEach((a) => a.abort()); uploads.current.clear(); live.current.clear(); setFiles([]); };
   const pick = async (e: ChangeEvent<HTMLInputElement>) => {
     const chosen = [...(e.target.files ?? [])];
     e.target.value = "";
@@ -108,8 +111,10 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
     }
     if (!next.length) return;
     const added = next.map((f) => ({ f, a: { key: `k${++seq.current}`, name: f.name, size: f.size, status: "uploading" as const } }));
+    added.forEach(({ a }) => live.current.add(a.key));
     setFiles((fs) => [...(pdfs.length && docs ? fs : []), ...added.map((x) => x.a)]);
     for (const { f, a } of added) {
+      if (!live.current.has(a.key)) continue; // removed (or replaced) before its turn came
       const ac = new AbortController();
       uploads.current.set(a.key, ac);
       try {
@@ -125,18 +130,33 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
       }
     }
   };
-  const handoff = useAttach((s) => s.file); // "Analyze" from My files: already on the server, so no upload
+  const handoff = useAttach((s) => s.file); // "Analyze" / "Ask about this document" from My files: already on the server, so no upload
   useEffect(() => {
     if (!handoff) return;
-    useAttach.setState({ file: null });
-    const added: Attached = { key: `k${++seq.current}`, name: handoff.name, size: handoff.size, status: "ready", fileId: handoff.id };
-    setFiles((fs) => (isPdf(handoff.name) && fs.length > 0 && fs.every((f) => isPdf(f.name)) ? [...fs.filter((f) => f.fileId !== handoff.id), added].slice(-MAX_DOCS) : [added]));
+    const rest = useAttach.getState().rest ?? [];
+    useAttach.setState({ file: null, rest: undefined });
+    const incoming: Attached[] = [handoff, ...rest].map((h) => ({ key: `k${++seq.current}`, name: h.name, size: h.size, status: "ready", fileId: h.id }));
+    const allDocs = incoming.every((f) => isPdf(f.name));
+    const cur = files; // the one-shot runs once per handoff; the list it adds to is the one on screen
+    const keepDocs = allDocs && cur.length > 0 && cur.every((f) => isPdf(f.name));
+    if (keepDocs) {
+      const fresh = incoming.filter((n) => !cur.some((f) => f.fileId === n.fileId));
+      const room = fresh.slice(0, MAX_DOCS - cur.length);
+      if (room.length < fresh.length) setErr(t.docsMax);  
+      room.forEach((a) => live.current.add(a.key));
+      setFiles([...cur, ...room]);  
+    } else {
+      removeAll();
+      const take = allDocs ? incoming.slice(0, MAX_DOCS) : incoming.slice(0, 1);
+      take.forEach((a) => live.current.add(a.key));
+      setFiles(take);  
+    }
     setTimeout(focusComposer, 0);
-  }, [handoff]);
-  const removeAll = () => { uploads.current.forEach((a) => a.abort()); uploads.current.clear(); setFiles([]); };
+  }, [handoff]); // eslint-disable-line react-hooks/exhaustive-deps -- reads the current files once per handoff
   const removeFile = (key: string) => {
     uploads.current.get(key)?.abort();
     uploads.current.delete(key);
+    live.current.delete(key);
     setFiles((fs) => fs.filter((f) => f.key !== key));
     setErr("");
   };

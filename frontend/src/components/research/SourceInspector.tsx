@@ -120,11 +120,12 @@ export function SourceInspector({ variant }: { variant: "panel" | "sheet" }) {
   const close = useInspector((s) => s.close);
   const t = useT();
   const found = useChatStore((s) => find(s, r) ?? findDoc(s, r));
+  const doc = useChatStore((s) => !!findDoc(s, r));
   const open = !!found;
   useEffect(() => { if (r && !found) close(); }, [r, found, close]); // the source is gone (deleted chat/turn): leave nothing behind
   if (variant === "panel") return open ? <Box key={r?.refId} sx={enterSlide}><Body /></Box> : null;
   return (
-    <Drawer anchor="bottom" open={open} onClose={close} slotProps={{ paper: { sx: { maxHeight: "85dvh", borderTopLeftRadius: 16, borderTopRightRadius: 16 }, role: "dialog", "aria-label": t.inspectorTitle } }}>
+    <Drawer anchor="bottom" open={open} onClose={close} slotProps={{ paper: { sx: { maxHeight: "85dvh", borderTopLeftRadius: 16, borderTopRightRadius: 16 }, role: "dialog", "aria-label": doc ? t.docTitle : t.inspectorTitle } }}>
       <Body />
     </Drawer>
   );

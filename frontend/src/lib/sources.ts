@@ -146,3 +146,9 @@ export const docsOf = (t: { docs?: { id: string; name: string }[]; answer?: { do
   for (const d of [...usableDocRefs(t.answer?.doc_refs), ...usableEmptyFiles(t.answer?.empty_files)]) if (!seen.has(d.file_id)) seen.set(d.file_id, d.file_name);
   return [...seen].map(([id, name]) => ({ id, name }));
 };
+
+/** The docs pipeline's English error sentences, shown in the UI language; anything else is returned unchanged. */
+export const docsErrorText = (msg: string, t: { docsUnreadable: string; docsReadLater: string }): string => {
+  const m = /^The file "(.{1,500})" (cannot be read\.|could not be read right now\.|could not be loaded\.)/.exec(msg);
+  return !m ? msg : (m[2].startsWith("cannot") ? t.docsUnreadable : t.docsReadLater).replace("{name}", m[1]);
+};

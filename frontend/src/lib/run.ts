@@ -122,7 +122,7 @@ const askOutcome = (e: AskEvent): Patch | null => {
 };
 
 // The real ask stream, shared by startRun (direct runs) and approvePlan (a reviewed plan).
-async function runAsk(question: string, c: AbortController, opts: { mode: AskMode; pack?: PackId; history: HistoryTurn[]; plan?: Search[]; memory?: MemoryTurn[]; docIds?: string[] }, patch: (p: Patch) => void): Promise<void> {
+async function runAsk(question: string, c: AbortController, opts: { mode: AskMode; pack?: PackId; history: HistoryTurn[]; plan?: Search[]; memory?: MemoryTurn[] }, patch: (p: Patch) => void): Promise<void> {
   let progress: Progress = emptyProgress;
   let answer: Patch["answer"];
   let outcome: Patch | null = null;
@@ -351,19 +351,15 @@ export async function startDocs(sessionId: string, question: string, docs: { id:
   if (!canStart(sessionId).ok) throw new Error("busy");
   const session = useChatStore.getState().sessions.find((x) => x.id === sessionId);
   if (!session) throw new Error("no such session");
-  if (!docs.length) throw new Error("no documents");
+  const t = strings[usePrefs.getState().lang];
+  if (!docs.length) throw { message: t.docsAttachAgain, code: "failed" } satisfies ApiError; // before any state or stream
+  if (!shared()) throw { message: t.docsNeedsDb, code: "failed" } satisfies ApiError; // the runs API (and the document index) live in the shared database
   const turnId = newId(), c = new AbortController(), store = () => useChatStore.getState();
   const local: Turn = { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, mode: "docs", docs };
   take(sessionId, turnId, c);
   try {
-    if (shared()) {
-      if (!session.title) store().renameSession(sessionId, question);
-      await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question, mode: "docs", doc_ids: docs.map((d) => d.id) }, local, false, c).catch((e) => { if (!c.signal.aborted) throw e; });
-      return;
-    }
-    store().addTurn(sessionId, local);
-    const patch = (p: Patch) => { if (leaving) return; try { store().patchTurn(sessionId, turnId, p); } catch {} };
-    await runAsk(question, c, { mode: "docs", history: [], docIds: docs.map((d) => d.id) }, patch);
+    if (!session.title) store().renameSession(sessionId, question);
+    await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question, mode: "docs", doc_ids: docs.map((d) => d.id) }, local, false, c).catch((e) => { if (!c.signal.aborted) throw e; });
   } finally {
     release(sessionId);
   }
