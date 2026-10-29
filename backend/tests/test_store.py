@@ -631,3 +631,15 @@ async def test_turn_answer_keeps_usage_and_old_turns_load(api):
     assert r.status_code == 200
     s = next(x for x in (await api.get("/v1/store/snapshot")).json()["sessions"] if x["id"] == sid)
     assert s["turns"][0]["answer"]["usage"] == us and "usage" not in s["turns"][1]["answer"]
+
+
+async def test_turn_answer_keeps_provenance_and_old_turns_load(api):
+    sid = await mk_session(api)
+    pv = {"schema": 1, "created_at": "t", "app_version": None, "models": {"main": "m", "fallback": "f"}, "prompts": {"branch": "ab"},
+          "phase_seconds": {"search": 1.5}, "usage": None, "rounds": [{"round": 1, "searches": [{"term": "a", "instructions": "i"}], "thin": None}]}
+    r = await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(answer={"content": "c", "references": [], "provenance": pv}))
+    assert r.status_code == 200, r.text
+    r = await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(1, answer={"content": "c", "references": []}))
+    assert r.status_code == 200
+    s = next(x for x in (await api.get("/v1/store/snapshot")).json()["sessions"] if x["id"] == sid)
+    assert s["turns"][0]["answer"]["provenance"] == pv and "provenance" not in s["turns"][1]["answer"]

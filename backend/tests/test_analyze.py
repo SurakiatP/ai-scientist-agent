@@ -345,9 +345,12 @@ def test_prompt_escapes_angle_brackets_in_untrusted_cells():
 
 
 async def test_analysis_result_carries_provenance(c, store, fakes):
+    from test_provenance import SECRETS, seed_secrets
+    seed_secrets(c._transport.app.state.settings)
     from scientist.provenance import digest
     from scientist.routes_analyze import SYSTEM
     p = [e for e in await analyze(c, store) if e["type"] == "analysis_result"][0]["provenance"]
     assert p["schema"] == 1 and p["prompts"] == {"analyze": digest(SYSTEM)} and p["sandbox_image"]
     assert p["hermes"] is None and p["rounds"] is None and p["settings"] is None
-    assert p["models"]["main"] and "SENTINEL" not in json.dumps(p)
+    assert p["models"]["main"]
+    assert not [v for v in SECRETS.values() if v in json.dumps(p)]

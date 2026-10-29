@@ -27,7 +27,8 @@ def rounds_of(plan: Strategy, replans: list[Replan]) -> list[ProvRound]:
 
 
 def research(settings: Settings, prompts: dict[str, str], rounds: list[ProvRound]) -> Provenance:
-    """prompts: name -> the exact text sent, only for prompts this run used."""
+    """prompts: name -> text, only for prompts the run configured and attempted (a failed re-plan or review call still counts).
+    settings are the configured values (quick mode runs no re-plan whatever replan_rounds says)."""
     return Provenance(**_common(settings, prompts, "synthesis"), rounds=rounds,
                       hermes=ProvHermes(revision=settings.hermes_revision, skills_revision=SKILLS_REVISION,
                                         enabled_skills=list(settings.enabled_skills), branch_image=SANDBOX_IMAGE),

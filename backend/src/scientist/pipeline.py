@@ -256,6 +256,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     gated: set[str] = set()  # names of key-gated databases the model tried to use
     rec_invalid: set = set()  # database:id of rejected records, or a unique marker when unidentified
     replans: list[Replan] = []
+    replan_sent = False  # a re-plan call was made (even if it gave nothing)
     searches = plan.searches
     tried = [s.term for s in searches]
     extra_rounds = settings.replan_rounds if mode == "deep" else 0
@@ -309,6 +310,8 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
                 if per_branch.get(s.term, 0) < settings.replan_min_papers or s.term in failed[failed_before:]]
         thin = list(dict(thin).items())
         # a cancel during this call finds no branch alive: the finally above already stopped them
+        if thin:
+            replan_sent = True
         if not thin or not (replan := await _replan(question, thin, tried, settings, history)):
             break
         yield replan
@@ -357,10 +360,11 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
         note += f"\n\nNote: reference(s) {ids} could not be checked (the lookup service did not answer)."
 
     def prov(used: set[str]):
-        """Hashes of the exact prompts this run sent (strategy only when the model planned; replan only when one ran)."""
-        texts = {"strategy": STRATEGY, "replan": REPLAN, "branch": getattr(runner, "system", None), "synthesis": SYNTHESIS,
+        """Hashes of the prompts the run configured and attempted: strategy when the model planned, replan when a re-plan call
+        was sent (even if it failed), review when a review call was sent (even if it failed), synthesis when it ran."""
+        texts = {"strategy": STRATEGY, "replan": REPLAN, "branch": runner.system, "synthesis": SYNTHESIS,
                  "review": REVIEW}
-        names = {"branch"} | used | ({"strategy"} if not given else set()) | ({"replan"} if replans else set())
+        names = {"branch"} | used | ({"strategy"} if not given else set()) | ({"replan"} if replan_sent else set())
         return provenance.research(settings, {k: texts[k] for k in texts if k in names and texts[k]},
                                    provenance.rounds_of(plan, replans))
 
@@ -380,7 +384,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
         yield Error(message="Could not write the answer. Please try again.")
         return
     text = r.text.strip()
-    reviewing = settings.review_enabled and mode in ("deep", "quick")
+    reviewing = settings.review_enabled and mode in ("deep", "quick") and bool(_pool(text, refs))  # a call is sent only with a pool
     if reviewing and (reviewed := await _review(text, refs, settings)):
         refs = reviewed
         if ids := "".join(f"[{x.id}]" for x in refs if any(c.support == "unsupported" for c in x.checks)):

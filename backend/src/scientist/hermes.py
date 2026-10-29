@@ -96,6 +96,8 @@ BranchItem = Paper | InvalidPaper | DataRecord | InvalidRecord | BranchAnswer | 
 
 
 class BranchRunner(Protocol):
+    system: str  # the branch system prompt as built, hashed into each answer's provenance
+
     def run(self, term: str, instructions: str) -> AsyncIterator[BranchItem]: ...
 
     async def close(self) -> None: ...

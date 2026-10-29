@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -99,6 +99,12 @@ class Settings(BaseSettings):
     run_retention_days: int = Field(7, ge=1)
     app_version: str | None = None  # e.g. the image tag; recorded in each answer's provenance
     contact_email: str = ""  # sent as mailto in the citation-check User-Agent (Crossref/NCBI polite pool)
+
+
+    @field_validator("app_version")
+    @classmethod
+    def _blank_is_none(cls, v: str | None) -> str | None:
+        return v or None  # APP_VERSION= in an env file means unset
 
 
 @lru_cache

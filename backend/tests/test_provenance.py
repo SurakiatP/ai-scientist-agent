@@ -1,11 +1,29 @@
 import json
 
-from scientist import pipeline, usage
+import httpx
+
+from scientist import llm, pipeline, usage
+from scientist.config import Settings
 from scientist.events import FinalAnswer, Provenance
 from scientist.hermes import SANDBOX_IMAGE, SKILLS_REVISION
 from scientist.provenance import digest
 from scientist.runs import _outcome
 from test_pipeline import Plan, Q, answer, crossref, paper, replan_reply, runner, settings, start, strategy  # noqa: F401
+
+
+SECRET_FIELDS = ("openrouter_api_key", "minio_access_key", "minio_secret_key", "minio_access_key_file", "minio_secret_key_file",
+                 "database_url", "database_password_file", "minio_endpoint", "minio_public_endpoint", "contact_email")
+SECRETS = {f: f"SENTINEL-{f}-9z" for f in SECRET_FIELDS}
+
+
+def seed_secrets(settings):
+    for f, v in SECRETS.items():
+        setattr(settings, f, v)
+
+
+def test_empty_app_version_is_null():
+    s = Settings(openrouter_api_key="k", model="m", fallback_model="f", hermes_source_path=".", hermes_revision="x", app_version="")
+    assert s.app_version is None
 
 
 async def final(question, rt, settings, **kw):
@@ -18,7 +36,7 @@ async def final(question, rt, settings, **kw):
 
 
 async def test_replanned_run_lists_rounds_in_order(settings, tmp_path, fake_complete):
-    settings.openrouter_api_key = "sk-SENTINEL-123"
+    seed_secrets(settings)
     settings.app_version = "v9"
     fake_complete["strategy"] = strategy("rich", "thin")
     fake_complete["replan"] = replan_reply("wider")
@@ -31,12 +49,12 @@ async def test_replanned_run_lists_rounds_in_order(settings, tmp_path, fake_comp
     assert p.app_version == "v9" and p.models.main == "m" and p.models.fallback == "small"
     assert p.hermes.revision == "x" and p.hermes.skills_revision == SKILLS_REVISION and p.hermes.branch_image == SANDBOX_IMAGE
     assert p.settings.replan_rounds == 1 and p.settings.review_enabled is True
-    assert set(p.prompts) == {"strategy", "replan", "branch", "synthesis", "review"}
+    assert set(p.prompts) == {"strategy", "replan", "branch", "synthesis"}  # no abstracts: no review call
     assert p.prompts["branch"] == digest(rt.system) and p.prompts["synthesis"] == digest(pipeline.SYNTHESIS)
     assert p.phase_seconds.get("synthesis", 0) >= 0 and "synthesis" in p.phase_seconds
     d = json.loads(fa.model_dump_json())["provenance"]
     assert d["schema"] == 1 and "schema_" not in d and Provenance.model_validate(d)
-    assert "SENTINEL" not in json.dumps(d) and Q not in json.dumps(d)  # no key, no question
+    assert not [v for v in SECRETS.values() if v in json.dumps(d)] and Q not in json.dumps(d)  # no secret, no question
 
 
 async def test_given_plan_has_no_strategy_hash_or_replan(settings, tmp_path, fake_complete):
@@ -92,3 +110,35 @@ def test_analysis_result_provenance_reaches_the_turn():
     assert a["provenance"] == {"schema": 1}
     assert "provenance" not in reduce_analysis({"steps": []}, {"type": "analysis_result", "quality": {}, "tables": [],
                                                               "findings": [], "timings": {}, "artifacts": []})
+
+
+async def test_quick_mode_rounds_are_the_truncated_plan(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a", "b", "c")
+    rt = runner(settings, tmp_path, {"*": [paper("P", "10.1/p"), answer("ok")]})
+    p = (await final(Q, rt, settings, mode="quick")).provenance
+    assert [[s.term for s in r.searches] for r in p.rounds] == [["a", "b"]] and "replan" not in p.prompts
+
+
+async def test_edited_plan_then_replan(settings, tmp_path, fake_complete):
+    fake_complete["replan"] = replan_reply("wider")
+    rt = runner(settings, tmp_path, {"a": [answer("s")], "b": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")],
+                                     "wider": [paper("W", "10.1/w"), answer("s")]})
+    p = (await final(Q, rt, settings, plan=[Plan("a"), Plan("b")])).provenance
+    assert [(r.round, [s.term for s in r.searches], r.thin) for r in p.rounds] == [(1, ["a", "b"], None), (2, ["wider"], ["a"])]
+    assert "strategy" not in p.prompts and "replan" in p.prompts
+
+
+async def test_failed_replan_call_keeps_round_one_and_hashes_replan(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a", "b")
+    fake_complete["replan"] = RuntimeError("down")
+    rt = runner(settings, tmp_path, {"a": [answer("s")], "b": [paper("B1", "10.1/b1"), paper("B2", "10.1/b2"), answer("s")]})
+    p = (await final(Q, rt, settings)).provenance
+    assert [r.round for r in p.rounds] == [1] and "replan" in p.prompts
+
+
+async def test_review_hashed_only_when_a_call_was_sent(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    fake_complete["synthesis"] = "No citations here."  # nothing to review: no review call
+    rt = runner(settings, tmp_path, {"*": [paper("P", "10.1/p"), answer("ok")]})
+    p = (await final(Q, rt, settings)).provenance
+    assert "review" not in p.prompts and not any(c["system"] == pipeline.REVIEW for c in fake_complete["calls"])
