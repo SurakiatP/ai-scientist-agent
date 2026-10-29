@@ -56,7 +56,18 @@ curl -s $BASE/v1/api/runs/$RUN_ID/artifacts/bibtex -H "Authorization: Bearer $KE
 
 ## Python SDK
 
-_Placeholder: `sdk/python` (package `ai_scientist_client`) is documented here when it lands._
+`sdk/python` (package `ai_scientist_client`, sync `httpx`, Python >= 3.11): `Client(base_url, api_key)` with `plan`, `research`, `run`, `wait`, `events`, `cancel`, `artifact`, `packs`.
+
+```python
+from ai_scientist_client import Client, ApiError
+
+c = Client("https://your-host", "sci_...")
+run = c.research("Does base editing cause off-target edits?", mode="quick")
+state = c.wait(run.run_id, timeout=600)   # capped exponential backoff; on timeout returns the last state, never raises
+print(state.status, state.answer.content if state.answer else None)
+```
+
+`events(run_id, last_event_id=None)` yields parsed SSE events and resumes from `last_event_id`. Errors raise `ApiError(status, code, message)` from the API's JSON `detail`/`code`. See `sdk/python/README.md`.
 
 ## MCP
 
