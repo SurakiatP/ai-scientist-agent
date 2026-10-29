@@ -46,8 +46,8 @@ class RateLimited(HTTPException):
         super().__init__(429, "rate limit exceeded; slow down", headers={"Retry-After": "60"})
 
 
-def rate_limit(st: Store, ident: str, hit: bool = True) -> None:
-    """Sliding minute of store_write_rate_per_min per ident (client IP, or "key:<id>" for API keys). hit=False only checks."""
+def rate_limit(st: Store, ident: str) -> None:
+    """Sliding minute of store_write_rate_per_min per ident (client IP, or "key:<id>" for API keys)."""
     cap = st.settings.store_write_rate_per_min
     if not cap:
         return
@@ -56,8 +56,6 @@ def rate_limit(st: Store, ident: str, hit: bool = True) -> None:
         q.popleft()
     if len(q) >= cap:
         raise RateLimited()
-    if not hit:
-        return
     q.append(now)
     if len(st.writes) > 10_000:  # forget idle clients
         for k in [k for k, v in st.writes.items() if not v or now - v[-1] > 60]:

@@ -85,9 +85,9 @@ async def verify(s, key: str) -> ApiKey | None:
 async def require_key(request: Request, creds: HTTPAuthorizationCredentials | None = Depends(bearer),
                       st: Store = Depends(data)) -> ApiKey:
     """FastAPI dependency: `Authorization: Bearer sci_...`. Every failure is the same 401, counted per client IP
-    (guessing is rate limited). Applies the per-key rate limit."""
+    (guessing is rate limited; a valid key is never
+    locked out by others' failures from the same IP). Applies the per-key rate limit."""
     bucket = "authfail:" + (request.client.host if request.client else "?")
-    rate_limit(st, bucket, hit=False)  # a throttled guesser costs no database query
     k = None
     if creds is not None:
         async with st.db.session() as s:

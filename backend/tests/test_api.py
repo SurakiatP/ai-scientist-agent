@@ -75,21 +75,12 @@ async def test_per_key_rate_limit(serve, fake_complete):
         assert (await c.get(f"{API}/packs", headers=b)).status_code == 200
 
 
-async def test_a_throttled_guesser_costs_no_database_query(serve, fake_complete, monkeypatch):
+async def test_a_valid_key_is_not_locked_out_by_failures_from_its_ip(serve, fake_complete):
     async with serve(STORE_WRITE_RATE_PER_MIN=2) as c:
         _, h = await key(c)
         bad = {"authorization": "Bearer sci_" + "x" * 43}
-        assert [(await c.get(f"{API}/packs", headers=bad)).status_code for _ in range(2)] == [401, 401]
-        calls = []
-
-        async def spy(*a, **k):
-            calls.append(1)
-
-        monkeypatch.setattr(apikeys, "verify", spy)
-        for hd in (bad, h):  # the IP is throttled, whatever it sends
-            r = await c.get(f"{API}/packs", headers=hd)
-            assert r.status_code == 429 and r.json()["code"] == "rate_limited"
-        assert calls == []
+        assert [(await c.get(f"{API}/packs", headers=bad)).status_code for _ in range(3)] == [401, 401, 429]
+        assert (await c.get(f"{API}/packs", headers=h)).status_code == 200
 
 
 async def test_a_conflict_while_starting_is_a_409_and_leaves_no_session(serve, fake_complete, monkeypatch):

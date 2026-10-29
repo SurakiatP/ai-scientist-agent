@@ -128,7 +128,7 @@ asyncio.run(main())
 
 - Each key has its own bucket (`key:<id>`) of `STORE_WRITE_RATE_PER_MIN` requests per minute, shared by REST and MCP. It is the same size as the app's write budget, but not the same counter: browser traffic does not use it up. Every request counts: GETs, polls (`get_run`, `wait_run` polling from your side), and each MCP POST including `initialize`.
 - Over the limit: `429 {"detail":"rate limit exceeded; slow down","code":"rate_limited"}` with `Retry-After: 60` (REST and MCP alike; the SDK raises `ApiError` with `code == "rate_limited"`).
-- Failed authentication has its own per-IP bucket (`authfail:<ip>`) of the same size. Once an IP has used it up, every request from it gets the 429 before any key is looked up, so key guessing is throttled and costs the server no database query. Behind a proxy set `FORWARDED_ALLOW_IPS` so the real client IP is seen, not the proxy's.
+- Failed authentication has its own per-IP bucket (`authfail:<ip>`) of the same size: once an IP has used it up, further bad keys from it get 429 instead of 401. A valid key is always accepted, so other clients' failures behind the same IP never lock it out. Behind a proxy set `FORWARDED_ALLOW_IPS` so the real client IP is seen, not the proxy's.
 - `POST /plan` is also refused with `429 {"detail", "code": "busy"}` while the server's research slots are all taken and `ANALYZE_MAX_QUEUE` requests already wait (the same bound as the app's plan review). If no plan can be made: `502 {"detail", "code": "no_plan"}`.
 - A key has its own run queue identity: at most `MAX_RUNNING_PER_CLIENT` running plus `MAX_QUEUED_PER_CLIENT` waiting runs (`429 {"detail", "code": "client_busy"}`; `queue_full` when the whole queue is full). Browsers and other keys are not affected.
 
