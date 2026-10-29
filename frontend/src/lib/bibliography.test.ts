@@ -45,6 +45,6 @@ describe("toRis", () => {
   });
   it("omits empty fields", () => {
     const out = toRis([r("1", { authors: [], year: null, url: "" })]);
-    expect(out).not.toMatch(/AU|PY|DO|UR|N1/);
+    expect(out).not.toMatch(/^(AU|PY|DO|UR|N1) {2}-/m);
   });
 });
