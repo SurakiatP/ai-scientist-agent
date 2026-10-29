@@ -31,6 +31,7 @@ services:
       HERMES_RUNTIME_DIR: /srv/sandbox-share/hermes-home # same path inside the sandbox, so bind mounts of branch/analysis dirs resolve there
       SANDBOX_WORK_DIR: /srv/sandbox-share/work
       SANDBOX_IMAGE: ghcr.io/surakiatp/ai-scientist-agent/sandbox:${IMAGE_TAG:-develop}
+      APP_VERSION: ${APP_VERSION:-${IMAGE_TAG:-develop}}  # shown in each answer's provenance
     secrets: [minio_access_key, minio_secret_key, postgres_app_password]
     networks: [default, db, sandbox]
     volumes:
