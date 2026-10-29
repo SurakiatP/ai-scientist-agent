@@ -264,7 +264,7 @@ class Provenance(BaseModel):
     plan_source: Literal["strategy", "given"] | None = None  # research: "strategy" = this run's model planned round 1; "given" = the client supplied the plan (e.g. after plan review, possibly edited; no strategy prompt was used)
     input_sha256: str | None = None  # analysis only: sha256 hex of the analysed file's bytes
     history_turns: int = 0  # earlier turns sent to the model as history
-    pack: str | None = None  # research: the domain pack the user picked (None = General)
+    pack: str | None = None  # the domain pack the user picked, research and analysis alike (None = General)
     phase_seconds: dict[str, float]
     usage: RunUsage | None = None
 

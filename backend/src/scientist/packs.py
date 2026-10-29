@@ -24,11 +24,11 @@ PACKS: dict[str, Pack] = {
                 ("uniprot", "ncbi-gene", "geo", "ensembl", "string", "reactome"), ("scanpy", "anndata")),
     "chem": Pack("เคมีสารสนเทศ", "Cheminformatics", ("pubmed", "europepmc", "crossref"),  # chemrxiv is not a paper source here
                  ("pubchem", "chembl", "chebi", "bindingdb", "zinc"), ("rdkit",)),
-    "med": Pack("แพทยศาสตร์", "Medicine", ("pubmed", "europepmc", "medrxiv"),
+    "med": Pack("การแพทย์", "Medicine", ("pubmed", "europepmc", "medrxiv"),
                 ("clinicaltrials", "clinvar", "dailymed", "fda", "who"), ("lifelines", "pymc", "scipy")),
     "materials": Pack("วัสดุศาสตร์", "Materials science", ("arxiv", "crossref", "openalex"), ("cod", "nist"), ("pymatgen",)),
-    "ml": Pack("แมชชีนเลิร์นนิง", "Machine learning", ("arxiv", "semanticscholar", "openalex"), (), ("sklearn", "shap", "scipy")),
-    "comm": Pack("นิเทศศาสตร์", "Communication", ("crossref", "openalex", "semanticscholar", "doaj"), (), ()),
+    "ml": Pack("การเรียนรู้ของเครื่อง", "Machine learning", ("arxiv", "semanticscholar", "openalex"), (), ("sklearn", "shap", "scipy")),
+    "comm": Pack("การสื่อสารงานวิจัย", "Research communication", ("crossref", "openalex", "semanticscholar", "doaj"), (), ()),
 }
 
 

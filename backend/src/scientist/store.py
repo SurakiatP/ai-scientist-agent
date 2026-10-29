@@ -11,14 +11,14 @@ from datetime import datetime, timezone
 from typing import Any, Literal
 
 import sqlalchemy as sa
-from pydantic import BaseModel, Field, TypeAdapter, ValidationError, model_validator
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError, field_validator, model_validator
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 
 from scientist import models as m
-from scientist.packs import PACKS
 from scientist.config import Settings
 from scientist.db import Database
+from scientist.packs import PACKS
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +31,6 @@ MAX_JSON_BYTES = [200_000]  # per-JSON-field cap; main.py sets it from settings
 MIN_WHEN = datetime(2000, 1, 1, tzinfo=timezone.utc)
 Mode = Literal["deep", "quick", "chat", "analysis"]
 Status = Literal["running", "done", "refused", "error", "stopped", "interrupted", "awaiting_plan"]
-PACKS_IDS = frozenset(PACKS)  # an unknown or malformed pack on an imported turn becomes None; the turn is kept
 TABLES = {"project": m.projects, "session": m.sessions, "file": m.files}
 
 
@@ -101,6 +100,11 @@ class TurnIn(BaseModel):
     error: str | None = Field(None, max_length=4000)
     run_id: str | None = OptUid
     version: int | None = Field(None, ge=1, le=MAX_VERSION)
+
+    @field_validator("pack", mode="before")
+    @classmethod
+    def _known_pack(cls, v):  # an unknown or malformed pack becomes None; the turn is kept
+        return v if isinstance(v, str) and v in PACKS else None
 
     @model_validator(mode="after")
     def _json_caps(self):
@@ -439,7 +443,7 @@ class Store:
                 tl = d.get("turns") if isinstance(d.get("turns"), list) else []
                 n["skipped"] += max(0, len(tl) - MAX_TURNS)
                 for i, td in enumerate(x for x in tl[:MAX_TURNS] if isinstance(x, dict)):
-                    td = _clip({**td, "idx": td.get("idx", i), "pack": p if isinstance(p := td.get("pack"), str) and p in PACKS_IDS else None}, question=4000, refused=4000, error=4000)
+                    td = _clip({**td, "idx": td.get("idx", i)}, question=4000, refused=4000, error=4000)
                     if isinstance(a := td.get("answer"), dict) and isinstance(a.get("content"), str):
                         td["answer"] = {**a, "content": a["content"][:60000], "references": (a.get("references") or [])[:100]
                                         if isinstance(a.get("references"), list) else [],

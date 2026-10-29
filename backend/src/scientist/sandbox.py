@@ -25,12 +25,14 @@ BANNED_NAMES = {"open", "exec", "eval", "compile", "__import__", "input", "break
                 "getattr", "setattr", "delattr", "dir", "type", "os", "sys", "subprocess", "socket", "builtins",
                 "importlib", "pickle"}
 # attribute names that read/write files, run strings as code or reach os-level modules. A denylist leaks by nature: the
-# container (no network, read-only root, stdout-only output) is the wall, this just rejects the obvious early.
+# container (no network, read-only root, uid 65534, no caps, limits) is the wall, this just rejects the obvious early.
+# Names can be defeated (address arithmetic, string-eval inside libraries); do not treat this list as the boundary.
 BANNED_ATTRS = BANNED_NAMES | {
     "ctypeslib", "ctypes", "load", "loads", "dump", "dumps", "fromfile", "tofile", "savefig", "imread", "imsave", "query",
     "pickle_compat", "compat", "testing", "npyio", "lib", "io", "common", "system", "popen", "format", "format_map",
     "loadtxt", "genfromtxt", "savetxt", "fromregex", "save", "savez", "memmap", "f2py", "distutils", "get_handle",
-    "read", "write", "mkdir", "unlink", "remove", "rmdir", "Path", "environ"}
+    "read", "write", "mkdir", "unlink", "remove", "rmdir", "Path", "environ",
+    "multiprocessing", "spawnv_passfds", "fork_exec", "concurrent", "joblib", "loky", "_posixsubprocess"}
 SAFE_TO = {"to_numeric", "to_datetime", "to_timedelta", "to_frame", "to_numpy", "to_list", "to_dict", "to_period",
            "to_timestamp", "to_series", "to_string", "to_records", "to_pydatetime", "tolist"}  # in-memory conversions only
 

@@ -18,8 +18,8 @@ from scientist import llm, provenance, sandbox
 from scientist.config import Settings, get_settings
 from scientist.events import AnalysisResult, AnalysisScript, AnalysisStep, Artifact, Complete, Error, Event, Refused, Waiting
 from scientist.guardrail import guard
-from scientist.packs import PACKS
 from scientist.object_store import ObjectMissing
+from scientist.packs import PACKS
 from scientist.routes_ask import HEADERS, _sse
 from scientist.routes_files import ID
 

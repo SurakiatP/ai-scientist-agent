@@ -37,19 +37,34 @@ import pandas as pd  # noqa: E402
 BLOCKED_EVENTS = frozenset({"os.system", "os.exec", "os.posix_spawn", "os.spawn", "subprocess.Popen", "socket.connect",
                             "socket.bind"})  # matched by prefix
 BLOCKED_SYMBOLS = frozenset({"system", "popen", "execl", "execle", "execlp", "execv", "execve", "execvp", "execvpe", "fexecve",
-                             "posix_spawn", "posix_spawnp", "fork", "vfork", "clone", "spawnv", "spawnve"})  # libc names via ctypes
+                             "posix_spawn", "posix_spawnp", "fork", "vfork", "clone", "spawnv", "spawnve", "syscall",
+                             "__libc_system", "execveat", "_Fork", "pidfd_spawn", "pidfd_spawnp"})  # libc names via ctypes
 
 
 def audit_block(event, args, _events=BLOCKED_EVENTS, _symbols=BLOCKED_SYMBOLS, _deny=PermissionError):
     """Installed just before the model script runs: libraries the script may import (pandas, sklearn, rdkit, ...) cannot be used
     to start processes, open sockets or look up libc's exec/fork/system. Imports, file opens and ctypes.dlopen stay allowed
     (threadpoolctl, numpy, rdkit need them). PermissionError is an OSError, so library fallbacks (`except OSError`) degrade.
-    Ceiling: multiprocessing spawn/forkserver from inside a library is not audited here (JOBLIB_MULTIPROCESSING=0 keeps joblib
-    in-process); the container flags (no network, read-only, pids/memory limits, no caps) are the boundary."""
-    if any(event.startswith(p) for p in _events):
+    Ceiling, stated honestly: this is a name-based check. Audit events do not cover every way to start a process, so
+    block_fork_exec() also stubs the C-level fork_exec; dlsym name matching can still be defeated (address arithmetic,
+    string-eval inside a library), as can the static denylist in sandbox.py. None of this is the wall: the container flags
+    (no network, read-only root, uid 65534, no caps, pids/memory limits) are."""
+    if event.startswith(tuple(_events)):
         raise _deny(f"blocked by sandbox policy: {event}")
     if event.startswith("ctypes.dlsym") and len(args) > 1 and args[1] in _symbols:
         raise _deny(f"blocked by sandbox policy: {event} {args[1]}")
+
+
+def block_fork_exec():
+    """fork_exec starts a process without an audit event (multiprocessing.util.spawnv_passfds reaches it): replace it."""
+    import _posixsubprocess
+    import subprocess
+
+    def fork_exec(*_a, **_k):
+        raise PermissionError("blocked by sandbox policy: fork_exec")
+    _posixsubprocess.fork_exec = fork_exec
+    if hasattr(subprocess, "_fork_exec"):
+        subprocess._fork_exec = fork_exec
 
 
 def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
@@ -130,6 +145,7 @@ def main():
         env = {"df": df, "pd": pd, "np": np, "plt": plt, "table": table, "finding": finding, "__name__": "__main__",
                "__builtins__": SCRIPT_BUILTINS}
         code = compile(script.read_text(), "script.py", "exec")
+        block_fork_exec()
         sys.addaudithook(audit_block)  # after the runner's own setup; cannot be removed by the script
         try:
             exec(code, env)

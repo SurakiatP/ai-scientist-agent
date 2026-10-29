@@ -660,3 +660,9 @@ async def test_import_keeps_a_turn_whose_pack_is_unknown_or_too_long(api):
     assert (await api.post("/v1/store/import", json=body)).json()["turns"] == 4
     ts = next(s for s in (await api.get("/v1/store/snapshot")).json()["sessions"] if s["id"] == sid)["turns"]
     assert [x["pack"] for x in sorted(ts, key=lambda x: x["idx"])] == ["chem", None, None, None]
+
+
+def test_turnin_drops_an_unknown_pack_but_keeps_the_turn():
+    from scientist.store import TurnIn
+    t = lambda p: TurnIn(idx=0, question="q", status="done", pack=p).pack  # noqa: E731
+    assert [t("med"), t("nope"), t(None), t(5), t(["x"])] == ["med", None, None, None, None]

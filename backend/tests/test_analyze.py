@@ -424,10 +424,10 @@ def test_science_dockerfile_shares_base_and_pins_with_the_base_image():
 def _hook_source():  # the hook as written in runner.py (the file itself needs pandas/matplotlib, which the test venv lacks)
     import ast
     src = (Path(sandbox.__file__).parents[2] / "sandbox/runner.py").read_text()
-    keep = [n for n in ast.parse(src).body if (isinstance(n, ast.FunctionDef) and n.name == "audit_block")
+    keep = [n for n in ast.parse(src).body if (isinstance(n, ast.FunctionDef) and n.name in ("audit_block", "block_fork_exec"))
             or (isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") in ("BLOCKED_EVENTS", "BLOCKED_SYMBOLS"))]
-    assert len(keep) == 3, "audit_block / BLOCKED_EVENTS / BLOCKED_SYMBOLS missing from runner.py"
-    return "import sys, os\n" + "\n".join(ast.unparse(n) for n in keep) + "\nsys.addaudithook(audit_block)\n"
+    assert len(keep) == 4, "audit_block / BLOCKED_EVENTS / BLOCKED_SYMBOLS missing from runner.py"
+    return "import sys, os\n" + "\n".join(ast.unparse(n) for n in keep) + "\nblock_fork_exec()\nsys.addaudithook(audit_block)\n"
 
 
 @pytest.mark.parametrize("call", ["os.system('echo pwned')", "os.execv('/bin/echo', ['echo'])",
@@ -438,9 +438,35 @@ def _hook_source():  # the hook as written in runner.py (the file itself needs p
                                   "import ctypes; ctypes.pythonapi.system(b'echo pwned')",
                                   "import ctypes; ctypes.CDLL(None).popen",
                                   "import ctypes; ctypes.CDLL(None).fork()"])
-def test_runner_audit_hook_blocks_process_socket_and_dlopen(call):
+def test_runner_audit_hook_blocks_process_socket_and_libc_exec_symbols(call):
     p = subprocess.run([sys.executable, "-I", "-c", _hook_source() + call], capture_output=True, text=True, timeout=30)
     assert "pwned" not in p.stdout and ("blocked by sandbox policy" in p.stderr or "spawnv" in call)  # spawnv: the forked child dies silently
+
+
+SPAWN_ATTACK = ("import pymc as pm\n"
+                "pm.sampling.parallel.multiprocessing.util.spawnv_passfds(b'/bin/sh', [b'sh', '-c', b'echo EXEC-OK'], ())\n")
+
+
+@pytest.mark.parametrize("pack", [None, *PACKS])
+def test_spawnv_passfds_attack_rejected_under_every_pack(pack):
+    assert sandbox.check_script(SPAWN_ATTACK, pack)
+    assert sandbox.check_script("import multiprocessing\n", pack) and sandbox.check_script("x.fork_exec()", pack)
+
+
+def test_fork_exec_stub_raises_permission_error():
+    code = _hook_source() + """import multiprocessing.util as u, _posixsubprocess, subprocess
+for f in (_posixsubprocess.fork_exec, getattr(subprocess, '_fork_exec', _posixsubprocess.fork_exec)):
+    try:
+        f()
+    except PermissionError as e:
+        print(e)
+try:
+    u.spawnv_passfds(b'/bin/sh', [b'sh', b'-c', b'echo EXEC-OK'], ())
+except PermissionError:
+    print('refused')
+"""
+    p = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, timeout=30)
+    assert "EXEC-OK" not in p.stdout and p.stdout.count("blocked by sandbox policy: fork_exec") == 2 and "refused" in p.stdout, (p.stdout, p.stderr)
 
 
 def test_runner_audit_hook_leaves_imports_and_files_alone(tmp_path):

@@ -18,8 +18,8 @@ from scientist.events import (BranchAnswer, Check, Complete, DataRecord, Error, 
                               Replan, Search, Sources, Strategy, Waiting, arxiv_id, paper_key)
 from scientist.gate import RunGate
 from scientist.guardrail import guard
-from scientist.packs import hint as pack_hint
 from scientist.hermes import BranchFailed, BranchRunner, BranchUsage, InvalidPaper, InvalidRecord
+from scientist.packs import hint as pack_hint
 from scientist.sources import DATA_SOURCES
 
 log = logging.getLogger(__name__)

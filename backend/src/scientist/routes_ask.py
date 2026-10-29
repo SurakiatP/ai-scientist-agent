@@ -12,8 +12,8 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from scientist.config import get_settings
-from scientist.packs import PACKS
 from scientist.events import Error, Event, to_sse
+from scientist.packs import PACKS
 from scientist.pipeline import THAI, ask
 from scientist.usage import track
 
