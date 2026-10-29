@@ -29,7 +29,7 @@ files.{$DOMAIN} {
 		max_size 210MB
 	}
 	# Research questions/plans are small: cap before parsing. Uploads (/v1/files) keep the 210MB cap above.
-	@ask path /v1/async/*
+	@ask path /v1/async/* /v1/api/* /mcp
 	request_body @ask {
 		max_size 1MB
 	}

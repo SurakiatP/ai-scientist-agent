@@ -86,12 +86,14 @@ async def require_key(request: Request, creds: HTTPAuthorizationCredentials | No
                       st: Store = Depends(data)) -> ApiKey:
     """FastAPI dependency: `Authorization: Bearer sci_...`. Every failure is the same 401, counted per client IP
     (guessing is rate limited). Applies the per-key rate limit."""
+    bucket = "authfail:" + (request.client.host if request.client else "?")
+    rate_limit(st, bucket, hit=False)  # a throttled guesser costs no database query
     k = None
     if creds is not None:
         async with st.db.session() as s:
             k = await verify(s, creds.credentials.strip())
     if k is None:
-        rate_limit(st, "authfail:" + (request.client.host if request.client else "?"))
+        rate_limit(st, bucket)
         raise HTTPException(401, "invalid or missing API key", headers={"WWW-Authenticate": "Bearer"})
     rate_limit(st, k.client_id)
     return k

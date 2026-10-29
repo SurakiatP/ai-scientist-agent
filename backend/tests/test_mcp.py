@@ -78,6 +78,12 @@ async def test_plan_start_wait_and_artifacts(serve, fake_complete):
             assert not err and plan["reasoning"] == "plan" and plan["searches"][0]["term"] == "base editing"
             err, j = await call(s, "start_research", question=Q, mode="quick", plan=plan["searches"])
             assert not err and set(j) == {"run_id", "session_id", "turn_id", "status"}
+            res = await s.call_tool("get_run", {"run_id": j["run_id"]})
+            assert res.structuredContent["run_id"] == j["run_id"] and json.loads(res.content[0].text)["run_id"] == j["run_id"]
+            res = await s.call_tool("start_research", {"question": Q, "mode": "quick", "plan": plan["searches"]})
+            assert res.structuredContent["run_id"] and res.content  # text kept beside the structured result
+            tools = {t.name: t for t in (await s.list_tools()).tools}
+            assert tools["start_research"].outputSchema["type"] == "object" and tools["get_run"].outputSchema["type"] == "object"
             err, done = await call(s, "wait_run", run_id=j["run_id"], timeout_seconds=30)
             assert not err and done["status"] == "done" and done["answer"]["content"]
             assert done == (await c.get(f"/v1/api/runs/{j['run_id']}", headers=h)).json()
@@ -198,3 +204,39 @@ async def test_wait_run_default_is_below_client_timeouts(serve, fake_complete):
             wait = next(t for t in (await s.list_tools()).tools if t.name == "wait_run")
             assert wait.inputSchema["properties"]["timeout_seconds"]["default"] == 45
             assert "below" in wait.description and "timeout" in wait.description
+
+
+async def test_a_database_error_is_database_unavailable(serve, fake_complete, monkeypatch):
+    from sqlalchemy.exc import DBAPIError
+
+    async def down(*a, **k):
+        raise DBAPIError("select", {}, Exception("conn"))
+
+    monkeypatch.setattr(mcp_server.api, "run_shape", down)
+    async with serve() as c:
+        k, _ = await key(c)
+        async with mcp(c, k) as s:
+            err, msg = await call(s, "get_run", run_id=u())
+            assert err and "database unavailable" in msg
+
+
+async def test_a_conflict_while_starting_is_a_tool_error(serve, fake_complete, monkeypatch):
+    from scientist.store import Conflict
+
+    async def boom(*a, **k):
+        raise Conflict("stale")
+
+    async with serve() as c:
+        k, _ = await key(c)
+        monkeypatch.setattr(c.app.state.runs, "submit", boom)
+        async with mcp(c, k) as s:
+            err, msg = await call(s, "start_research", question=Q)
+            assert err and "stale" in msg
+
+
+async def test_mcp_rate_limit_429_has_code_and_retry_after(serve, fake_complete):
+    async with serve(STORE_WRITE_RATE_PER_MIN=1) as c:
+        _, h = await key(c)
+        await c.post("/mcp", json=INIT, headers={**HDRS, **h})
+        r = await c.post("/mcp", json=INIT, headers={**HDRS, **h})
+        assert r.status_code == 429 and r.json() == {"detail": "rate limit exceeded; slow down", "code": "rate_limited"} and r.headers["retry-after"] == "60"

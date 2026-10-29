@@ -100,7 +100,7 @@ dc exec backend python -m scientist.apikeys list                            # pr
 dc exec backend python -m scientist.apikeys revoke <prefix>                 # takes effect on the key's next request
 ```
 
-Only the sha256 of a key is stored. A lost key cannot be recovered: revoke it and create another.
+Revoking stops new requests on the next call. Streams already open, `wait_run` calls in progress and runs already started continue to their end (bounded by the per-key caps). Only the sha256 of a key is stored. A lost key cannot be recovered: revoke it and create another.
 
 ## 7. Operations
 Logs: `docker compose -f /opt/ai-scientist/current/infra/compose.yaml logs -f backend`. Local TLS rehearsal: set `CADDY_TLS=tls internal` in `app.env`.

@@ -41,8 +41,13 @@ def write_guard(request: Request, st: Store = Depends(data)) -> None:
     rate_limit(st, request.client.host if request.client else "?")
 
 
-def rate_limit(st: Store, ident: str) -> None:
-    """Sliding minute of store_write_rate_per_min per ident (client IP, or "key:<id>" for API keys)."""
+class RateLimited(HTTPException):
+    def __init__(self):
+        super().__init__(429, "rate limit exceeded; slow down", headers={"Retry-After": "60"})
+
+
+def rate_limit(st: Store, ident: str, hit: bool = True) -> None:
+    """Sliding minute of store_write_rate_per_min per ident (client IP, or "key:<id>" for API keys). hit=False only checks."""
     cap = st.settings.store_write_rate_per_min
     if not cap:
         return
@@ -50,7 +55,9 @@ def rate_limit(st: Store, ident: str) -> None:
     while q and now - q[0] > 60:
         q.popleft()
     if len(q) >= cap:
-        raise HTTPException(429, "rate limit exceeded; slow down")
+        raise RateLimited()
+    if not hit:
+        return
     q.append(now)
     if len(st.writes) > 10_000:  # forget idle clients
         for k in [k for k, v in st.writes.items() if not v or now - v[-1] > 60]:

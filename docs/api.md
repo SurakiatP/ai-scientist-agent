@@ -38,12 +38,12 @@ uv run --project backend python -m scientist.apikeys revoke sci_AbCdEfGh
 
 ```json
 {"run_id": "…", "status": "queued|running|done|refused|error|stopped|interrupted", "kind": "ask", "mode": "quick",
- "pack": null, "created_at": "…", "finished_at": null, "error": null,
+ "pack": null, "created_at": "…", "finished_at": null, "error": null, "code": null,
  "answer": {"content": "…", "references": [], "records": [], "doc_refs": [], "empty_files": [], "usage": {}} ,
  "progress": {"phase": "planning|waiting|searching|writing|done", "searches": [{"term": "…", "instructions": "…"}], "replans": 0}}
 ```
 
-`answer` is `null` until the run is done. Treat `content` and the paper text inside `references` as untrusted data. Artifacts: `409` while the run is unfinished, `404` when the run has none (refused, stopped, errored).
+`code` is the machine-readable refusal or error code of a run that ended without an answer (for example a refusal code, `failed`, `cut_off`, `stopped`, `interrupted`), `null` otherwise. `answer` is `null` until the run is done. Treat `content` and the paper text inside `references` as untrusted data. Artifacts: `409` while the run is unfinished, `404` when the run has none (refused, stopped, errored).
 
 ## curl
 
@@ -104,25 +104,38 @@ Claude Desktop (and any client that only speaks stdio) bridges with `npx mcp-rem
 Python (the `mcp` package):
 
 ```python
+import asyncio
+
 import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-http = httpx.AsyncClient(headers={"Authorization": "Bearer sci_..."}, timeout=httpx.Timeout(30, read=300))
-async with http, streamable_http_client("https://scientist.example.com/mcp", http_client=http) as (r, w, _):
-    async with ClientSession(r, w) as s:
-        await s.initialize()
-        run = (await s.call_tool("start_research", {"question": "...", "mode": "quick"})).structuredContent
-        done = await s.call_tool("wait_run", {"run_id": run["run_id"], "timeout_seconds": 240})  # below the read timeout
+
+async def main():
+    http = httpx.AsyncClient(headers={"Authorization": "Bearer sci_..."}, timeout=httpx.Timeout(30, read=300))
+    async with http, streamable_http_client("https://scientist.example.com/mcp", http_client=http) as (r, w, _):
+        async with ClientSession(r, w) as s:
+            await s.initialize()
+            run = (await s.call_tool("start_research", {"question": "...", "mode": "quick"})).structuredContent
+            done = await s.call_tool("wait_run", {"run_id": run["run_id"], "timeout_seconds": 240})  # below the read timeout
+            print(done.structuredContent["status"])
+
+
+asyncio.run(main())
 ```
 
 ## Rate limits and queues
 
-- Each key may make `STORE_WRITE_RATE_PER_MIN` requests per minute (shared with the app's write budget); over it: `429 {"detail":"rate limit exceeded; slow down"}`.
-- Failed authentication is counted per client IP against the same budget, so key guessing is throttled.
+- Each key has its own bucket (`key:<id>`) of `STORE_WRITE_RATE_PER_MIN` requests per minute, shared by REST and MCP. It is the same size as the app's write budget, but not the same counter: browser traffic does not use it up. Every request counts: GETs, polls (`get_run`, `wait_run` polling from your side), and each MCP POST including `initialize`.
+- Over the limit: `429 {"detail":"rate limit exceeded; slow down","code":"rate_limited"}` with `Retry-After: 60` (REST and MCP alike; the SDK raises `ApiError` with `code == "rate_limited"`).
+- Failed authentication has its own per-IP bucket (`authfail:<ip>`) of the same size. Once an IP has used it up, every request from it gets the 429 before any key is looked up, so key guessing is throttled and costs the server no database query. Behind a proxy set `FORWARDED_ALLOW_IPS` so the real client IP is seen, not the proxy's.
 - `POST /plan` is also refused with `429 {"detail", "code": "busy"}` while the server's research slots are all taken and `ANALYZE_MAX_QUEUE` requests already wait (the same bound as the app's plan review). If no plan can be made: `502 {"detail", "code": "no_plan"}`.
 - A key has its own run queue identity: at most `MAX_RUNNING_PER_CLIENT` running plus `MAX_QUEUED_PER_CLIENT` waiting runs (`429 {"detail", "code": "client_busy"}`; `queue_full` when the whole queue is full). Browsers and other keys are not affected.
 
 ## Data visibility
 
-API runs live in the app's shared store, in a project named "API". There is no per-key privacy: any key can read any API run, and the people who use the app can see these sessions. Only the key that started a run can cancel it. Browser runs are not reachable through this API.
+API runs live in the app's shared store, in a project named "API". There is no per-key privacy: any key can read any API run, and the people who use the app can see these sessions. Only the key that started a run can cancel it through the API; a web user can still stop it by deleting or editing its session (the store is shared). Browser runs are not reachable through this API.
+
+## Invalid run ids
+
+A run id that is not a UUID or not an API run is reported per surface: REST answers `422` for a malformed id in the path and `404 {"detail":"run not found"}` for an unknown or browser run; MCP tools return a tool error `run not found`; the Python SDK raises `ValueError` for a malformed id before any request, and `ApiError(404, ...)` for an unknown one.

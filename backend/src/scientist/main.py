@@ -27,7 +27,7 @@ from scientist.routes_reports import router as reports_router
 from scientist.routes_preview import router as preview_router
 from scientist.preview_store import PreviewStore
 from scientist.db import Database, open_database
-from scientist.routes_store import router as store_router
+from scientist.routes_store import RateLimited, router as store_router
 from scientist.store import Bus, Store
 from sqlalchemy.exc import DBAPIError
 from fastapi.responses import JSONResponse
@@ -92,6 +92,10 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     app = FastAPI(title="scientist", lifespan=lifespan)
     app.state.db = db or open_database(settings)
     app.state.data = Store(app.state.db, Bus(), settings, lambda: app.state.store) if app.state.db else None
+
+    @app.exception_handler(RateLimited)
+    async def limited(_, e):  # the same body everywhere: clients branch on the code, and wait Retry-After seconds
+        return JSONResponse({"detail": e.detail, "code": "rate_limited"}, status_code=429, headers=e.headers)
 
     @app.exception_handler(DBAPIError)
     async def db_down(_, e):  # unreachable, not migrated, timed out: the store is unavailable, not the app broken

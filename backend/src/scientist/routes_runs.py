@@ -49,7 +49,7 @@ async def submit(body: RunIn, request: Request, cid: str = Depends(client_id), s
         write_guard(request, svc.data)  # JSON content type, origin, per-IP write rate
     except HTTPException as e:
         if e.status_code == 429:
-            return JSONResponse({"detail": e.detail, "code": "rate_limited"}, status_code=429)
+            return JSONResponse({"detail": e.detail, "code": "rate_limited"}, status_code=429, headers=e.headers)
         raise
     if body.plan_only:
         raise HTTPException(422, "plan_only is not a run; use /v1/async/ask")

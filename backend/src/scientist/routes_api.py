@@ -1,6 +1,7 @@
 """/v1/api: the public research API for programs (API key, JSON only). It drives the same RunService as the browser, with
 its own client id per key (`key:<id>`), so keys and browsers cannot cancel or crowd out each other. Runs live in the shared
 store (project "API"); any key may read any key's run, only the creating key may cancel it."""
+import json
 import re
 import uuid
 from contextlib import aclosing, suppress
@@ -102,6 +103,7 @@ class RunOut(BaseModel):
     created_at: datetime
     finished_at: datetime | None
     error: str | None = Field(description="Why a run ended in error or refused; null otherwise.")
+    code: str | None = Field(None, description="Machine-readable refusal or error code of the run (e.g. a refusal code, failed, cut_off, stopped); null otherwise.")
     answer: dict | None = Field(description="{content, references, records, doc_refs, empty_files, usage}; set once the run is done.")
     progress: Progress
 
@@ -143,7 +145,7 @@ def shape(row: dict, turn: dict | None) -> dict:
     a = (turn or {}).get("answer")
     return {"run_id": row["id"], "status": row["status"], "kind": row["kind"], "mode": row["mode"], "pack": (turn or {}).get("pack"),
             "created_at": row["created_at"], "finished_at": row["finished_at"],
-            "error": row["error"] or (turn or {}).get("refused"),
+            "error": row["error"] or (turn or {}).get("refused"), "code": p.get("_code") or p.get("_err"),
             "answer": None if not a else {"content": a.get("content", ""), "references": a.get("references", []), "records": a.get("records", []),
                                           "doc_refs": a.get("doc_refs", []), "empty_files": a.get("empty_files", []), "usage": a.get("usage")},
             "progress": {"phase": p.get("phase"), "searches": p.get("searches", []), "replans": len(p.get("replans", []))}}
@@ -163,15 +165,22 @@ async def api_session(svc: RunService, title: str) -> str:
     return sid
 
 
+def settled(out):
+    """guarded() turns a Conflict into a 409 response instead of raising; here it is an error like the others."""
+    if isinstance(out, Response):
+        raise HTTPException(out.status_code, json.loads(out.body)["detail"])
+    return out
+
+
 async def start_run(svc: RunService, key: ApiKey, body: ResearchIn) -> dict:
     """Starts a run for a key (REST and MCP). Raises Rejected when the key's caps are full."""
     run_in = valid(RunIn, session_id=str(uuid.uuid4()), turn_id=str(uuid.uuid4()), kind="ask", question=body.question,
                    mode="docs" if body.doc_ids else body.mode, doc_ids=body.doc_ids or [], pack=body.pack, plan=body.plan)
     svc.queue.admit(key.client_id)  # refuse before a session is created
-    sid = await guarded(api_session(svc, run_in.question))
+    sid = settled(await guarded(api_session(svc, run_in.question)))
     run_in.session_id = sid
     try:
-        out = await guarded(svc.submit(run_in, key.client_id))
+        out = settled(await guarded(svc.submit(run_in, key.client_id)))
     except BaseException:
         with suppress(Exception):  # a refused submit leaves no empty session behind; the original error is what surfaces
             await svc.data.soft_delete("session", sid)

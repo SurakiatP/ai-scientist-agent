@@ -68,4 +68,5 @@ run_events = sa.Table(
 api_keys = sa.Table(  # only the sha256 of a key is stored; prefix = first 12 chars, for listings
     "api_keys", md, sa.Column("id", UUID, primary_key=True), sa.Column("name", sa.Text, nullable=False),
     sa.Column("prefix", sa.Text, nullable=False), sa.Column("hash", sa.Text, nullable=False, unique=True),
-    _ts("created_at", nullable=False, server_default=NOW), _ts("revoked_at"), _ts("last_used_at"))
+    _ts("created_at", nullable=False, server_default=NOW), _ts("revoked_at"), _ts("last_used_at"),
+    sa.CheckConstraint("char_length(name) <= 80", name="api_keys_name"))

@@ -2,7 +2,7 @@
 import asyncio
 import json
 
-from scientist import apikeys, usage
+from scientist import apikeys, routes_api, usage
 from test_db import newdb, pg  # noqa: F401
 from test_runs import _env, serve, sse, u  # noqa: F401  (serve: app + fake bridge + Postgres)
 from test_pipeline import Q, strategy
@@ -62,15 +62,59 @@ async def test_failed_auth_is_rate_limited_per_ip_with_a_neutral_429(serve, fake
         codes = [(await c.get(f"{API}/packs", headers=bad)).status_code for _ in range(5)]
         assert codes == [401, 401, 401, 429, 429]
         r = await c.get(f"{API}/packs", headers=bad)
-        assert r.json() == {"detail": "rate limit exceeded; slow down"}
+        assert r.json() == {"detail": "rate limit exceeded; slow down", "code": "rate_limited"} and r.headers["retry-after"] == "60"
 
 
 async def test_per_key_rate_limit(serve, fake_complete):
     async with serve(STORE_WRITE_RATE_PER_MIN=2) as c:
         _, a = await key(c, "a")
         _, b = await key(c, "b")
-        assert [(await c.get(f"{API}/packs", headers=a)).status_code for _ in range(3)] == [200, 200, 429]
+        assert [(await c.get(f"{API}/packs", headers=a)).status_code for _ in range(2)] == [200, 200]
+        r = await c.get(f"{API}/packs", headers=a)
+        assert r.status_code == 429 and r.json()["code"] == "rate_limited" and r.headers["retry-after"] == "60"
         assert (await c.get(f"{API}/packs", headers=b)).status_code == 200
+
+
+async def test_a_throttled_guesser_costs_no_database_query(serve, fake_complete, monkeypatch):
+    async with serve(STORE_WRITE_RATE_PER_MIN=2) as c:
+        _, h = await key(c)
+        bad = {"authorization": "Bearer sci_" + "x" * 43}
+        assert [(await c.get(f"{API}/packs", headers=bad)).status_code for _ in range(2)] == [401, 401]
+        calls = []
+
+        async def spy(*a, **k):
+            calls.append(1)
+
+        monkeypatch.setattr(apikeys, "verify", spy)
+        for hd in (bad, h):  # the IP is throttled, whatever it sends
+            r = await c.get(f"{API}/packs", headers=hd)
+            assert r.status_code == 429 and r.json()["code"] == "rate_limited"
+        assert calls == []
+
+
+async def test_a_conflict_while_starting_is_a_409_and_leaves_no_session(serve, fake_complete, monkeypatch):
+    from scientist.store import Conflict
+    async with serve() as c:
+        _, h = await key(c)
+
+        async def boom(*a, **k):
+            raise Conflict("stale")
+
+        monkeypatch.setattr(c.app.state.runs, "submit", boom)
+        r = await c.post(f"{API}/research", json={"question": Q}, headers=h)
+        assert r.status_code == 409 and r.json()["detail"] == "stale"
+
+
+def test_run_code_is_the_refusal_or_error_code():
+    row = {"id": "r", "status": "refused", "kind": "ask", "mode": "deep", "created_at": None, "finished_at": None, "error": None}
+    assert routes_api.shape(row, {"progress": {"_code": "off_topic"}})["code"] == "off_topic"
+    assert routes_api.shape(row, {"progress": {"_err": "failed"}})["code"] == "failed"
+    assert routes_api.shape(row, {"progress": {}})["code"] is None and routes_api.shape(row, None)["code"] is None
+
+
+def test_api_key_name_is_capped_in_the_model_like_in_the_migration():
+    from scientist.models import api_keys
+    assert any(getattr(k, "name", None) == "api_keys_name" for k in api_keys.constraints)
 
 
 # --- openapi + packs ---------------------------------------------------------------------------------------------------------
@@ -137,7 +181,7 @@ async def test_research_run_events_and_artifacts(serve, fake_complete):
         j = await start(c, h, mode="quick")
         assert set(j) == {"run_id", "session_id", "turn_id", "status"} and j["status"] in ("queued", "running")
         done = await until(c, h, j["run_id"], "done")
-        assert set(done) == {"run_id", "status", "kind", "mode", "pack", "created_at", "finished_at", "error", "answer", "progress"}
+        assert set(done) == {"run_id", "status", "kind", "mode", "pack", "created_at", "finished_at", "error", "code", "answer", "progress"}
         assert done["kind"] == "ask" and done["mode"] == "quick" and done["pack"] is None and done["finished_at"] and done["error"] is None
         a = done["answer"]
         assert set(a) == {"content", "references", "records", "doc_refs", "empty_files", "usage"}
@@ -231,6 +275,7 @@ async def test_cancel_only_by_the_creating_key(serve, fake_complete):
         r = await c.post(f"{API}/runs/{rid}/cancel", headers=a)
         assert r.status_code == 200 and r.json()["status"] == "stopped" and "answer" in r.json()
         assert (await c.post(f"{API}/runs/{rid}/cancel", headers=a)).json()["status"] == "stopped"  # idempotent
+        assert (await c.get(f"{API}/runs/{rid}", headers=a)).json()["code"] == "stopped"
         assert (await c.post(f"{API}/runs/{u()}/cancel", headers=a)).status_code == 404
 
 
@@ -303,11 +348,16 @@ async def test_a_trashed_api_project_is_revived(serve, fake_complete):
         await usage.drain()
 
 
+def doc_schemas(r):
+    return r.json()["components"]["schemas"]
+
+
 async def test_openapi_documents_the_error_responses(serve, fake_complete):
     async with serve() as c:
         ops = (await c.get(f"{API}/openapi.json")).json()["paths"]
         has = lambda p, m, code: str(code) in ops[API + p][m]["responses"]  # noqa: E731
         assert has("/research", "post", 429) and has("/plan", "post", 429) and has("/plan", "post", 502) and has("/plan", "post", 422)
+        assert "code" in doc_schemas(await c.get(f"{API}/openapi.json"))["RunOut"]["properties"]
         assert has("/runs/{run_id}", "get", 404) and has("/runs/{run_id}/events", "get", 404)
         assert has("/runs/{run_id}/cancel", "post", 403) and has("/runs/{run_id}/cancel", "post", 404)
         assert has("/runs/{run_id}/artifacts/{kind}", "get", 409) and has("/runs/{run_id}/artifacts/{kind}", "get", 404)
