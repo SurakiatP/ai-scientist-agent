@@ -22,6 +22,8 @@ def upgrade() -> None:
     op.add_column("runs", sa.Column("pool", sa.Text))
     op.add_column("runs", sa.Column("served_at", sa.DateTime(timezone=True)))
     op.execute("update runs set pool = case when kind = 'analyze' or mode = 'docs' then 'analysis' else 'research' end")
+    # unfinished runs from before this version have no owner: an expired lease lets the sweep handle them
+    op.execute("update runs set lease_until = now() where status in ('queued', 'running')")
     op.create_index("runs_status_pool", "runs", ["status", "pool"])
 
 

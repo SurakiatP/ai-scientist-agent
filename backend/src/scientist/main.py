@@ -58,7 +58,7 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
                     log.exception("object store unavailable")
             purger = asyncio.create_task(_purge_hourly(app)) if app.state.data else None
             if app.state.db and settings.database_url:
-                app.state.pgbus = PgBus(settings)
+                app.state.pgbus = PgBus(settings, app.state.db)
                 await app.state.pgbus.start()
             if app.state.runs:
                 try:
