@@ -8,9 +8,11 @@ Policy table (every refusal carries a machine `code`; the frontend localises the
 | quick           | same as deep, shorter length cap (3/4)       | same                                  | same                                                                                                                |
 | plan_only       | deep policy (it is only deep's planning)     | same                                  | same                                                                                                                |
 | chat            | cheap rules only, never calls the model      | any follow-up on this session memory  | empty memory (empty_memory), too_long, injection, homework/code/chit-chat (out_of_scope), new evidence (needs_search) |
+| docs            | rules only, never calls the model            | any question about the attached PDFs  | empty/too_long, injection, thesis/diagnosis/exploit requests (unsafe_request)                                      |
 | analyze         | rules, then small model with a data prompt   | analyse/chart/clean/compare THAT table | literature (use_research), files/network/secrets (unsafe_request), injection, unrelated tasks (out_of_scope/not_about_data) |
 
-Model or network failure in deep/quick/plan_only/analyze -> code "check_failed", question rejected (fail closed).
+docs: the question is about the user's own documents, so there is no topic test (their subject is not ours to judge); the
+documents' text only ever reaches the answer model as escaped data. Model or network failure in deep/quick/plan_only/analyze -> code "check_failed", question rejected (fail closed).
 Column names and cell text are untrusted: they only ever go to the model as escaped JSON, never into a rule.
 """
 import json
@@ -187,6 +189,14 @@ async def _research(q: str, mode: str, settings: Settings, ask: Ask | None) -> S
     return _yes(str(d.get("reason", ""))) if d["in_scope"] else _no(str(d.get("reason", "")) or "Not a scientific research question.", "out_of_scope")
 
 
+def _docs(q: str, settings: Settings) -> ScopeVerdict:
+    if v := _basic(q, settings.max_question_chars):
+        return v
+    if UNSAFE_RESEARCH.search(q):
+        return _no("This cannot be done from the documents (no thesis writing, diagnoses or exploit code).", "unsafe_request")
+    return _yes("A question about the attached documents.")
+
+
 def _chat(q: str, settings: Settings, memory: int) -> ScopeVerdict:
     if not memory:
         return _no("There are no earlier research results in this session to answer from.", "empty_memory")
@@ -227,6 +237,8 @@ async def guard(mode: str, question: str, *, settings: Settings, context: dict |
     q, context = question.strip(), context or {}
     if mode == "chat":
         return _chat(q, settings, int(context.get("memory", 0)))
+    if mode == "docs":
+        return _docs(q, settings)
     if mode == "analyze":
         return await _analyze(q, settings, list(context.get("columns", [])), ask)
     return await _research(q, mode, settings, ask)  # deep, quick, plan_only, anything unknown: strictest research policy

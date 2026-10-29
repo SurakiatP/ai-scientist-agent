@@ -251,6 +251,7 @@ class ProvAnalysisSettings(BaseModel):
 class ProvDocFile(BaseModel):
     file_id: str
     sha256: str | None = None  # of the PDF bytes that were indexed (None: indexed before the hash was kept)
+    truncated: bool = False  # only the first pages / characters were read
 
 
 class ProvDocs(BaseModel):

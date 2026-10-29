@@ -22,7 +22,7 @@ DOCS = (Path(__file__).parent / "prompts/docs.md").read_text()
 DASH = "[\u2013-]"
 NUM = rf"\d{{1,4}}(?:\s*{DASH}\s*\d{{1,4}})?"  # one number or one range per part, at most 4 digits
 MARK = re.compile(rf"\[({NUM}(?:\s*,\s*{NUM})*)\]")  # [2], [1, 2], [1-3]
-DEFINITION = re.compile(r"^[ \t]*\[[^\]\n]+\]:[ \t]*\S.*$", re.M)  # [n]: http://...
+DEFINITION = re.compile(r"^[ \t]*\[[^\]\n]+\]:[ \t]*<?(?:https?://|ftp://|mailto:|www\.).*$", re.M | re.I)  # [n]: http://... (not "[1]: The sensor costs $42")
 AUTOLINK = re.compile(r"<https?://[^>\n]*>")
 PERMANENT = ("unreadable", "bad_output", "output_too_large")
 FAIL = "Could not write the answer. Please try again."
@@ -49,12 +49,21 @@ def _parse(text: str) -> tuple[str, dict]:
 
 def _unlink(text: str) -> str:
     """Markdown link targets and definitions removed in linear time: `[label](url)` -> `[label]` (a `[n](url)` is never a
-    citation or a link), reference definition lines and autolinks vanish."""
+    citation or a link; the ")" must be on the same line), reference definitions with a URL and autolinks vanish."""
     text = AUTOLINK.sub("", DEFINITION.sub("", text))
-    out, pos = [], 0
-    while (i := text.find("](", pos)) >= 0 and (j := text.find(")", i + 2)) >= 0:  # no ")" left: nothing more can match
+    out, pos, close, eol = [], 0, -1, -1  # close / eol: next ")" / line end at or after the scan point, searched again only once passed
+    while (i := text.find("](", pos)) >= 0:
+        if close < i + 2 and (close := text.find(")", i + 2)) < 0:  # no ")" left: nothing more can match
+            break
+        if eol < i + 2:
+            eol = text.find("\n", i + 2)
+            eol = len(text) if eol < 0 else eol
+        if close > eol:  # not on this line: not a link
+            out.append(text[pos:i + 2])
+            pos = i + 2
+            continue
         out.append(text[pos:i + 1])
-        pos = j + 1
+        pos = close + 1
     return "".join(out) + text[pos:]
 
 
@@ -100,13 +109,13 @@ def _fail(name: str, error: str | None) -> Error:
         return Error(message=f'The file "{name}" could not be read as a PDF (it may be encrypted or damaged).', code="docs_unreadable")
     if error in PERMANENT:
         return Error(message=f'The file "{name}" cannot be read.', code="docs_unreadable_permanent")
-    return Error(message=f'The file "{name}" could not be read right now. Please try again.', code="docs_host")
+    return Error(message=f'The file "{name}" could not be read right now. Please try again later.', code="docs_host")
 
 
 async def answer_docs(question: str, doc_ids: list[str], *, db, store, settings: Settings, gate: RunGate,
                       history: list = ()) -> AsyncIterator[Event]:
     """Scope check (as deep mode), then, holding a gate slot of the sandbox pool: index, retrieve, answer."""
-    verdict = await guard("deep", question, settings=settings)
+    verdict = await guard("docs", question, settings=settings)
     if not verdict.in_scope:
         yield Refused(reason=verdict.reason, code=verdict.code)  # refusals never queue or take a slot
         return
@@ -116,16 +125,19 @@ async def answer_docs(question: str, doc_ids: list[str], *, db, store, settings:
     try:
         async with db.session() as s:
             rows = {r.id: r.name for r in await s.execute(sa.select(m.files.c.id, m.files.c.name).where(m.files.c.id.in_(doc_ids), m.files.c.deleted_at.is_(None)))}
-            seen = {r.file_id: (r.status, r.error) for r in await s.execute(sa.select(m.doc_index.c.file_id, m.doc_index.c.status, m.doc_index.c.error)
-                                                                  .where(m.doc_index.c.file_id.in_(doc_ids)))}
+            t = m.doc_index
+            expired = t.c.created_at < sa.func.now() - sa.func.make_interval(0, 0, 0, 0, 0, 0, documents.FAILED_TTL_S)
+            seen = {r.file_id: (r.status, r.error, r.expired) for r in await s.execute(
+                sa.select(t.c.file_id, t.c.status, t.c.error, expired.label("expired")).where(t.c.file_id.in_(doc_ids)))}
         if missing := [i for i in doc_ids if i not in rows]:
             yield Error(message=f"The document {missing[0]} was not found.", code="docs_not_found")
             return
         files = {i: rows[i] for i in doc_ids}
         status: dict[str, dict] = {}
         for fid, name in files.items():
-            st, err = seen.get(fid, (None, None))
-            if st != "ready" and not (st == "failed" and err in PERMANENT):  # it will be extracted (new, being read, or a retried host failure)
+            st, err, old = seen.get(fid, (None, None, False))
+            failed_now = st == "failed" and (err in PERMANENT or (err in documents.HOST_ERRORS and not old))  # answered from the row, no extraction
+            if st != "ready" and not failed_now:  # it will be extracted (new, being read, or a host failure that has expired)
                 yield DocsIndexing(file_id=fid, file_name=name)
 
             async def load(fid=fid):
@@ -141,7 +153,7 @@ async def answer_docs(question: str, doc_ids: list[str], *, db, store, settings:
                 return
         readable = [i for i in files if status[i]["chunks"]]
         empty = [EmptyFile(file_id=i, file_name=files[i]) for i in files if i not in readable]  # names never enter the text
-        pf = [ProvDocFile(file_id=i, sha256=status[i].get("sha256")) for i in files]
+        pf = [ProvDocFile(file_id=i, sha256=status[i].get("sha256"), truncated=bool(status[i].get("truncated"))) for i in files]
         if not readable:
             yield FinalAnswer(content=NO_TEXT, references=[], empty_files=empty, usage=usage.snapshot(),
                               provenance=provenance.docs(settings, DOCS, pf, passages=0, cited=0, history_turns=len(history)))
@@ -153,7 +165,7 @@ async def answer_docs(question: str, doc_ids: list[str], *, db, store, settings:
             r = await llm.complete(DOCS, user, max_tokens=settings.synthesis_max_tokens, json_mode=True, settings=settings)
         except Exception:
             log.warning("docs: model call failed", exc_info=True)
-            yield Error(message=FAIL)
+            yield Error(message=FAIL, code="failed")
             return
         text, quotes = _parse(r.text)
         content, refs = _safe_verify(text, quotes, passages, files)

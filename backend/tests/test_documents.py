@@ -363,3 +363,41 @@ def test_extract_unreadable_and_complete(tmp_path):
     fn, res = _extract()
     fn(tmp_path / "b.pdf")
     assert len(res["pages"]) == 2 and res["truncated"] is False
+
+
+# --- final review ------------------------------------------------------------------------------------------------------
+async def test_stopwords_do_not_outrank_the_chunk_that_matches_the_content_words(d):
+    f = mkfile(d)
+    stop = "What was the of in the to and what was the in US a is it to the of."
+    real = "Sensor hardware cost 42 dollars per unit."
+    await documents.ensure_index(d, f, loader(), S(), counting(ok(stop, stop + " the the the", real, stop, stop)))
+    hits = await documents.search(d, [f], "What was the cost per sensor in US dollars?")
+    assert hits[0]["text"] == real
+
+
+async def test_search_with_only_stopwords_still_returns_passages(d):
+    f = mkfile(d)
+    await documents.ensure_index(d, f, loader(), S(), counting(ok("what is the", "other words here")))
+    assert await documents.search(d, [f], "what is the")
+
+
+def _enc_pdf(user: str) -> bytes:
+    from fpdf import FPDF
+    from fpdf.enums import EncryptionMethod
+    p = FPDF()
+    p.set_encryption(owner_password="owner", user_password=user, encryption_method=EncryptionMethod.RC4)
+    p.add_page()
+    p.set_font("Helvetica", size=12)
+    p.multi_cell(0, 8, "owner-only marker text")
+    return bytes(p.output())
+
+
+def test_extract_reads_an_owner_password_only_pdf_but_not_a_user_password_one(tmp_path):
+    (tmp_path / "o.pdf").write_bytes(_enc_pdf(""))
+    fn, res = _extract()
+    fn(tmp_path / "o.pdf")
+    assert res["pages"][0]["text"].strip() == "owner-only marker text"
+    (tmp_path / "u.pdf").write_bytes(_enc_pdf("secret"))
+    fn, res = _extract()
+    fn(tmp_path / "u.pdf")
+    assert res == {"error": "unreadable"}

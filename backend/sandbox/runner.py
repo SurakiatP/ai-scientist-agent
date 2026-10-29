@@ -146,8 +146,7 @@ def extract(path):
     result.clear()
     try:
         reader = pypdf.PdfReader(str(path))
-        if reader.is_encrypted:
-            raise ValueError("encrypted")
+        # owner-password-only files open with the empty user password (pypdf tries it); a user password raises on the first page -> unreadable
         pages, total, truncated = [], 0, False
         for n, page in enumerate(reader.pages, 1):
             if n > MAX_PAGES:

@@ -284,7 +284,7 @@ class RunService:
                 await asyncio.gather(run.timer, return_exceptions=True)
             if status in ("stopped", "interrupted"):  # attached streams learn how it ended
                 await self._emit(run, json.loads(Error(message=status, code=status).model_dump_json()))
-            elif out.get("_err") in ("cut_off", "failed"):  # no terminal event came from the pipeline: say so, replayably
+            elif out.get("_err") in ("cut_off", "failed") and out is not run.out:  # no terminal event came from the pipeline: say so, replayably
                 await self._emit(run, json.loads(Error(message=out.get("error") or "", code=out["_err"]).model_dump_json()))
             out = dict(out)
             err = out.pop("_err", None)
@@ -447,7 +447,7 @@ def _outcome(out: dict | None, d: dict) -> dict | None:
         return {"status": "refused", "refused": d["reason"][:4000], **({"_code": code} if code in REFUSAL_CODES else {})}
     if t == "error":
         code = d.get("code")
-        return {"status": "error", "error": d["message"][:2048], **({"_err": code} if isinstance(code, str) and code.startswith("docs_") else {})}
+        return {"status": "error", "error": d["message"][:2048], **({"_err": code} if isinstance(code, str) and (code.startswith("docs_") or code == "failed") else {})}
     if t in ("analysis_result", "complete"):
         return out or {"status": "done"}
     return out

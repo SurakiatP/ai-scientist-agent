@@ -113,6 +113,7 @@ select file_id, page, idx, text from (
          row_number() over (partition by c.file_id order by ts_rank_cd(c.tsv, q.q) desc, c.idx) as rn
   from doc_chunks c, q where c.file_id in :ids and c.tsv @@ q.q) t
 where rn <= :per order by rank desc, file_id, idx limit :k""").bindparams(sa.bindparam("ids", expanding=True))
+_CONTENT = sa.text("select t from unnest(cast(:ts as text[])) with ordinality as x(t, o) where to_tsvector('english', t) <> ''::tsvector order by o")
 _FIRST = sa.text("""
 select file_id, page, idx, text from (
   select file_id, page, idx, text, row_number() over (partition by file_id order by idx) as rn
@@ -121,14 +122,18 @@ select file_id, page, idx, text from (
 
 async def search(db: Database, file_ids: list[str], question: str) -> list[dict]:
     """Up to 12 passages [{file_id, page, idx, text}] over the (already indexed) files, at most 6 per file. The question is
-    a websearch query with its terms OR-ed, ranked by ts_rank_cd; fewer than 3 hits (no shared words, Thai over an English
+    a websearch query with its terms OR-ed (English stopwords left out), ranked by ts_rank_cd; fewer than 3 hits (no shared words, Thai over an English
     PDF) adds each file's first chunks in page order, taken round-robin so every file is represented (hits stay first)."""
     if not file_ids:
         return []
     args = {"ids": list(file_ids), "per": PER_DOC}
     async with db.session() as s:
         parsed = (await s.execute(sa.text("select websearch_to_tsquery('simple', :q)::text"), {"q": question[:1000]})).scalar()
-        terms = [f"'{t}'" for neg, t in re.findall(r"(!?)'((?:[^']|'')*)'", parsed) if not neg]  # OR the terms, drop negated ones
+        words = [t for neg, t in re.findall(r"(!?)'((?:[^']|'')*)'", parsed) if not neg]  # OR the terms, drop negated ones
+        if words:  # English stopwords ("what", "was", "the") match nearly every chunk: leave them out, unless nothing else is left
+            kept = (await s.execute(_CONTENT, {"ts": words})).scalars().all()
+            words = kept or words
+        terms = [f"'{t}'" for t in words]
         hits = [dict(r._mapping) for r in await s.execute(_SEARCH, {**args, "tsq": " | ".join(terms), "k": TOP_K})] if terms else []
         if len(hits) >= MIN_HITS:
             return hits
