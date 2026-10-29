@@ -18,6 +18,7 @@ from scientist import llm, provenance, sandbox
 from scientist.config import Settings, get_settings
 from scientist.events import AnalysisResult, AnalysisScript, AnalysisStep, Artifact, Complete, Error, Event, Refused, Waiting
 from scientist.guardrail import guard
+from scientist.packs import PACKS
 from scientist.object_store import ObjectMissing
 from scientist.routes_ask import HEADERS, _sse
 from scientist.routes_files import ID
@@ -32,6 +33,14 @@ FAIL = "The analysis could not be completed. Try a simpler question."
 class AnalyzeRequest(BaseModel):
     file_id: str
     question: str
+    pack: str | None = None  # a key of packs.PACKS; None = General
+
+    @field_validator("pack")
+    @classmethod
+    def _pack(cls, v: str | None) -> str | None:
+        if v is not None and v not in PACKS:
+            raise ValueError("unknown pack")
+        return v
 
     @field_validator("question")
     @classmethod
@@ -56,14 +65,16 @@ def _cut(v, n: int):
     return v[:n] + "…" if isinstance(v, str) and len(v) > n else v
 
 
-def _prompt(question: str, quality: dict, feedback: str | None) -> str:
+def _prompt(question: str, quality: dict, feedback: str | None, pack: str | None = None) -> str:
     info = quality["columns_info"]
     cols = [{"name": _cut(c["name"], NAME_CHARS), "dtype": c["dtype"][:NAME_CHARS], "null_pct": c["null_pct"]}
             for c in info[:MAX_COLS]]
     head = [{_cut(k, NAME_CHARS): _cut(v, CELL_CHARS) for k, v in list(r.items())[:MAX_COLS]} for r in quality["head"]]
     data = json.dumps({"rows": quality["rows"], "columns": cols, "columns_omitted": max(0, len(info) - MAX_COLS),
                        "sample_rows": head}, ensure_ascii=False, default=str).replace("<", "\\u003c")  # as pipeline._data_block: no early </data>
+    libs = sandbox.extra_imports(pack)
     return (f"<data>\n{data}\n</data>\n\nQuestion: {question}"
+            + (f"\n\nExtra libraries you may also import: {', '.join(libs)}." if libs else "")
             + (f"\n\nYour previous script failed:\n{feedback}\nReturn the corrected full script." if feedback else ""))
 
 
@@ -76,9 +87,9 @@ def _csv(t: dict) -> bytes:
 
 
 async def analyze(file_id: str, question: str, *, store, settings: Settings, name: str, ext: str,
-                  data: bytes) -> AsyncIterator[Event]:
+                  data: bytes, pack: str | None = None) -> AsyncIterator[Event]:
     yield AnalysisStep(step="profiling")
-    prof = await sandbox.run_analysis(None, data, ext, settings)
+    prof = await sandbox.run_analysis(None, data, ext, settings, pack)
     if not prof.ok:
         yield Error(message="The file could not be read as a table." if prof.error == "script_error" else FAIL)
         return
@@ -91,15 +102,15 @@ async def analyze(file_id: str, question: str, *, store, settings: Settings, nam
     feedback, run = None, None
     for attempt in range(2):  # first try, then one repair
         yield AnalysisStep(step="writing_script" if attempt == 0 else "repairing")
-        r = await llm.complete(SYSTEM, _prompt(question, quality, feedback), max_tokens=settings.analyze_max_tokens,
+        r = await llm.complete(SYSTEM, _prompt(question, quality, feedback, pack), max_tokens=settings.analyze_max_tokens,
                                settings=settings)
         code = _extract(r.text)
         yield AnalysisScript(code=code)
-        if bad := sandbox.check_script(code):
+        if bad := sandbox.check_script(code, pack):
             feedback = f"Rejected before running: {bad}"
             continue
         yield AnalysisStep(step="running")
-        run = await sandbox.run_analysis(code, data, ext, settings)
+        run = await sandbox.run_analysis(code, data, ext, settings, pack)
         if run.ok:
             break
         if run.error != "script_error":  # timeout, oom, output cap: a rewrite will not help
@@ -125,11 +136,12 @@ async def analyze(file_id: str, question: str, *, store, settings: Settings, nam
         return
     res = run.result
     yield AnalysisResult(quality=quality, tables=res["tables"], findings=res["findings"],
-                         timings=res["timings"], artifacts=arts, provenance=provenance.analysis(settings, SYSTEM, data))
+                         timings=res["timings"], artifacts=arts, provenance=provenance.analysis(settings, SYSTEM, data, pack))
     yield Complete()
 
 
-async def _slot(file_id: str, question: str, *, gate, store, settings: Settings, name: str, ext: str) -> AsyncIterator[Event]:
+async def _slot(file_id: str, question: str, *, gate, store, settings: Settings, name: str, ext: str,
+                pack: str | None = None) -> AsyncIterator[Event]:
     """Wait for a sandbox slot (Waiting events), and only then load the file: waiters hold no data."""
     async with aclosing(gate.acquire()) as waits:
         async for position in waits:
@@ -141,7 +153,7 @@ async def _slot(file_id: str, question: str, *, gate, store, settings: Settings,
             yield Error(message="The file could not be loaded.")
             return
         async with aclosing(analyze(file_id, question, store=store, settings=settings, name=name, ext=ext,
-                                    data=data)) as events:
+                                    data=data, pack=pack)) as events:
             async for e in events:
                 yield e
     finally:
@@ -178,7 +190,8 @@ async def analyze_route(body: AnalyzeRequest, request: Request) -> StreamingResp
     gate = st.analyze_gate
     if gate.free == 0 and len(gate.queue) >= st.settings.analyze_max_queue:  # before any storage read or model call
         raise HTTPException(429, "too many analyses queued; try again shortly")
-    events = _slot(body.file_id, body.question, gate=gate, store=store, settings=st.settings, name=name, ext=ext)
+    events = _slot(body.file_id, body.question, gate=gate, store=store, settings=st.settings, name=name, ext=ext,
+                  pack=body.pack)
     return StreamingResponse(_sse(events, st.settings.sse_ping_seconds), media_type="text/event-stream",
                              headers=HEADERS)
 

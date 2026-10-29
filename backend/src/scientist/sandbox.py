@@ -16,6 +16,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from scientist.config import Settings
+from scientist.packs import PACKS
 from scientist.proc import kill_and_reap
 
 ALLOWED_IMPORTS = {"pandas", "numpy", "matplotlib", "math", "statistics", "json", "datetime", "collections", "itertools",
@@ -39,8 +40,20 @@ def _bad_attr(a: str) -> bool:
             or (a.startswith("to_") and a not in SAFE_TO))
 
 
-def check_script(code: str) -> str | None:
-    """None if the script passes the static policy, else the reason. Defence in depth: the container is the real wall."""
+def extra_imports(pack: str | None) -> tuple[str, ...]:
+    """Import roots a pack adds on top of ALLOWED_IMPORTS (General or an unknown id: none)."""
+    return PACKS[pack].libs if pack in PACKS else ()
+
+
+def image_for(settings: Settings, pack: str | None) -> str:
+    """The science image only for a pack that adds libraries; General and library-less packs use the base image."""
+    return settings.sandbox_science_image if extra_imports(pack) else settings.sandbox_image
+
+
+def check_script(code: str, pack: str | None = None) -> str | None:
+    """None if the script passes the static policy, else the reason. Defence in depth: the container is the real wall.
+    A pack widens the import roots only (the banned names and attributes apply to its libraries too)."""
+    allowed = ALLOWED_IMPORTS | set(extra_imports(pack))
     try:
         tree = ast.parse(code)
     except SyntaxError as e:
@@ -51,7 +64,7 @@ def check_script(code: str) -> str | None:
                 return "relative imports are not allowed"
             mods = [a.name for a in n.names] if isinstance(n, ast.Import) else [n.module or ""]
             for m in mods:
-                if m.split(".")[0] not in ALLOWED_IMPORTS or any(_bad_attr(p) for p in m.split(".")):
+                if m.split(".")[0] not in allowed or any(_bad_attr(p) for p in m.split(".")):
                     return f"import of {m!r} is not allowed"
             if isinstance(n, ast.ImportFrom):
                 for a in n.names:
@@ -240,7 +253,7 @@ def sweep_sandboxes() -> None:
         pass
 
 
-async def run_analysis(script: str | None, data: bytes, ext: str, settings: Settings) -> AnalysisResult:
+async def run_analysis(script: str | None, data: bytes, ext: str, settings: Settings, pack: str | None = None) -> AnalysisResult:
     """script None = profile only (no model code runs). Never shell=True; no secrets are passed in. Concurrency is
     limited by the caller (routes_analyze's gate)."""
     s, name = settings, f"scientist-sandbox-{uuid.uuid4().hex[:12]}"
@@ -261,7 +274,9 @@ async def run_analysis(script: str | None, data: bytes, ext: str, settings: Sett
                "--pids-limit", str(s.sandbox_pids), "--ulimit", "nofile=256", "--user", "65534",
                "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m", "-v", f"{inp}:/in:ro",
                "-e", f"SANDBOX_MAX_ROWS={s.sandbox_max_rows}", "-e", f"SANDBOX_MEM_BYTES={mem_bytes(s.sandbox_mem)}",
-               "-e", f"SANDBOX_TIMEOUT_S={s.sandbox_timeout_s}", s.sandbox_image]
+               "-e", f"SANDBOX_TIMEOUT_S={s.sandbox_timeout_s}",
+               *(["-e", f"SANDBOX_EXTRA_IMPORTS={','.join(extra)}"] if (extra := extra_imports(pack)) else []),
+               image_for(s, pack)]
         try:
             proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
                                                         stderr=asyncio.subprocess.PIPE)

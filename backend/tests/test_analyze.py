@@ -88,8 +88,9 @@ def test_limits_defaults(env):
 def fakes(monkeypatch):
     st = {"runs": [], "llm": [GOOD], "prompts": [], "results": None}
 
-    async def run(script, data, ext, settings):
+    async def run(script, data, ext, settings, pack=None):
         st["runs"].append(script)
+        st.setdefault("packs", []).append(pack)
         if script is None:
             return sandbox.AnalysisResult(ok=True, result={"quality": QUALITY})
         if st["results"]:
@@ -316,7 +317,7 @@ async def test_prompt_and_scope_input_truncated(c, store, fakes, monkeypatch):
     q = dict(QUALITY, columns_info=[{"name": "c" * 500 + str(i), "dtype": "int64", "null_pct": 0.0} for i in range(300)],
              head=[{"a": "z" * 5000}])
 
-    async def run(script, data, ext, settings):
+    async def run(script, data, ext, settings, pack=None):
         return sandbox.AnalysisResult(ok=True, result={"quality": q} if script is None else {"tables": [], "findings": [], "timings": {}})
     monkeypatch.setattr(sandbox, "run_analysis", run)
     import scientist.routes_analyze as ra
@@ -356,3 +357,50 @@ async def test_analysis_result_carries_provenance(c, store, fakes):
     assert p["history_turns"] == 0 and p["plan_source"] is None
     assert p["models"]["main"]
     assert not [v for v in SECRETS.values() if v in json.dumps(p)]
+
+
+# --- domain packs: per-run imports and image ---------------------------------------------------------------------------
+from types import SimpleNamespace  # noqa: E402
+from scientist.packs import PACKS  # noqa: E402
+
+RDKIT = "from rdkit.Chem import Descriptors\nimport rdkit.Chem\nimport sklearn.ensemble\ntable('x', df)"
+
+
+def test_pack_libs_widen_only_their_own_run():
+    assert sandbox.check_script(RDKIT) and sandbox.check_script(RDKIT, None)  # General: refused
+    assert sandbox.check_script("import rdkit", "chem") is None and sandbox.check_script("import sklearn.ensemble", "chem")
+    assert sandbox.check_script("from rdkit.Chem import Descriptors", "chem") is None
+    assert sandbox.check_script("import sklearn.ensemble\nfrom scipy import stats", "ml") is None
+    assert sandbox.check_script("import rdkit", "comm")  # empty libs = base imports
+
+
+@pytest.mark.parametrize("pack", [None, *PACKS])
+@pytest.mark.parametrize("code", ["import os", "import subprocess", "import importlib", "from os import path", "import sys",
+                                  "import pickle", "df.to_csv('x')", "import rdkit.os"])
+def test_banned_stays_banned_under_every_pack(pack, code):
+    assert sandbox.check_script(code, pack)
+
+
+def test_image_and_extra_imports_per_pack():
+    s = SimpleNamespace(sandbox_image="base:1", sandbox_science_image="sci:1")
+    assert [sandbox.image_for(s, p) for p in (None, "comm", "chem", "ml", "bio")] == ["base:1", "base:1", "sci:1", "sci:1", "sci:1"]
+    assert sandbox.extra_imports(None) == () and sandbox.extra_imports("comm") == () and sandbox.extra_imports("chem") == ("rdkit",)
+    assert sandbox.extra_imports("nonsense") == ()
+
+
+async def test_pack_reaches_check_run_prompt_and_provenance(c, store, fakes):
+    fakes["llm"][:] = ["```python\nimport rdkit\ntable('t', df)\n```"]
+    store.objs["f" * 32] = (b"a,b\n1,2\n", {"content_type": "text/csv", "name": "d.csv"})
+    r = await c.post("/v1/async/analyze", json={"file_id": "f" * 32, "question": "Plot the a column trend in the genome data", "pack": "chem"})
+    ev = [json.loads(line[6:]) for line in r.text.splitlines() if line.startswith("data: ")]
+    assert fakes["packs"] == ["chem", "chem"]  # profile + script; rdkit passed the check
+    assert "Extra libraries" in fakes["prompts"][0] and "rdkit" in fakes["prompts"][0]
+    assert [e for e in ev if e["type"] == "analysis_result"][0]["provenance"]["pack"] == "chem"
+    r = await c.post("/v1/async/analyze", json={"file_id": "f" * 32, "question": "q", "pack": "nope"})
+    assert r.status_code == 422
+
+
+async def test_general_analysis_unchanged(c, store, fakes):
+    ev = await analyze(c, store)
+    assert "Extra libraries" not in fakes["prompts"][0] and fakes["packs"] == [None, None]
+    assert [e for e in ev if e["type"] == "analysis_result"][0]["provenance"]["pack"] is None

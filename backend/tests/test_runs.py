@@ -253,6 +253,20 @@ async def test_analysis_run(serve, fakes):  # noqa: F811
         assert a["script"] and a["artifacts"] and a["fileName"] == "d.csv"
         bad = {**b, "turn_id": u(), "file_id": "e" * 32}
         assert (await post(c, bad, cid)).status_code == 404
+        assert fakes["packs"] == [None, None]  # General: the base image
+
+
+async def test_analysis_run_carries_its_pack(serve, fakes):  # noqa: F811
+    async with serve() as c:
+        sid, cid, fid = await mk_session(c), u(), "f" * 32
+        c.objs[fid] = (b"a,b\n1,2\n", {"content_type": "text/csv", "name": "d.csv"})
+        b = {"session_id": sid, "turn_id": u(), "kind": "analyze", "question": "Plot column trend in genome data", "file_id": fid,
+             "pack": "ml"}
+        r = await post(c, b, cid)
+        assert r.status_code == 202 and r.json()["turn"]["pack"] == "ml"
+        await until(c, r.json()["run"]["id"], "done")
+        assert fakes["packs"] == ["ml", "ml"]
+        assert (await post(c, {**b, "turn_id": u(), "pack": "alchemy"}, cid)).status_code == 422
 
 
 # --- following ----------------------------------------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 import hashlib
 from datetime import UTC, datetime
 
-from scientist import usage
+from scientist import sandbox, usage
 from scientist.config import Settings
 from scientist.events import ProvAnalysisSettings, ProvHermes, ProvModels, Provenance, ProvRound, ProvSearch, ProvSettings, Replan, Strategy
 from scientist.hermes import SANDBOX_IMAGE, SKILLS_REVISION
@@ -37,7 +37,7 @@ def research(settings: Settings, prompts: dict[str, str], rounds: list[ProvRound
                       settings=ProvSettings(**{k: getattr(settings, k) for k in ProvSettings.model_fields}))
 
 
-def analysis(settings: Settings, prompt: str, data: bytes) -> Provenance:
-    return Provenance(**_common(settings, {"analyze": prompt}, "finish", 0), sandbox_image=settings.sandbox_image,
+def analysis(settings: Settings, prompt: str, data: bytes, pack: str | None = None) -> Provenance:
+    return Provenance(**_common(settings, {"analyze": prompt}, "finish", 0), sandbox_image=sandbox.image_for(settings, pack), pack=pack,
                       input_sha256=hashlib.sha256(data).hexdigest(),
                       settings=ProvAnalysisSettings(analyze_max_tokens=settings.analyze_max_tokens))

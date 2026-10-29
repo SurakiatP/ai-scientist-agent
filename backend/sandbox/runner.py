@@ -17,6 +17,7 @@ sys.stdout = sys.stderr
 IN = Path(os.environ.get("SANDBOX_IN", "/in"))
 MAX_FIGS = 20
 ALLOWED = {"pandas", "numpy", "matplotlib", "math", "statistics", "json", "datetime", "collections", "itertools", "re"}
+ALLOWED |= {x for x in os.environ.get("SANDBOX_EXTRA_IMPORTS", "").split(",") if x}  # set by the backend for a pack's libraries
 SAFE = ("abs all any bool dict divmod enumerate filter float int isinstance len list map max min pow print range reversed "
         "round set slice sorted str sum tuple zip iter next chr ord repr Exception ValueError KeyError TypeError "
         "IndexError ZeroDivisionError ArithmeticError").split()
