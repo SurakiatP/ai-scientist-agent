@@ -114,6 +114,15 @@ DATA_SOURCES: dict[str, DataSource] = {
 }
 
 
+_DB_ALIASES = {_squash(k): k for k in DATA_SOURCES} | {_squash(d.name): k for k, d in DATA_SOURCES.items()}
+
+
+def normalize_database(v: object) -> str | None:
+    """Canonical database id for an id or display name the model wrote ("ChEMBL", " uniprot "), or None. The bridge
+    keeps a copy of this rule (native_bridge.clean_record); tests keep them in step."""
+    return _DB_ALIASES.get(_squash(v)) if isinstance(v, str) else None
+
+
 def record_host_ok(db: str, url: str) -> bool:
     """https only, no userinfo, and the host is one of the database's official hosts or a subdomain of one."""
     source = DATA_SOURCES.get(db)

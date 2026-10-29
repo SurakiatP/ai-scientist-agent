@@ -66,3 +66,14 @@ def test_data_record_strips_and_caps():
     for bad in ({"title": "   "}, {"id": "  "}, {"url": "https://uniprot.org/" + "a" * 2000}):
         with pytest.raises(ValidationError):
             DataRecord(**{**GOOD, **bad})
+
+
+DB_NAME_CASES = [("ChEMBL", "chembl"), (" uniprot ", "uniprot"), ("UniProt", "uniprot"), ("ClinicalTrials.gov", "clinicaltrials"),
+                 ("Gene Ontology", "gene-ontology"), ("gene-ontology", "gene-ontology"), ("nope", None), (7, None)]
+
+
+def test_data_record_accepts_display_names():
+    for name, db in DB_NAME_CASES[:3]:
+        assert DataRecord(**{**GOOD, "database": name, "url": "https://www.ebi.ac.uk/x" if db == "chembl" else GOOD["url"]}).database == db
+    with pytest.raises(ValidationError):
+        DataRecord(**{**GOOD, "database": "nope"})

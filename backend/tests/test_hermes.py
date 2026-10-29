@@ -215,17 +215,22 @@ async def test_record_events_become_items(settings, tmp_path):
     assert items[3] == InvalidRecord(term="t", key="uniprot:Q2", reason="no")
 
 
+UNIPROT = {"uniprot": {"name": "UniProt", "hosts": ["uniprot.org"]}}
+
+
 async def test_request_lists_keyless_databases_only(settings, tmp_path):
     rt = runtime(settings, tmp_path, [{"echo_request": True}])
     [answer] = await collect(rt)
     sources = json.loads(answer.content)["data_sources"]
-    assert sources["uniprot"] == ["uniprot.org"] and "omim" not in sources
+    assert sources["uniprot"] == {"name": "UniProt", "hosts": ["uniprot.org"]} and "omim" not in sources
 
 
 def test_bridge_clean_record():
     clean = load_bridge().clean_record
-    hosts = {"uniprot": ["uniprot.org"]}
+    hosts = UNIPROT
     assert clean(RECORD, hosts) == (RECORD, None)
+    for name in ("UniProt", " uniprot ", "ChEMBL"[:0] + "UNIPROT"):
+        assert clean({**RECORD, "database": name}, hosts) == (RECORD, None)
     assert clean({**RECORD, "id": 7}, hosts)[0]["id"] == "7"
     for bad in ({**RECORD, "database": "omim"}, {**RECORD, "url": "https://uniprot.org.evil.com/x"},
                 {**RECORD, "url": "http://uniprot.org/x"}, {**RECORD, "url": "https://uniprot.org@evil.com/"},
@@ -246,8 +251,16 @@ def test_bridge_and_backend_agree_on_record_urls():
     from scientist.sources import PAPER_SOURCES
     bridge = load_bridge()
     assert bridge.PAPER_SOURCES == tuple(PAPER_SOURCES)
+    from test_sources import DB_NAME_CASES
+
+    from scientist.sources import DATA_SOURCES, normalize_database
+    every = {k: {"name": d.name, "hosts": list(d.hosts)} for k, d in DATA_SOURCES.items()}
+    for name, db in DB_NAME_CASES:
+        assert normalize_database(name) == db
+        got = bridge.clean_record({**RECORD, "database": name, "url": f"https://{DATA_SOURCES[db].hosts[0]}/x"}, every)[0] if db else None
+        assert (got["database"] if got else None) == db, name
     for url, ok in URL_CASES:
-        record, _ = bridge.clean_record({**RECORD, "url": url}, {"uniprot": ["uniprot.org"]})
+        record, _ = bridge.clean_record({**RECORD, "url": url}, UNIPROT)
         assert (record is not None) is ok, url
 
 
@@ -266,7 +279,7 @@ def test_bridge_report_record_handler_payloads(monkeypatch):
         mod = types.ModuleType(name)
         mod.__dict__.update(attrs)
         monkeypatch.setitem(sys.modules, name, mod)
-    monkeypatch.setattr(sys, "stdin", __import__("io").StringIO(json.dumps({"data_sources": {"uniprot": ["uniprot.org"]}}) + "\n"))
+    monkeypatch.setattr(sys, "stdin", __import__("io").StringIO(json.dumps({"data_sources": UNIPROT}) + "\n"))
     monkeypatch.setattr(bridge.signal, "signal", lambda *a: None)
     monkeypatch.setattr(bridge, "WIRE", sys.stdout)
     saved = sys.stdout
@@ -281,3 +294,11 @@ def test_bridge_report_record_handler_payloads(monkeypatch):
     assert event["record"] == {"database": "uniprot", "id": "9" * 500, "url": "http://uniprot.org/x"}
     handlers["report_record"](RECORD)
     assert wire[-1] == {"event": "record", "record": RECORD}
+
+
+def test_bridge_schemas_list_allowed_ids():
+    bridge = load_bridge()
+    from scientist.sources import PAPER_SOURCES
+    assert bridge.PAPER_SCHEMA["parameters"]["properties"]["source"]["enum"] == list(PAPER_SOURCES)
+    props = bridge.record_schema(UNIPROT)["parameters"]["properties"]["database"]
+    assert props["enum"] == ["uniprot"] and "UniProt" in props["description"]

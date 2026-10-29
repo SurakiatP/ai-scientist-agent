@@ -61,7 +61,7 @@ def _invalid_record(term: str, raw: object, reason: str) -> InvalidRecord:
 
 
 # ids of the databases that need no API key, with their official hosts: all the bridge may accept (it has no keys)
-KEYLESS_SOURCES = {k: list(d.hosts) for k, d in DATA_SOURCES.items() if not d.needs_key}
+KEYLESS_SOURCES = {k: {"name": d.name, "hosts": list(d.hosts)} for k, d in DATA_SOURCES.items() if not d.needs_key}
 
 BranchItem = Paper | InvalidPaper | DataRecord | InvalidRecord | BranchAnswer | BranchFailed
 

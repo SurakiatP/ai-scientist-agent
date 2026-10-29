@@ -30,9 +30,18 @@ PAPER_SCHEMA = {
         "doi": {"type": "string", "description": "DOI without the https://doi.org/ prefix, if known"},
         "pmid": {"type": "string", "description": "PubMed ID, if known"},
         "url": {"type": "string", "description": "Landing page; https://doi.org/<doi> when nothing better"},
-        "source": {"type": "string", "description": "The paper-lookup API you got it from: " + ", ".join(PAPER_SOURCES)},
+        "source": {"type": "string", "enum": list(PAPER_SOURCES),
+                   "description": "The one paper-lookup API you actually used to get THIS paper"},
     }},
 }
+def record_schema(data_sources):
+    """report_record schema whose `database` enum is this request's keyless ids, so the model sees them up front."""
+    schema = json.loads(json.dumps(RECORD_SCHEMA))
+    names = ", ".join(f"{k} ({v['name']})" for k, v in sorted(data_sources.items()))
+    schema["parameters"]["properties"]["database"].update(enum=sorted(data_sources), description="Database id, one of: " + names)
+    return schema
+
+
 RECORD_SCHEMA = {
     "name": "report_record",
     "description": "Record one entry you retrieved from a public scientific database (a protein, compound, trial, "
@@ -80,8 +89,13 @@ def clean_paper(args):
     return paper, None
 
 
+def squash(v):
+    return re.sub(r"[^a-z0-9]", "", v.lower())  # same rule as scientist.sources._squash
+
+
 def clean_record(args, data_sources):
-    """(record, None) or (None, error). data_sources: {database id: [official hosts]} from the request, keyless only;
+    """(record, None) or (None, error). data_sources: {database id: {"name": display name, "hosts": [official hosts]}}
+    from the request, keyless only; the id may be written as the id or the display name, any case;
     the backend validates again (scientist.events.DataRecord), this just lets the model retry."""
     if not isinstance(args, dict):
         return None, "arguments must be an object"
@@ -97,7 +111,9 @@ def clean_record(args, data_sources):
         if len(v.strip()) > limit:
             return None, f"{key} is longer than {limit} characters"
         rec[key] = v.strip()
-    hosts = data_sources.get(rec["database"])
+    aliases = {squash(k): k for k in data_sources} | {squash(v["name"]): k for k, v in data_sources.items()}
+    rec["database"] = aliases.get(squash(rec["database"]), rec["database"])
+    hosts = data_sources.get(rec["database"], {}).get("hosts")
     if hosts is None:
         return None, "database is not available for this request; use one of: " + ", ".join(sorted(data_sources))
     if not RECORD_URL.fullmatch(rec["url"]):
@@ -152,7 +168,7 @@ def main():
         return json.dumps({"recorded": True})
 
     registry.register(name="report_paper", toolset="scientist", schema=PAPER_SCHEMA, handler=report_paper)
-    registry.register(name="report_record", toolset="scientist", schema=RECORD_SCHEMA, handler=report_record)
+    registry.register(name="report_record", toolset="scientist", schema=record_schema(request.get("data_sources") or {}), handler=report_record)
     dispatch = registry.dispatch
 
     def restricted(name, args, **kwargs):

@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
-from scientist.sources import DATA_SOURCES, normalize_source, record_host_ok
+from scientist.sources import normalize_database, normalize_source, record_host_ok
 
 # http(s) only, a real host (optional userinfo@ before it), no whitespace: the frontend renders url as a link.
 # infra/hermes/native_bridge.py keeps an identical copy (a test checks they match).
@@ -106,12 +106,12 @@ class DataRecord(BaseModel):
     url: str = Field(max_length=2000)
     summary: str = Field(default="", max_length=600)
 
-    @field_validator("database", mode="after")
+    @field_validator("database", mode="before")
     @classmethod
     def _database(cls, v):
-        if v not in DATA_SOURCES:
+        if (db := normalize_database(v)) is None:
             raise ValueError("unknown database")
-        return v
+        return db
 
     @model_validator(mode="after")
     def _host(self):
