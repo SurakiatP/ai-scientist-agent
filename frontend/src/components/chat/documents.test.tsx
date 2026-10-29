@@ -168,6 +168,29 @@ describe("docs answer", () => {
     expect(screen.getByText(t.docsCaption.replace("{names}", "bio.pdf, uncited.pdf"))).toBeInTheDocument();
   });
 
+  it("an error naming a file with quotes in its name keeps the whole name", () => {
+    const msg = 'The file "the "best" paper.pdf" could not be read as a PDF (it may be encrypted or damaged).';
+    render(<AgentMessage sessionId="s" turn={turn("error", { error: msg, errCode: "docs_unreadable" })} />);
+    expect(screen.getByText(t.docsUnreadable.replace("{name}", 'the "best" paper.pdf'))).toBeInTheDocument();
+  });
+
+  it("a model failure code is shown localized", () => {
+    render(<AgentMessage sessionId="s" turn={turn("error", { error: "Could not write the answer. Please try again.", errCode: "failed" })} />);
+    expect(screen.getByText(t.runFailed)).toBeInTheDocument();
+  });
+
+  it("the caption notes a file that was only partly read, in th and en", () => {
+    const f = "a".repeat(32), g = "b".repeat(32);
+    const answer = { content: "x", references: [], doc_refs: [{ ...ref, file_id: f }], provenance: { schema: 1, docs: { files: [{ file_id: f, truncated: true }, { file_id: g, truncated: false }] } } } as Turn["answer"];
+    const docs = [{ id: f, name: "big.pdf" }, { id: g, name: "small.pdf" }];
+    render(<AgentMessage sessionId="s" turn={turn("done", { answer, docs })} />);
+    expect(screen.getByText(t.docsCaption.replace("{names}", `big.pdf ${t.docsTruncated}, small.pdf`))).toBeInTheDocument();
+    cleanup(); usePrefs.setState({ lang: "en" });
+    render(<AgentMessage sessionId="s" turn={turn("done", { answer, docs })} />);
+    expect(screen.getByText(strings.en.docsCaption.replace("{names}", `big.pdf ${strings.en.docsTruncated}, small.pdf`))).toBeInTheDocument();
+    expect(strings.en.docsTruncated).toContain("300");
+  });
+
   it("retry with no recoverable PDFs is disabled and says why", () => {
     render(<AgentMessage sessionId="s" turn={turn("error", { error: "boom" })} />);
     expect(screen.getByRole("button", { name: t.retry })).toBeDisabled();

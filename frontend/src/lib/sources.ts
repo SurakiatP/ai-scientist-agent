@@ -147,8 +147,14 @@ export const docsOf = (t: { docs?: { id: string; name: string }[]; answer?: { do
   return [...seen].map(([id, name]) => ({ id, name }));
 };
 
-/** A docs error shown in the UI language by its stable code; the file name is the first quoted name of the server message. An unknown code returns the message. */
+/** A docs error shown in the UI language by its stable code; the file name is what sits between the first and the last quote of the server message (a name may hold quotes). An unknown code returns the message. */
 export const docsErrorText = (code: string | undefined, message: string, t: Record<"docsUnreadable" | "docsUnreadablePermanent" | "docsReadLater" | "docsLoadFailed" | "docsNotFound", string>): string => {
   const key = ({ docs_unreadable: "docsUnreadable", docs_unreadable_permanent: "docsUnreadablePermanent", docs_host: "docsReadLater", docs_load_failed: "docsLoadFailed", docs_not_found: "docsNotFound" } as const)[code as "docs_host"];
-  return key ? t[key].replace("{name}", /"(.{1,500}?)"/.exec(message)?.[1] ?? "") : message;
+  return key ? t[key].replace("{name}", /"(.{1,500})"/.exec(message)?.[1] ?? "") : message;
+};
+
+/** Ids of the PDFs the provenance says were only partly read; anything unexpected in it is ignored. */
+export const truncatedFiles = (p: Record<string, unknown> | undefined): Set<string> => {
+  const files = (p?.docs as { files?: unknown } | undefined)?.files;
+  return new Set(Array.isArray(files) ? files.flatMap((f: { file_id?: unknown; truncated?: unknown }) => (f && f.truncated === true && typeof f.file_id === "string" ? [f.file_id] : [])) : []);
 };

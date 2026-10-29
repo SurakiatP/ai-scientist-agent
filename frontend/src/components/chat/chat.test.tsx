@@ -338,6 +338,16 @@ describe("Thread", () => {
     const n = render(<AgentMessage sessionId="s" turn={turn("done", answer({ ...u, cost_usd: null, estimated: true }))} />);
     expect(screen.getByText(t.runTokens.replace("{tokens}", (61230).toLocaleString("th-TH")))).toBeInTheDocument();
     n.unmount();
+    const z = render(<AgentMessage sessionId="s" turn={turn("done", answer({ ...u, cost_usd: 0.0004 }))} />); // under a tenth of a cent: not "$0.000"
+    expect(screen.getByText(/<\$0\.001/)).toBeInTheDocument();
+    expect(screen.queryByText(/\$0\.000/)).toBeNull();
+    z.unmount();
+    const ze = render(<AgentMessage sessionId="s" turn={turn("done", answer({ ...u, cost_usd: 0.0004, estimated: true }))} />);
+    expect(screen.getByText(/~<\$0\.001/)).toBeInTheDocument();
+    ze.unmount();
+    const zero = render(<AgentMessage sessionId="s" turn={turn("done", answer({ ...u, cost_usd: 0 }))} />);
+    expect(screen.getByText(/\$0\.000/)).toBeInTheDocument(); // a free run is exactly zero
+    zero.unmount();
     render(<AgentMessage sessionId="s" turn={turn("done", answer({ prompt_tokens: "x" }))} />);
     expect(screen.queryByText(/\$/)).toBeNull();
   });

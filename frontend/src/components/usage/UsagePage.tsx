@@ -41,7 +41,7 @@ export function UsagePage() {
   useEffect(() => { if (hydrated && status !== "disabled" && status !== "connecting") void load(days); }, [hydrated, status, days, load]); // eslint-disable-line react-hooks/set-state-in-effect -- fetch when the period or sync state changes
 
   const nf = (v: number | null, d = 1) => (v === null ? "-" : v.toLocaleString(lang === "th" ? "th-TH" : "en-GB", { maximumFractionDigits: d }));
-  const label = (k: string) => ({ deep: t.modeDeep, quick: t.modeQuick, chat: t.modeChat, analysis: t.usageModeAnalysis, plan: t.usageModePlan } as Record<string, string>)[k] ?? k;
+  const label = (k: string) => ({ deep: t.modeDeep, quick: t.modeQuick, chat: t.modeChat, docs: t.modeDocs, analysis: t.usageModeAnalysis, plan: t.usageModePlan } as Record<string, string>)[k] ?? k;
   const max = Math.max(1, ...(rows ?? []).map(([, m]) => m.count));
   const row = (name: string, value: string) => <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}><Box component="dt" sx={{ color: "text.secondary" }}>{name}</Box><Box component="dd" sx={{ m: 0, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>{value}</Box></Box>;
 

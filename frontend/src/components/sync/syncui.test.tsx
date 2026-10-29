@@ -175,6 +175,12 @@ describe("trash page", () => {
 
 describe("usage page", () => {
   const body = { days: 7, modes: { deep: { count: 4, p50_seconds: 61.2, p95_seconds: 120, avg_prompt_tokens: 5000, avg_completion_tokens: 900, avg_cost_usd: 0.0123, ok_rate: 0.75 }, analysis: { count: 1, p50_seconds: 8, p95_seconds: 8, avg_prompt_tokens: null, avg_completion_tokens: null, avg_cost_usd: null, ok_rate: 1 } } };
+  it("labels the docs mode in the UI language, not by its raw key", async () => {
+    online(); fetchMock.mockImplementation(async () => reply({ days: 7, modes: { docs: body.modes.deep } }));
+    render(<UsagePage />);
+    expect(await screen.findByText(t.modeDocs)).toBeTruthy();
+    expect(screen.queryByText("docs")).toBeNull();
+  });
   it("shows real numbers per mode, with a dash where the server has none, and switches the period", async () => {
     online(); fetchMock.mockImplementation(async () => reply(body));
     render(<UsagePage />);

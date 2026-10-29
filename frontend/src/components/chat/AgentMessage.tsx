@@ -13,7 +13,7 @@ import SearchOffRoundedIcon from "@mui/icons-material/SearchOffRounded";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import { AnswerView } from "@/components/AnswerView";
 import { SourcesUsed } from "@/components/research/SourcesUsed";
-import { answerSourceIds, docsErrorText, docsOf, sourceNames, usableUsage } from "@/lib/sources";
+import { answerSourceIds, docsErrorText, docsOf, sourceNames, truncatedFiles, usableUsage } from "@/lib/sources";
 import { useAttach, useFilesStore } from "@/lib/files";
 import { DataRecords } from "@/components/DataRecords";
 import { ReferenceList } from "@/components/ReferenceList";
@@ -76,12 +76,13 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const docRefs = turn.answer?.doc_refs ?? [], emptyFiles = turn.answer?.empty_files ?? [];
   const sizeOf = (id: string) => useFilesStore.getState().files.find((f) => f.id === id)?.size ?? 0; // the library knows the real size
   const docList = docsTurn ? docsOf(turn) : [], noDocs = docsTurn && docList.length === 0; // nothing to re-ask: Retry says so
-  const docNames = docsTurn ? [...new Set(docList.map((d) => d.name))].join(", ") : "";
+  const cut = docsTurn ? truncatedFiles(turn.answer?.provenance) : new Set<string>(); // PDFs only partly read (300 pages / 2M characters)
+  const docNames = docsTurn ? [...new Map(docList.map((d) => [d.name, cut.has(d.id) ? `${d.name} ${t.docsTruncated}` : d.name])).values()].join(", ") : "";
   const firstSource = refs[0]?.id ?? docRefs[0]?.id;
   const ids = turn.answer ? answerSourceIds(turn.answer) : [];
   const usage = usableUsage(turn.answer?.usage);
   const cost = usage && (usage.cost_usd === null ? t.runTokens : t.runCost)
-    .replace("{cost}", `${usage.estimated ? "~" : ""}$${(usage.cost_usd ?? 0).toFixed(3)}`)
+    .replace("{cost}", `${usage.estimated ? "~" : ""}${usage.cost_usd && usage.cost_usd < 0.001 ? "<$0.001" : `$${(usage.cost_usd ?? 0).toFixed(3)}`}`)
     .replace("{tokens}", (usage.prompt_tokens + usage.completion_tokens).toLocaleString(lang === "en" ? "en-US" : "th-TH"));
   const turnPack = usablePack(turn.pack);
   const field = turnPack && t.packCaption.replace("{name}", packName(turnPack, lang));

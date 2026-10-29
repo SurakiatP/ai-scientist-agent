@@ -38,6 +38,20 @@ describe("docs run through the queue", () => {
     expect(t.progress.indexing).toBeUndefined();
   });
 
+  it("sends the earlier answered turns as history", async () => {
+    localStorage.clear(); sessionStorage.clear(); vi.resetModules();
+    const sync = await import("./sync");
+    sync.useSync.setState({ status: "online" });
+    const chat = (await import("./chat")).useChatStore, run = await import("./run"), { emptyProgress } = await import("./progress");
+    const sid = chat.getState().newSession();
+    chat.getState().addTurn(sid, { id: "t0", question: "first?", createdAt: 1, status: "done", progress: emptyProgress, answer: { content: "first answer", references: [] } });
+    sync.__versions().set(`session:${sid}`, 1);
+    api.submit.mockImplementation(async (b: { turn_id: string }) => ({ run: { id: UR, mine: true }, turn: { id: b.turn_id, session_id: sid, idx: 1, question: "q", mode: "docs", status: "running", progress: null, created_at: "2026-01-01T00:00:00Z", updated_at: new Date().toISOString(), version: 1, run_id: UR } }));
+    api.script = async function* () { yield { type: "final_answer", content: "A", references: [], _seq: 0 }; yield { type: "complete", _seq: 1 }; };
+    await run.startDocs(sid, "q?", [{ id: F, name: "a.pdf" }]);
+    expect(api.submit.mock.calls[0][0].history).toEqual([{ question: "first?", answer: "first answer" }]);
+  });
+
   it("a coded docs error ends the turn with that code (shown localized), the message kept as the fallback", async () => {
     localStorage.clear(); sessionStorage.clear(); vi.resetModules();
     const sync = await import("./sync");
