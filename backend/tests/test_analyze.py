@@ -7,6 +7,8 @@ import stat
 import subprocess
 import sys
 import time
+from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -14,6 +16,7 @@ import pytest
 from scientist import llm, sandbox
 from scientist.config import get_settings
 from scientist.main import create_app
+from scientist.packs import PACKS
 from test_routes_files import MemStore  # noqa: F401  (fixtures below reuse env/store)
 from test_routes_files import env, store  # noqa: F401
 
@@ -360,8 +363,6 @@ async def test_analysis_result_carries_provenance(c, store, fakes):
 
 
 # --- domain packs: per-run imports and image ---------------------------------------------------------------------------
-from types import SimpleNamespace  # noqa: E402
-from scientist.packs import PACKS  # noqa: E402
 
 RDKIT = "from rdkit.Chem import Descriptors\nimport rdkit.Chem\nimport sklearn.ensemble\ntable('x', df)"
 
@@ -394,7 +395,7 @@ async def test_pack_reaches_check_run_prompt_and_provenance(c, store, fakes):
     r = await c.post("/v1/async/analyze", json={"file_id": "f" * 32, "question": "Plot the a column trend in the genome data", "pack": "chem"})
     ev = [json.loads(line[6:]) for line in r.text.splitlines() if line.startswith("data: ")]
     assert fakes["packs"] == ["chem", "chem"]  # profile + script; rdkit passed the check
-    assert "Extra libraries" in fakes["prompts"][0] and "rdkit" in fakes["prompts"][0]
+    assert "sandbox also allows importing: rdkit (in addition to the modules listed in the instructions)." in fakes["prompts"][0]
     assert [e for e in ev if e["type"] == "analysis_result"][0]["provenance"]["pack"] == "chem"
     r = await c.post("/v1/async/analyze", json={"file_id": "f" * 32, "question": "q", "pack": "nope"})
     assert r.status_code == 422
@@ -402,5 +403,50 @@ async def test_pack_reaches_check_run_prompt_and_provenance(c, store, fakes):
 
 async def test_general_analysis_unchanged(c, store, fakes):
     ev = await analyze(c, store)
-    assert "Extra libraries" not in fakes["prompts"][0] and fakes["packs"] == [None, None]
+    assert "also allows importing" not in fakes["prompts"][0] and fakes["packs"] == [None, None]
     assert [e for e in ev if e["type"] == "analysis_result"][0]["provenance"]["pack"] is None
+
+
+def test_science_dockerfile_shares_base_and_pins_with_the_base_image():
+    d = Path(sandbox.__file__).parents[2] / "sandbox"
+    base, sci = (d / "Dockerfile").read_text(), (d / "Dockerfile.science").read_text()
+    pick = lambda t, pre: [ln for ln in t.splitlines() if ln.startswith(pre)]  # noqa: E731
+    assert pick(base, "FROM ") == pick(sci, "FROM ") and "@sha256:" in pick(sci, "FROM ")[0]
+    for pin in ("pandas==2.3.3", "numpy==2.3.4", "matplotlib==3.10.7", "openpyxl==3.1.5", "pyarrow==22.0.0"):
+        assert pin in base and pin in sci
+    assert [ln for ln in sci.splitlines() if ln.startswith(("COPY runner", "USER", "ENTRYPOINT", "ENV"))] == \
+        [ln for ln in base.splitlines() if ln.startswith(("COPY runner", "USER", "ENTRYPOINT", "ENV"))]
+    cons = (d / "constraints-science.txt").read_text()
+    pins = [ln for ln in cons.splitlines() if ln and not ln.startswith(("#", " "))]
+    assert pins and all("==" in ln for ln in pins) and "-c /tmp/constraints-science.txt" in sci
+
+
+def _hook_source():  # the hook as written in runner.py (the file itself needs pandas/matplotlib, which the test venv lacks)
+    import ast
+    src = (Path(sandbox.__file__).parents[2] / "sandbox/runner.py").read_text()
+    keep = [n for n in ast.parse(src).body if (isinstance(n, ast.FunctionDef) and n.name == "audit_block")
+            or (isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "BLOCKED_EVENTS")]
+    assert len(keep) == 2, "audit_block / BLOCKED_EVENTS missing from runner.py"
+    return "import sys, os\n" + "\n".join(ast.unparse(n) for n in keep) + "\nsys.addaudithook(audit_block)\n"
+
+
+@pytest.mark.parametrize("call", ["os.system('echo pwned')", "os.execv('/bin/echo', ['echo'])",
+                                  "import subprocess; subprocess.Popen(['echo', 'x'])",
+                                  "os.posix_spawn('/bin/echo', ['echo'], {})", "os.spawnv(0, '/bin/sh', ['sh', '-c', 'echo pwned'])",
+                                  "import socket; socket.socket().connect(('127.0.0.1', 9))",
+                                  "import socket; socket.socket().bind(('127.0.0.1', 0))", "import ctypes; ctypes.CDLL(None)"])
+def test_runner_audit_hook_blocks_process_socket_and_dlopen(call):
+    p = subprocess.run([sys.executable, "-I", "-c", _hook_source() + call], capture_output=True, text=True, timeout=30)
+    assert "pwned" not in p.stdout and ("blocked by sandbox policy" in p.stderr or "spawnv" in call)  # spawnv: the forked child dies silently
+
+
+def test_runner_audit_hook_leaves_imports_and_files_alone(tmp_path):
+    f = tmp_path / "x.txt"
+    code = _hook_source() + f"import json, decimal, csv\nopen({str(f)!r}, 'w').write('ok')\nprint(open({str(f)!r}).read())"
+    p = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, timeout=30)
+    assert p.returncode == 0 and p.stdout.strip() == "ok"
+
+
+def test_runner_installs_the_hook_before_exec():
+    src = (Path(sandbox.__file__).parents[2] / "sandbox/runner.py").read_text()
+    assert src.index("importlib.import_module(lib)") < src.index("sys.addaudithook(audit_block)") < src.index("exec(code, env)")

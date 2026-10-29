@@ -3,6 +3,7 @@ stdout (figures as base64 PNG strings); nothing is written to the host. Without 
 The script sees `df`, pd, np, plt, table(name, df), finding(text) and a restricted set of builtins."""
 import base64
 import builtins
+import importlib
 import io
 import json
 import os
@@ -17,6 +18,7 @@ sys.stdout = sys.stderr
 IN = Path(os.environ.get("SANDBOX_IN", "/in"))
 MAX_FIGS = 20
 ALLOWED = {"pandas", "numpy", "matplotlib", "math", "statistics", "json", "datetime", "collections", "itertools", "re"}
+BASE_ALLOWED = set(ALLOWED)
 ALLOWED |= {x for x in os.environ.get("SANDBOX_EXTRA_IMPORTS", "").split(",") if x}  # set by the backend for a pack's libraries
 SAFE = ("abs all any bool dict divmod enumerate filter float int isinstance len list map max min pow print range reversed "
         "round set slice sorted str sum tuple zip iter next chr ord repr Exception ValueError KeyError TypeError "
@@ -31,6 +33,17 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
+
+BLOCKED_EVENTS = ("os.system", "os.exec", "os.posix_spawn", "os.spawn", "subprocess.Popen", "socket.connect", "socket.bind",
+                  "ctypes.dlopen")
+
+
+def audit_block(event, args):
+    """Installed just before the model script runs: libraries the script may import (pandas, sklearn, rdkit, ...) cannot be used
+    to start processes, open sockets or load shared objects. Import and open events stay allowed (the libraries need them)."""
+    if event.startswith(BLOCKED_EVENTS):
+        raise RuntimeError(f"blocked by sandbox policy: {event}")
+
 
 def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
     if level or name.split(".")[0] not in ALLOWED:
@@ -104,11 +117,15 @@ def main():
         raise MemoryError("dataframe exceeds 70% of the sandbox memory limit")
     script = IN / "script.py"
     if script.exists():
+        for lib in sorted(ALLOWED - BASE_ALLOWED):  # a pack's libraries start helper processes while importing (platform.processor,
+            importlib.import_module(lib)  # a C++ compiler probe): import them now, before the audit hook, not in the script
         t1 = time.monotonic()
         env = {"df": df, "pd": pd, "np": np, "plt": plt, "table": table, "finding": finding, "__name__": "__main__",
                "__builtins__": SCRIPT_BUILTINS}
+        code = compile(script.read_text(), "script.py", "exec")
+        sys.addaudithook(audit_block)  # after the runner's own setup; cannot be removed by the script
         try:
-            exec(compile(script.read_text(), "script.py", "exec"), env)
+            exec(code, env)
         finally:
             for n in plt.get_fignums()[:MAX_FIGS]:
                 buf = io.BytesIO()

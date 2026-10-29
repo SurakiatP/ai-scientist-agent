@@ -25,7 +25,7 @@ PACKS: dict[str, Pack] = {
     "chem": Pack("เคมีสารสนเทศ", "Cheminformatics", ("pubmed", "europepmc", "crossref"),  # chemrxiv is not a paper source here
                  ("pubchem", "chembl", "chebi", "bindingdb", "zinc"), ("rdkit",)),
     "med": Pack("แพทยศาสตร์", "Medicine", ("pubmed", "europepmc", "medrxiv"),
-                ("clinicaltrials", "clinvar", "dailymed", "fda", "who"), ("lifelines", "scipy")),
+                ("clinicaltrials", "clinvar", "dailymed", "fda", "who"), ("lifelines", "pymc", "scipy")),
     "materials": Pack("วัสดุศาสตร์", "Materials science", ("arxiv", "crossref", "openalex"), ("cod", "nist"), ("pymatgen",)),
     "ml": Pack("แมชชีนเลิร์นนิง", "Machine learning", ("arxiv", "semanticscholar", "openalex"), (), ("sklearn", "shap", "scipy")),
     "comm": Pack("นิเทศศาสตร์", "Communication", ("crossref", "openalex", "semanticscholar", "doaj"), (), ()),

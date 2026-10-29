@@ -138,3 +138,36 @@ def test_sweep_stale_runs_removes_only_old_run_dirs(tmp_path):
     os.utime(old, (t, t)), os.utime(other, (t, t))
     sandbox.sweep_stale_runs(S(sandbox_work_dir=tmp_path))
     assert not old.exists() and new.exists() and other.exists()
+
+
+async def test_docker_command_per_pack(tmp_path, monkeypatch):
+    cmds = []
+
+    class R:
+        async def read(self, n): return b""
+
+    class P:
+        returncode = 1
+        stdout = R()
+        stderr = R()
+        async def wait(self): return 1
+
+    async def exec_(*a, **k):
+        cmds.append(list(a))
+        return P()
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", exec_)
+    s = S(sandbox_work_dir=tmp_path, sandbox_image="base:1", sandbox_science_image="sci:1")
+    for pack in (None, "comm", "chem", "bio"):
+        await sandbox.run_analysis(None, b"a\n1\n", "csv", s, pack)
+    general, comm, chem, bio = cmds
+
+    def norm(c):  # name and the per-run input mount differ by design; the image and the extra-imports env are checked apart
+        i = [k for k, x in enumerate(c) if x.startswith("SANDBOX_EXTRA_IMPORTS")]
+        rest = [x for k, x in enumerate(c) if not i or k not in (i[0] - 1, i[0])]  # drop "-e SANDBOX_EXTRA_IMPORTS=..."
+        return [x for x in rest if not x.startswith(("scientist-sandbox-", str(tmp_path))) and x not in ("base:1", "sci:1")]
+    extra = lambda c: [x for x in c if x.startswith("SANDBOX_EXTRA_IMPORTS")]  # noqa: E731
+    assert general[-1] == comm[-1] == "base:1" and chem[-1] == bio[-1] == "sci:1"
+    assert extra(general) == extra(comm) == [] and extra(chem) == ["SANDBOX_EXTRA_IMPORTS=rdkit"]
+    assert extra(bio) == ["SANDBOX_EXTRA_IMPORTS=scanpy,anndata"]
+    assert norm(general) == norm(comm) == norm(chem) == norm(bio)
+    assert "--network" in general and general[general.index("--network") + 1] == "none" and "--read-only" in chem

@@ -74,7 +74,7 @@ def _prompt(question: str, quality: dict, feedback: str | None, pack: str | None
                        "sample_rows": head}, ensure_ascii=False, default=str).replace("<", "\\u003c")  # as pipeline._data_block: no early </data>
     libs = sandbox.extra_imports(pack)
     return (f"<data>\n{data}\n</data>\n\nQuestion: {question}"
-            + (f"\n\nExtra libraries you may also import: {', '.join(libs)}." if libs else "")
+            + (f"\n\nThis run's sandbox also allows importing: {', '.join(libs)} (in addition to the modules listed in the instructions)." if libs else "")
             + (f"\n\nYour previous script failed:\n{feedback}\nReturn the corrected full script." if feedback else ""))
 
 
