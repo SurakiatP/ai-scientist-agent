@@ -908,3 +908,11 @@ async def test_quick_mode_also_reviews(settings, tmp_path, fake_complete):
     events = [e async for e in ask(Q, rt, settings=settings, client=crossref(), gate=RunGate(4), mode="quick")]
     assert len(review_calls(fake_complete)) == 1
     assert "do not support" in next(e for e in events if isinstance(e, FinalAnswer)).content
+
+
+async def test_thai_quote_only_cut_at_spaces(settings, tmp_path, fake_complete):
+    th = "การศึกษานี้พบว่าเบสเอดิเตอร์มีประสิทธิภาพสูง ในเซลล์"
+    final = await reviewed(settings, tmp_path, fake_complete, review_reply(
+        ("1", "a", "supported", "การศึกษานี้พบว่าเบสเอดิเตอร์ม"),  # ends before a combining vowel
+        ("1", "b", "supported", "การศึกษานี้พบว่าเบสเอดิเตอร์มีประสิทธิภาพสูง")), papers=[apaper("P", "10.1/p", th)])
+    assert [x.support for x in final.references[0].checks] == ["no_quote", "supported"]

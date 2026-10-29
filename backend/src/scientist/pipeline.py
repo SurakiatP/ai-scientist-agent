@@ -2,6 +2,7 @@
 import asyncio
 import json
 import re
+import unicodedata
 from collections.abc import AsyncIterator
 from contextlib import aclosing, suppress
 from pathlib import Path
@@ -114,13 +115,15 @@ def _trim(text: str, refs: list[Reference]) -> list[Reference]:
 
 def _exact(quote: str, abstract: str) -> bool:
     """A quote of at least 20 chars that is a substring of the abstract (whitespace collapsed, case-sensitive) and
-    starts and ends on word boundaries, so "0% efficiency" is not a quote of "60% efficiency"."""
+    starts and ends on word boundaries, so "0% efficiency" is not a quote of "60% efficiency". A combining mark (Thai
+    vowel and tone marks) is part of its word, never a boundary: Thai text is only cut at spaces or punctuation."""
+    inside = lambda ch: ch.isalnum() or unicodedata.category(ch).startswith("M")  # noqa: E731
     if len(quote) < 20 or len(quote) > 600:
         return False
     i = abstract.find(quote)
     while i >= 0:
         j = i + len(quote)
-        if (i == 0 or not abstract[i - 1].isalnum()) and (j == len(abstract) or not abstract[j].isalnum()):
+        if (i == 0 or not inside(abstract[i - 1])) and (j == len(abstract) or not inside(abstract[j])):
             return True
         i = abstract.find(quote, i + 1)
     return False
