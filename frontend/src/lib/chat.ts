@@ -37,7 +37,8 @@ export type Turn = {
   runId?: string; // the server-side run that owns this turn: the server writes it, this browser only shows it
   errCode?: ErrCode; // why the server ended the run in error; localised at render time
 };
-export const ERR_CODES = ["cut_off", "failed", "interrupted", "stopped"] as const;
+export const DOCS_ERR_CODES = ["docs_unreadable", "docs_unreadable_permanent", "docs_host", "docs_not_found", "docs_load_failed"] as const; // stable codes of the PDF pipeline; localised at render time
+export const ERR_CODES = ["cut_off", "failed", "interrupted", "stopped", ...DOCS_ERR_CODES] as const;
 export type ErrCode = (typeof ERR_CODES)[number];
 export type Session = { id: string; projectId: string; title: string; createdAt: number; updatedAt: number; turns: Turn[] };
 export type Project = { id: string; name: string; createdAt: number }; // id "personal" is built in; name "" = localized default

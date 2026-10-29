@@ -33,7 +33,7 @@ export type MemoryTurn = { question: string; answer: string; references: MemoryR
 export type AskOptions = { mode?: AskMode; pack?: PackId; history?: HistoryTurn[]; plan?: Search[]; planOnly?: boolean; memory?: MemoryTurn[] };
 
 export type StreamCode = "malformed" | "network" | "http";
-export type ApiError = { message: string; code?: StreamCode | "stopped" | "interrupted" | "cut_off" | "failed"; status?: number; runCode?: string; uncertain?: boolean }; // uncertain: the request went out but no answer came back (the run may exist) // runCode: the run queue's own 429 reason (client_busy, queue_full, rate_limited)
+export type ApiError = { message: string; code?: StreamCode | "stopped" | "interrupted" | "cut_off" | "failed" | "docs_unreadable" | "docs_unreadable_permanent" | "docs_host" | "docs_not_found" | "docs_load_failed"; status?: number; runCode?: string; uncertain?: boolean }; // uncertain: the request went out but no answer came back (the run may exist) // runCode: the run queue's own 429 reason (client_busy, queue_full, rate_limited)
 export type StreamError = ApiError & { type: "error" };
 
 export type AskEvent =

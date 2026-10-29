@@ -110,6 +110,7 @@ type Patch = Partial<Turn>;
 // How one event ends a run. The queue's cancel and restart come as error events with a code: they are not failures.
 const errorOutcome = (e: ApiError): Patch =>
   e.code === "stopped" ? { status: "stopped" } : e.code === "interrupted" ? { status: "interrupted" }
+  : e.code === "docs_unreadable" || e.code === "docs_unreadable_permanent" || e.code === "docs_host" || e.code === "docs_not_found" || e.code === "docs_load_failed" ? { status: "error", error: e.message.slice(0, 2048), errCode: e.code } // the message is the fallback; the code is shown localised
   : e.code === "cut_off" || e.code === "failed" ? { status: "error", error: e.message.slice(0, 2048) || cutOffText(), errCode: e.code }
   : (e.runCode === "use_runs" && void reprobeSync().catch(() => {}), { status: "error", error: errorText(e) }); // the server has the shared database after all: look again so a retry takes the queue
 const askOutcome = (e: AskEvent): Patch | null => {

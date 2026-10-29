@@ -94,12 +94,13 @@ def _verify(answer: str, quotes: dict, passages: list[dict], files: dict[str, st
     return MARK.sub(sub, _unlink(answer)), list(order.values())
 
 
-def _fail(name: str, error: str | None) -> str:
+def _fail(name: str, error: str | None) -> Error:
+    """Message for old clients, stable `code` for the new ones (the frontend localizes by code)."""
     if error == "unreadable":
-        return f'The file "{name}" could not be read as a PDF (it may be encrypted or damaged).'
+        return Error(message=f'The file "{name}" could not be read as a PDF (it may be encrypted or damaged).', code="docs_unreadable")
     if error in PERMANENT:
-        return f'The file "{name}" cannot be read.'
-    return f'The file "{name}" could not be read right now. Please try again.'
+        return Error(message=f'The file "{name}" cannot be read.', code="docs_unreadable_permanent")
+    return Error(message=f'The file "{name}" could not be read right now. Please try again.', code="docs_host")
 
 
 async def answer_docs(question: str, doc_ids: list[str], *, db, store, settings: Settings, gate: RunGate,
@@ -118,7 +119,7 @@ async def answer_docs(question: str, doc_ids: list[str], *, db, store, settings:
             seen = {r.file_id: (r.status, r.error) for r in await s.execute(sa.select(m.doc_index.c.file_id, m.doc_index.c.status, m.doc_index.c.error)
                                                                   .where(m.doc_index.c.file_id.in_(doc_ids)))}
         if missing := [i for i in doc_ids if i not in rows]:
-            yield Error(message=f"The document {missing[0]} was not found.")
+            yield Error(message=f"The document {missing[0]} was not found.", code="docs_not_found")
             return
         files = {i: rows[i] for i in doc_ids}
         status: dict[str, dict] = {}
@@ -133,10 +134,10 @@ async def answer_docs(question: str, doc_ids: list[str], *, db, store, settings:
                 status[fid] = await documents.ensure_index(db, fid, load, settings, extract=sandbox.extract_pdf)
             except Exception:
                 log.warning("docs: file %s could not be indexed", fid, exc_info=True)
-                yield Error(message=f'The file "{name}" could not be loaded.')
+                yield Error(message=f'The file "{name}" could not be loaded.', code="docs_load_failed")
                 return
             if status[fid]["status"] != "ready":
-                yield Error(message=_fail(name, status[fid]["error"]))
+                yield _fail(name, status[fid]["error"])
                 return
         readable = [i for i in files if status[i]["chunks"]]
         empty = [EmptyFile(file_id=i, file_name=files[i]) for i in files if i not in readable]  # names never enter the text

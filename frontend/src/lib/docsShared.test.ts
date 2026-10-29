@@ -37,4 +37,22 @@ describe("docs run through the queue", () => {
     expect(t.answer?.empty_files).toEqual([{ file_id: "b".repeat(32), file_name: "s.pdf" }]);
     expect(t.progress.indexing).toBeUndefined();
   });
+
+  it("a coded docs error ends the turn with that code (shown localized), the message kept as the fallback", async () => {
+    localStorage.clear(); sessionStorage.clear(); vi.resetModules();
+    const sync = await import("./sync");
+    sync.useSync.setState({ status: "online" });
+    const chat = (await import("./chat")).useChatStore, run = await import("./run");
+    const sid = chat.getState().newSession();
+    sync.__versions().set(`session:${sid}`, 1);
+    api.submit.mockImplementation(async (b: { turn_id: string }) => ({ run: { id: UR, mine: true }, turn: { id: b.turn_id, session_id: sid, idx: 0, question: "q", mode: "docs", status: "running", progress: null, created_at: "2026-01-01T00:00:00Z", updated_at: new Date().toISOString(), version: 1, run_id: UR } }));
+    api.script = async function* () { yield { type: "error", message: 'The file "a.pdf" cannot be read.', code: "docs_unreadable_permanent", _seq: 0 }; };
+    await run.startDocs(sid, "q?", [{ id: F, name: "a.pdf" }]);
+    expect(chat.getState().sessions[0].turns[0]).toMatchObject({ status: "error", errCode: "docs_unreadable_permanent", error: 'The file "a.pdf" cannot be read.' });
+  });
+  it("a stored turn keeps the docs error code through sync", async () => {
+    const { toTurn } = await import("./sync");
+    const t = toTurn({ id: "t1", question: "q", mode: "docs", status: "error", error: "e", created_at: "2026-01-01T00:00:00Z", progress: { waiting: null, reasoning: "", searches: [], sources: {}, answered: [], writing: false, phase: "planning", _err: "docs_host" } } as never);
+    expect(t).toMatchObject({ errCode: "docs_host" });
+  });
 });

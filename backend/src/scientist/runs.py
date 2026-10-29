@@ -446,7 +446,8 @@ def _outcome(out: dict | None, d: dict) -> dict | None:
         code = d.get("code")
         return {"status": "refused", "refused": d["reason"][:4000], **({"_code": code} if code in REFUSAL_CODES else {})}
     if t == "error":
-        return {"status": "error", "error": d["message"][:2048]}
+        code = d.get("code")
+        return {"status": "error", "error": d["message"][:2048], **({"_err": code} if isinstance(code, str) and code.startswith("docs_") else {})}
     if t in ("analysis_result", "complete"):
         return out or {"status": "done"}
     return out

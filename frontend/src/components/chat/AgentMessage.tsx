@@ -14,7 +14,7 @@ import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import { AnswerView } from "@/components/AnswerView";
 import { SourcesUsed } from "@/components/research/SourcesUsed";
 import { answerSourceIds, docsErrorText, docsOf, sourceNames, usableUsage } from "@/lib/sources";
-import { useAttach } from "@/lib/files";
+import { useAttach, useFilesStore } from "@/lib/files";
 import { DataRecords } from "@/components/DataRecords";
 import { ReferenceList } from "@/components/ReferenceList";
 import { AnalysisArtifact } from "@/components/research/AnalysisArtifact";
@@ -71,9 +71,10 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   // the backend reason is English-only; Thai UI shows the localized scope message instead
   const coded = status === "refused" && turn.refusedCode ? REFUSAL_TEXT[turn.refusedCode] : undefined;
   const errText = turn.errCode === "cut_off" ? t.cutOff : turn.errCode === "failed" ? t.runFailed : turn.errCode === "interrupted" ? t.interrupted : turn.errCode === "stopped" ? t.stoppedHelp : undefined; // the server's neutral English `error` is the fallback
-  const text = status === "refused" ? (coded ? t[coded] : t === strings.th ? t.refused : turn.refused) : status === "error" ? errText ?? (docsTurn && turn.error ? docsErrorText(turn.error, t) : turn.error) : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
+  const text = status === "refused" ? (coded ? t[coded] : t === strings.th ? t.refused : turn.refused) : status === "error" ? errText ?? (docsTurn && turn.error ? docsErrorText(turn.errCode, turn.error, t) : turn.error) : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
   const refs = turn.answer?.references ?? [];
   const docRefs = turn.answer?.doc_refs ?? [], emptyFiles = turn.answer?.empty_files ?? [];
+  const sizeOf = (id: string) => useFilesStore.getState().files.find((f) => f.id === id)?.size ?? 0; // the library knows the real size
   const docList = docsTurn ? docsOf(turn) : [], noDocs = docsTurn && docList.length === 0; // nothing to re-ask: Retry says so
   const docNames = docsTurn ? [...new Set(docList.map((d) => d.name))].join(", ") : "";
   const firstSource = refs[0]?.id ?? docRefs[0]?.id;
@@ -172,7 +173,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
           )}
           <Stack direction="row" spacing={1} useFlexGap sx={{ mt: sourceIds || cost || field || replans.length ? 1 : 2, flexWrap: "wrap" }}>
             <Button variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={() => {
-              if (docList.length) { const [first, ...rest] = docList; useAttach.setState({ file: { id: first.id, name: first.name, size: 0 }, rest: rest.map((d) => ({ id: d.id, name: d.name, size: 0 })) }); } // same PDFs, a new docs question
+              if (docList.length) { const [first, ...rest] = docList; useAttach.setState({ file: { id: first.id, name: first.name, size: sizeOf(first.id) }, rest: rest.map((d) => ({ id: d.id, name: d.name, size: sizeOf(d.id) })) }); } // same PDFs, a new docs question
               else { useMode.getState().set("chat"); focusComposer(); }
             }}>{t.askFollowUp}</Button>
             <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={!firstSource} sx={{ borderColor: "divider" }}

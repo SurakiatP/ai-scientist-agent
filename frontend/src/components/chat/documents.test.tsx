@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useChatStore, type Turn } from "@/lib/chat";
-import { useAttach } from "@/lib/files";
+import { useAttach, useFilesStore } from "@/lib/files";
 import { useInspector } from "@/lib/inspector";
 import { usePrefs } from "@/lib/prefs";
 import { emptyProgress } from "@/lib/progress";
@@ -174,12 +174,22 @@ describe("docs answer", () => {
     expect(screen.getByText(t.docsAttachAgain)).toBeInTheDocument();
   });
 
-  it("the unreadable-PDF error is shown in the UI language", () => {
-    render(<AgentMessage sessionId="s" turn={turn("error", { error: 'The file "scan.pdf" cannot be read.' })} />);
-    expect(screen.getByText(t.docsUnreadable.replace("{name}", "scan.pdf"))).toBeInTheDocument();
+  it.each([
+    ["docs_unreadable", "docsUnreadable"], ["docs_unreadable_permanent", "docsUnreadablePermanent"], ["docs_host", "docsReadLater"], ["docs_load_failed", "docsLoadFailed"],
+  ] as const)("error code %s is shown in the UI language, in th and en", (code, key) => {
+    const msg = 'The file "scan.pdf" could not be read as a PDF (it may be encrypted or damaged).';
+    render(<AgentMessage sessionId="s" turn={turn("error", { error: msg, errCode: code })} />);
+    expect(screen.getByText(strings.th[key].replace("{name}", "scan.pdf"))).toBeInTheDocument();
+    cleanup(); usePrefs.setState({ lang: "en" });
+    render(<AgentMessage sessionId="s" turn={turn("error", { error: msg, errCode: code })} />);
+    expect(screen.getByText(strings.en[key].replace("{name}", "scan.pdf"))).toBeInTheDocument();
+  });
+  it("docs_not_found has its own text; an unknown code falls back to the server message", () => {
+    render(<AgentMessage sessionId="s" turn={turn("error", { error: "The document x was not found.", errCode: "docs_not_found" })} />);
+    expect(screen.getByText(t.docsNotFound)).toBeInTheDocument();
     cleanup();
-    render(<AgentMessage sessionId="s" turn={turn("error", { error: 'The file "scan.pdf" could not be read right now. Please try again.' })} />);
-    expect(screen.getByText(t.docsReadLater.replace("{name}", "scan.pdf"))).toBeInTheDocument();
+    render(<AgentMessage sessionId="s" turn={turn("error", { error: "Something odd happened", errCode: "docs_future" as never })} />);
+    expect(screen.getByText("Something odd happened")).toBeInTheDocument();
   });
 
   it("the pill names the file and page; the empty-file notice is quiet text and says why", () => {
@@ -199,8 +209,9 @@ describe("docs answer", () => {
   it("Ask follow-up on a docs answer starts a docs question with the same PDFs", () => {
     const docs = [{ id: ref.file_id, name: "bio.pdf" }];
     render(<AgentMessage sessionId="s" turn={turn("done", { docs, answer: { content: "x", references: [], doc_refs: [ref] } })} />);
+    useFilesStore.setState({ files: [{ id: ref.file_id, name: "bio.pdf", size: 4096, kind: "pdf", createdAt: 1, projectId: "personal" }] });
     fireEvent.click(screen.getByRole("button", { name: t.askFollowUp }));
-    expect(useAttach.getState().file).toMatchObject({ id: ref.file_id, name: "bio.pdf" });
+    expect(useAttach.getState().file).toMatchObject({ id: ref.file_id, name: "bio.pdf", size: 4096 });
   });
 
   it("retry on a docs turn asks the same PDFs", () => {

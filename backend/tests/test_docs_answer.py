@@ -431,3 +431,26 @@ async def env_nodb(monkeypatch, tmp_path):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app()), base_url="http://t") as c:
         yield c
     get_settings.cache_clear()
+
+
+@pytest.mark.parametrize("err,code", [("unreadable", "docs_unreadable"), ("bad_output", "docs_unreadable_permanent"),
+                                      ("output_too_large", "docs_unreadable_permanent"), ("timeout", "docs_host")])
+async def test_index_failures_carry_a_stable_code(d, settings, fx, err, code):  # noqa: F811
+    f = mkfile(d, "b.pdf")
+    fx["result"] = sandbox.ExtractResult(ok=False, error=err)
+    ev = await run(d, settings, [f], Store(**{f: b"%PDF"}))
+    assert ev[-1].code == code and "b.pdf" in ev[-1].message
+
+
+async def test_missing_row_and_missing_object_carry_codes(d, settings, fx):  # noqa: F811
+    ev = await run(d, settings, ["a" * 32], Store())
+    assert ev[-1].code == "docs_not_found"
+    f = mkfile(d, "gone.pdf")
+    ev = await run(d, settings, [f], Store())
+    assert ev[-1].code == "docs_load_failed"
+
+
+def test_outcome_keeps_a_docs_error_code_for_the_stored_turn():
+    from scientist.runs import _outcome
+    assert _outcome(None, {"type": "error", "message": "m", "code": "docs_host"}) == {"status": "error", "error": "m", "_err": "docs_host"}
+    assert "_err" not in _outcome(None, {"type": "error", "message": "m"})

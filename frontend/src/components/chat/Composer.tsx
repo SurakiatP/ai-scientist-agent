@@ -85,7 +85,9 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   useEffect(() => { const u = uploads.current, l = live.current; return () => { u.forEach((a) => a.abort()); l.clear(); }; }, []);
   const seq = useRef(0);
   const live = useRef(new Set<string>()); // keys still attached: an upload step for a chip removed meanwhile is skipped
-  useEffect(() => { for (const k of live.current) if (!files.some((f) => f.key === k)) live.current.delete(k); }, [files]);
+  useEffect(() => { // a chip that left the list (removed, replaced, or never fitted) stops its upload
+    for (const k of live.current) if (!files.some((f) => f.key === k)) { live.current.delete(k); uploads.current.get(k)?.abort(); uploads.current.delete(k); }
+  }, [files]);
   const patchFile = (key: string, p: Partial<Attached>) => setFiles((fs) => fs.map((f) => (f.key === key ? { ...f, ...p } : f)));
   const mine = !!run.turnId, busy = mine; // this session has a live run here; other sessions run on their own
   // icon pops only on a send<->stop change in this session, never on mount or session switch
@@ -137,20 +139,16 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
     useAttach.setState({ file: null, rest: undefined });
     const incoming: Attached[] = [handoff, ...rest].map((h) => ({ key: `k${++seq.current}`, name: h.name, size: h.size, status: "ready", fileId: h.id }));
     const allDocs = incoming.every((f) => isPdf(f.name));
-    const cur = files; // the one-shot runs once per handoff; the list it adds to is the one on screen
-    const keepDocs = allDocs && cur.length > 0 && cur.every((f) => isPdf(f.name));
-    if (keepDocs) {
-      const fresh = incoming.filter((n) => !cur.some((f) => f.fileId === n.fileId));
-      const room = fresh.slice(0, MAX_DOCS - cur.length);
-      if (room.length < fresh.length) setErr(t.docsMax);  
-      room.forEach((a) => live.current.add(a.key));
-      setFiles([...cur, ...room]);  
-    } else {
-      removeAll();
-      const take = allDocs ? incoming.slice(0, MAX_DOCS) : incoming.slice(0, 1);
-      take.forEach((a) => live.current.add(a.key));
-      setFiles(take);  
-    }
+    incoming.forEach((a) => live.current.add(a.key)); // any that do not fit are pruned below with the files effect
+    setFiles((cur) => {
+      if (allDocs && cur.length > 0 && cur.every((f) => isPdf(f.name))) { // PDFs join the PDFs already attached; none is dropped
+        const fresh = incoming.filter((n) => !cur.some((f) => f.fileId === n.fileId));
+        return [...cur, ...fresh.slice(0, MAX_DOCS - cur.length)];
+      }
+      return allDocs ? incoming.slice(0, MAX_DOCS) : incoming.slice(0, 1);
+    });
+    const joins = allDocs && files.length > 0 && files.every((f) => isPdf(f.name));
+    if ((joins ? incoming.filter((n) => !files.some((f) => f.fileId === n.fileId)).length + files.length : incoming.length) > MAX_DOCS && allDocs) setErr(t.docsMax); // the note, outside the updater
     setTimeout(focusComposer, 0);
   }, [handoff]); // eslint-disable-line react-hooks/exhaustive-deps -- reads the current files once per handoff
   const removeFile = (key: string) => {
