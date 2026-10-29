@@ -12,6 +12,7 @@ export type Progress = {
   seen?: string[]; // ids of the sources (paper sources and databases) that returned something in this run; absent on older turns
   answered: string[]; // terms summarised
   writing: boolean;
+  indexing?: string; // docs mode, live only: name of the PDF being read for the first time
   phase: "waiting" | "planning" | "searching" | "writing" | "done";
 };
 
@@ -31,7 +32,8 @@ export function reduce(p: Progress, e: AskEvent): Progress {
     case "sources": return { ...p, sources: { ...p.sources, [e.term]: (p.sources[e.term] ?? 0) + e.papers.length }, phase: p.phase === "writing" ? p.phase : "searching", ...seenPatch(p, (e.papers ?? []).map((x) => x.source)) };
     case "records": return { ...p, ...seenPatch(p, (e.records ?? []).map((r) => r.database)) };
     case "answer": return { ...p, answered: [...p.answered, e.term], writing: true, phase: "writing" };
-    case "final_answer": case "complete": return { ...p, writing: false, phase: "done" };
+    case "docs_indexing": return { ...p, indexing: e.file_name, phase: "searching" };
+    case "final_answer": case "complete": return ({ ...p, indexing: undefined, writing: false, phase: "done" });
     default: return p;
   }
 }

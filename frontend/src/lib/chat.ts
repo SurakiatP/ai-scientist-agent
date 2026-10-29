@@ -3,10 +3,10 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { DEFER_HYDRATION, gate } from "./config";
 import { dataStorage, isItem, newId, safeStorage, storageFull, useHistoryStore } from "./history";
 import type { Progress } from "./progress";
-import { usableProvenance, usableRecords, usableUsage } from "./sources";
+import { cleanDocs, usableProvenance, usableRecords, usableUsage } from "./sources";
 import { cleanEvidence } from "./refs";
 import { usablePack, type PackId } from "./packs";
-import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, DataRecord, Provenance, Reference, RunUsage, Search } from "./sse";
+import type { AnalysisArtifact, AnalysisQuality, AnalysisStep, AnalysisTable, AskMode, DataRecord, DocRef, EmptyFile, Provenance, Reference, RunUsage, Search } from "./sse";
 
 // What the analyze stream taught us about this turn. Every field is optional because events arrive one at a time.
 export type TurnAnalysis = {
@@ -29,8 +29,9 @@ export type Turn = {
   mode?: AskMode;
   pack?: PackId; // the field pack the run used; absent = General
   kind?: "analysis";
+  docs?: { id: string; name: string }[]; // docs mode: the PDFs asked about (this browser only; older or synced turns rebuild them from the answer)
   plan?: Search[]; // the approved plan: stored while awaiting review and kept as "the plan used" after approval
-  answer?: { content: string; references: Reference[]; records?: DataRecord[]; usage?: RunUsage; provenance?: Provenance }; // usage: the run's tokens and cost, absent on older turns; records: absent on turns saved before database records existed
+  answer?: { content: string; references: Reference[]; records?: DataRecord[]; doc_refs?: DocRef[]; empty_files?: EmptyFile[]; usage?: RunUsage; provenance?: Provenance }; // usage: the run's tokens and cost, absent on older turns; records: absent on turns saved before database records existed
   analysis?: TurnAnalysis;
   refused?: string; refusedCode?: RefusalCode; error?: string;
   runId?: string; // the server-side run that owns this turn: the server writes it, this browser only shows it
@@ -185,8 +186,9 @@ const clampPatch = (p: Partial<Turn>): Partial<Turn> => {
     ...(p.progress && { progress: clampProgress(p.progress) }),
     ...(p.error !== undefined && { error: p.error.slice(0, 2048) }),
     ...(p.refused !== undefined && { refused: p.refused.slice(0, REASON) }),
-    ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef), ...(p.answer.records !== undefined && { records: usableRecords(p.answer.records).slice(0, RECORDS).map(clampRecord) }), ...(usage && { usage }), ...(prov && { provenance: prov }) } }),
+    ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef), ...(p.answer.records !== undefined && { records: usableRecords(p.answer.records).slice(0, RECORDS).map(clampRecord) }), ...cleanDocs({ doc_refs: p.answer.doc_refs, empty_files: p.answer.empty_files }), ...(usage && { usage }), ...(prov && { provenance: prov }) } }),
     ...(p.analysis && { analysis: clampAnalysis(p.analysis) }),
+    ...(p.docs && { docs: p.docs.slice(0, 5).map((d) => ({ id: d.id.slice(0, 100), name: d.name.slice(0, 500) })) }),
     ...(p.plan !== undefined && { plan: clampPlan(p.plan) }),
   };
 };
@@ -198,15 +200,16 @@ const cleanTurn = (t0: Turn): Turn => {
   const pa = usableProvenance(ap);
   const base = t.analysis ? { ...t, analysis: { ...(an as TurnAnalysis), ...(pa && { provenance: pa }) } } : t;
   if (!t.answer) return base;
-  const { usage, references, provenance, ...a } = t.answer;
+  const { usage, references, provenance, doc_refs, empty_files, ...a } = t.answer;
   const u = usableUsage(usage), p = usableProvenance(provenance);
-  return { ...base, answer: { ...a, references: references.map(cleanEvidence), ...(a.records !== undefined && { records: usableRecords(a.records) }), ...(u && { usage: u }), ...(p && { provenance: p }) } };
+  return { ...base, answer: { ...a, references: references.map(cleanEvidence), ...(a.records !== undefined && { records: usableRecords(a.records) }), ...cleanDocs({ doc_refs, empty_files }), ...(u && { usage: u }), ...(p && { provenance: p }) } };
 };
 // Reuses history's item validator for the answer + references (its question/id/createdAt are filled in).
 export const isTurn = (v: unknown): v is Turn => {
   const t = v as Turn | null;
   if (!t || !isStr(t.id, 100) || !isStr(t.question, 4000) || !isNum(t.createdAt) || !STATUSES.includes(t.status) || !isProgress(t.progress)) return false;
-  if (t.mode !== undefined && t.mode !== "deep" && t.mode !== "quick" && t.mode !== "chat") return false;
+  if (t.mode !== undefined && t.mode !== "deep" && t.mode !== "quick" && t.mode !== "chat" && t.mode !== "docs") return false;
+  if (t.docs !== undefined && !(Array.isArray(t.docs) && t.docs.length <= 5 && t.docs.every((d) => isObj(d) && isStr(d.id, 100) && isStr(d.name, 500)))) return false;
   if (t.kind !== undefined && t.kind !== "analysis") return false;
   if (t.plan !== undefined && !isPlan(t.plan)) return false;
   if (t.status === "awaiting_plan" && !t.plan) return false; // an awaiting turn must carry the plan it waits for

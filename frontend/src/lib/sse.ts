@@ -24,11 +24,13 @@ export type DataRecord = { database: string; id: string; title: string; url: str
 export type Check = { claim: string; support: "supported" | "partial" | "unsupported" | "no_quote"; quote: string | null }; // the reviewer's verdict on one claim a reference is cited for
 export type Reference = { id: string; paper: Paper; status: "verified" | "unverified" | "unknown"; checks?: Check[] }; // checks: absent on turns saved before the reviewer existed
 export type Search = { term: string; instructions: string };
-export type AskMode = "deep" | "quick" | "chat"; // chat = answer from the session's own earlier results, no search
+export type AskMode = "deep" | "quick" | "chat" | "docs"; // chat = answer from the session's own earlier results, no search; docs = answer from the attached PDFs (doc_ids)
+export type DocRef = { id: string; file_id: string; file_name: string; page: number; text: string; quote: string | null }; // one cited passage of an attached PDF
+export type EmptyFile = { file_id: string; file_name: string }; // an attached PDF with no extractable text
 export type HistoryTurn = { question: string; answer: string };
 export type MemoryRef = { id: string; title: string; authors: string[]; year: number | null; doi: string | null; pmid: string | null; url: string; status: Reference["status"] };
 export type MemoryTurn = { question: string; answer: string; references: MemoryRef[] };
-export type AskOptions = { mode?: AskMode; pack?: PackId; history?: HistoryTurn[]; plan?: Search[]; planOnly?: boolean; memory?: MemoryTurn[] };
+export type AskOptions = { mode?: AskMode; pack?: PackId; history?: HistoryTurn[]; plan?: Search[]; planOnly?: boolean; memory?: MemoryTurn[]; docIds?: string[] };
 
 export type StreamCode = "malformed" | "network" | "http";
 export type ApiError = { message: string; code?: StreamCode | "stopped" | "interrupted" | "cut_off" | "failed"; status?: number; runCode?: string; uncertain?: boolean }; // uncertain: the request went out but no answer came back (the run may exist) // runCode: the run queue's own 429 reason (client_busy, queue_full, rate_limited)
@@ -42,7 +44,8 @@ export type AskEvent =
   | { type: "sources"; term: string; papers: Paper[] }
   | { type: "records"; term: string; records: DataRecord[] }
   | { type: "answer"; term: string; content: string }
-  | { type: "final_answer"; content: string; references: Reference[]; records?: DataRecord[]; usage?: RunUsage | null; provenance?: Provenance | null }
+  | { type: "docs_indexing"; file_id: string; file_name: string } // live only: the server is reading this PDF for the first time
+  | { type: "final_answer"; content: string; references: Reference[]; records?: DataRecord[]; doc_refs?: DocRef[]; empty_files?: EmptyFile[]; usage?: RunUsage | null; provenance?: Provenance | null }
   | { type: "complete" }
   | StreamError;
 
@@ -149,8 +152,9 @@ export async function* stream(url: string, init: RequestInit, signal: AbortSigna
 
 export async function* streamAsk(question: string, signal: AbortSignal, opts: AskOptions = {}): AsyncGenerator<AskEvent> {
   // Send only what differs from the backend defaults.
-  const body: { question: string; mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; plan_only?: boolean; memory?: MemoryTurn[]; pack?: PackId } = { question };
-  if (opts.mode === "quick" || opts.mode === "chat") body.mode = opts.mode;
+  const body: { question: string; mode?: AskMode; history?: HistoryTurn[]; plan?: Search[]; plan_only?: boolean; memory?: MemoryTurn[]; pack?: PackId; doc_ids?: string[] } = { question };
+  if (opts.mode === "quick" || opts.mode === "chat" || opts.mode === "docs") body.mode = opts.mode;
+  if (opts.mode === "docs" && opts.docIds?.length) body.doc_ids = opts.docIds;
   if (opts.mode === "chat" && opts.memory?.length) body.memory = opts.memory;
   if (opts.history?.length) body.history = opts.history;
   if (opts.plan?.length) body.plan = opts.plan;

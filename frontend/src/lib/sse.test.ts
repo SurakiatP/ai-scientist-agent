@@ -27,6 +27,14 @@ async function collect(signal = new AbortController().signal, opts?: AskOptions)
 afterEach(() => vi.unstubAllGlobals());
 
 describe("streamAsk", () => {
+  it("docs mode sends mode and doc_ids; other modes never send doc_ids", async () => {
+    const f = mockFetch(['data: {"type":"docs_indexing","file_id":"a","file_name":"b.pdf"}\n\n', 'data: {"type":"complete"}\n\n']);
+    expect((await collect(undefined, { mode: "docs", docIds: ["a".repeat(32)] }))[0]).toEqual({ type: "docs_indexing", file_id: "a", file_name: "b.pdf" });
+    expect(JSON.parse(f.mock.calls[0][1]!.body as string)).toEqual({ question: "q", mode: "docs", doc_ids: ["a".repeat(32)] });
+    const g = mockFetch(['data: {"type":"complete"}\n\n']);
+    await collect(undefined, { mode: "quick", docIds: ["a".repeat(32)] });
+    expect(JSON.parse(g.mock.calls[0][1]!.body as string)).toEqual({ question: "q", mode: "quick" });
+  });
   it("parses events split across chunk boundaries", async () => {
     const s = 'data: {"type":"waiting","position":2}\n\ndata: {"type":"complete"}\n\n';
     mockFetch([s.slice(0, 10), s.slice(10, 41), s.slice(41, 60), s.slice(60)]);

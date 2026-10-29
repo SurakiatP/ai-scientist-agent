@@ -3,6 +3,7 @@ import { memo, useState } from "react";
 import { Box, Button, IconButton, Stack, Tab, Tabs, Tooltip, Typography } from "@mui/material";
 import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
+import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
@@ -12,7 +13,7 @@ import SearchOffRoundedIcon from "@mui/icons-material/SearchOffRounded";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import { AnswerView } from "@/components/AnswerView";
 import { SourcesUsed } from "@/components/research/SourcesUsed";
-import { answerSourceIds, sourceNames, usableUsage } from "@/lib/sources";
+import { answerSourceIds, docsOf, sourceNames, usableUsage } from "@/lib/sources";
 import { DataRecords } from "@/components/DataRecords";
 import { ReferenceList } from "@/components/ReferenceList";
 import { AnalysisArtifact } from "@/components/research/AnalysisArtifact";
@@ -29,7 +30,7 @@ import { useInspector } from "@/lib/inspector";
 import { usePrefs, useT } from "@/lib/prefs";
 import { strings, type Strings } from "@/lib/strings";
 import { LogoMark } from "@/components/landing/Dropdown";
-import { approvePlan, cancelPlan, startAnalysis, startError, startRun, stopTurn, useRunState, useSending, useStoppable } from "@/lib/run";
+import { approvePlan, cancelPlan, startAnalysis, startDocs, startError, startRun, stopTurn, useRunState, useSending, useStoppable } from "@/lib/run";
 import { focusComposer, useMode } from "./Composer";
 import { Starters } from "./EmptyChat";
 import { avatarSx, Time } from "./UserMessage";
@@ -49,8 +50,9 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const copy = async () => { try { await navigator.clipboard.writeText(turn.answer?.content ?? ""); setCopied("ok"); } catch { setCopied("fail"); } setTimeout(() => setCopied(null), 2000); };
   const lockedTurn = useRunState(sessionId).turnId;
   const busy = !!lockedTurn;
-  const sendingChat = useSending(turn.id) && turn.mode === "chat";
-  const chatStop = useStoppable(turn.id) && turn.mode === "chat" && turn.status === "running" && lockedTurn !== turn.id; // ours, found again: no composer Stop here
+  const docsTurn = turn.mode === "docs", bare = turn.mode === "chat" || docsTurn; // no search stages: an answer from memory or from the attached PDFs
+  const sendingChat = useSending(turn.id) && bare;
+  const chatStop = useStoppable(turn.id) && bare && turn.status === "running" && lockedTurn !== turn.id; // ours, found again: no composer Stop here
   const [stopErr, setStopErr] = useState(false);
   const { status } = turn;
   const analysis = turn.analysis;
@@ -59,7 +61,8 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const retry = () => {
     setRetryErr(null);
     const fail = (e: unknown) => setRetryErr(startError(e));
-    if (analysis) startAnalysis(sessionId, turn.question, analysis.fileId, analysis.fileName, usablePack(turn.pack)).catch(fail);
+    if (docsTurn) startDocs(sessionId, turn.question, docsOf(turn)).catch(fail);
+    else if (analysis) startAnalysis(sessionId, turn.question, analysis.fileId, analysis.fileName, usablePack(turn.pack)).catch(fail);
     else startRun(sessionId, turn.question, { mode: turn.mode, pack: usablePack(turn.pack) }).catch(fail);
   };
   const scope = { sessionId, turnId: turn.id };
@@ -68,6 +71,9 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const errText = turn.errCode === "cut_off" ? t.cutOff : turn.errCode === "failed" ? t.runFailed : turn.errCode === "interrupted" ? t.interrupted : turn.errCode === "stopped" ? t.stoppedHelp : undefined; // the server's neutral English `error` is the fallback
   const text = status === "refused" ? (coded ? t[coded] : t === strings.th ? t.refused : turn.refused) : status === "error" ? errText ?? turn.error : status === "interrupted" ? t.interrupted : status === "stopped" ? t.stoppedHelp : "";
   const refs = turn.answer?.references ?? [];
+  const docRefs = turn.answer?.doc_refs ?? [], emptyFiles = turn.answer?.empty_files ?? [];
+  const docNames = docsTurn ? [...new Set(docsOf(turn).map((d) => d.name))].join(", ") : "";
+  const firstSource = refs[0]?.id ?? docRefs[0]?.id;
   const ids = turn.answer ? answerSourceIds(turn.answer) : [];
   const usage = usableUsage(turn.answer?.usage);
   const cost = usage && (usage.cost_usd === null ? t.runTokens : t.runCost)
@@ -85,11 +91,11 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
         <Box aria-hidden sx={avatarSx}><LogoMark size={24} /></Box>
         <Typography sx={{ fontSize: "0.875rem", fontWeight: 700 }}>{t.brand}</Typography>
         {/* the mode is metadata, not an action: quiet muted text with a small icon, no outlined pill */}
-        {!analysis && (turn.mode === "chat" || turn.mode === "deep" || turn.mode === "quick") && (
+        {!analysis && (turn.mode === "chat" || turn.mode === "deep" || turn.mode === "quick" || docsTurn) && (
           <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, color: "text.secondary", fontSize: "0.8125rem" }}>
             <Box component="span" aria-hidden sx={{ opacity: 0.6 }}>·</Box>
-            {turn.mode === "chat" ? <ChatBubbleOutlineRoundedIcon sx={{ fontSize: 15 }} /> : <LayersOutlinedIcon sx={{ fontSize: 15 }} />}
-            {turn.mode === "chat" ? t.modeChat : turn.mode === "deep" ? t.modeDeep : t.modeQuick}
+            {docsTurn ? <DescriptionOutlinedIcon sx={{ fontSize: 15 }} /> : turn.mode === "chat" ? <ChatBubbleOutlineRoundedIcon sx={{ fontSize: 15 }} /> : <LayersOutlinedIcon sx={{ fontSize: 15 }} />}
+            {docsTurn ? t.modeDocs : turn.mode === "chat" ? t.modeChat : turn.mode === "deep" ? t.modeDeep : t.modeQuick}
             <Box component="span" aria-hidden sx={{ opacity: 0.6 }}>·</Box>
           </Box>
         )}
@@ -107,10 +113,13 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
           {planErr && <Typography role="status" sx={{ fontSize: "0.8125rem", color: "error.main" }}>{planErr}</Typography>}
         </Stack>
       ) : status === "running" && (
-        turn.mode === "chat" ? (
+        bare ? (
           <>
             {(turn.progress.phase === "waiting" || sendingChat) && ( // the queue line shows in every mode, not only beside the search stages
               <Typography role="status" aria-live="polite" sx={{ mb: 1, fontSize: "0.9375rem", fontWeight: 600, color: "primary.main", fontVariantNumeric: "tabular-nums" }}>{sendingChat ? t.sending : queueText(turn.progress, t)}</Typography>
+            )}
+            {docsTurn && !!turn.progress.indexing && ( // live only: a reload of a finished turn shows the answer
+              <Typography role="status" aria-live="polite" sx={{ mb: 1, fontSize: "0.9375rem", fontWeight: 600, color: "primary.main" }}>{t.docsReading}</Typography>
             )}
             {chatStop && (
               <Stack direction="row" spacing={1.5} sx={{ mb: 1, alignItems: "center" }}>
@@ -139,9 +148,11 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
             </Tabs>
           )}
           {turn.mode === "chat" && <Typography sx={{ mb: 1, fontSize: "0.8125rem", color: "text.secondary" }}>{t.chatCaption}</Typography>}
+          {docsTurn && docNames && <Typography sx={{ mb: 1, fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{t.docsCaption.replace("{names}", docNames)}</Typography>}
           <Box role={refs.length ? "tabpanel" : undefined} id={`panel-answer-${turn.id}`} aria-labelledby={refs.length ? `tab-answer-${turn.id}` : undefined} hidden={tab !== "answer"}>
-            <AnswerView content={turn.answer.content} references={turn.answer.references} scope={scope} reveal={wasRunning} />
+            <AnswerView content={turn.answer.content} references={docsTurn ? docRefs.map((d) => ({ id: d.id })) : turn.answer.references} scope={scope} reveal={wasRunning} />
             <DataRecords records={turn.answer.records} t={t} />
+            {emptyFiles.map((f) => <Typography key={f.file_id} role="note" sx={{ mt: 1, fontSize: "0.8125rem", color: "evidence.unverified", overflowWrap: "anywhere" }}>{t.docsEmptyFile.replace("{name}", f.file_name)}</Typography>)}
           </Box>
           {refs.length > 0 && (
             <Box role="tabpanel" id={`panel-sources-${turn.id}`} aria-labelledby={`tab-sources-${turn.id}`} hidden={tab !== "sources"}>
@@ -158,9 +169,9 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
           )}
           <Stack direction="row" spacing={1} useFlexGap sx={{ mt: sourceIds || cost || field || replans.length ? 1 : 2, flexWrap: "wrap" }}>
             <Button variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={() => { useMode.getState().set("chat"); focusComposer(); }}>{t.askFollowUp}</Button>
-            <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={refs.length === 0} sx={{ borderColor: "divider" }}
-              onClick={(e) => openInspector({ ...scope, refId: refs[0].id }, e.currentTarget)}>{t.openEvidence}</Button>
-            {turn.mode !== "chat" && <Button variant="outlined" color="inherit" startIcon={<BarChartRoundedIcon />} sx={{ borderColor: "divider" }} aria-controls={reportId(turn.id)} onClick={() => openReport(sessionId, turn.id)}>{t.makeReport}</Button>}
+            <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={!firstSource} sx={{ borderColor: "divider" }}
+              onClick={(e) => firstSource && openInspector({ ...scope, refId: firstSource }, e.currentTarget)}>{t.openEvidence}</Button>
+            {!bare && <Button variant="outlined" color="inherit" startIcon={<BarChartRoundedIcon />} sx={{ borderColor: "divider" }} aria-controls={reportId(turn.id)} onClick={() => openReport(sessionId, turn.id)}>{t.makeReport}</Button>}
             <Tooltip title={copied === "fail" ? t.copyFailed : copied === "ok" ? t.copied : t.copyAnswer}>
               <IconButton aria-label={t.copyAnswer} onClick={copy} sx={{ width: 44, height: 44, color: "text.secondary" }}><ContentCopyRoundedIcon fontSize="small" /></IconButton>
             </Tooltip>
@@ -174,7 +185,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
             </Tooltip>
           </Stack>
           <Box role="status" sx={{ fontSize: "0.75rem", color: "text.secondary", minHeight: copied ? undefined : 0 }}>{copied === "fail" ? t.copyFailed : copied === "ok" ? t.copied : ""}</Box>
-          {turn.mode !== "chat" && <ReportArtifact sessionId={sessionId} turn={turn} />} {/* a memory answer is not a research report */}
+          {!bare && <ReportArtifact sessionId={sessionId} turn={turn} />} {/* a memory answer is not a research report */}
         </>
       )}
       {text && status === "refused" ? (

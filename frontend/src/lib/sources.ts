@@ -1,4 +1,4 @@
-import type { DataRecord, Provenance, RunUsage } from "./sse";
+import type { DataRecord, DocRef, EmptyFile, Provenance, RunUsage } from "./sse";
 
 // Display names of the evidence sources the backend reports by id. Kept in sync with backend/src/scientist/sources.py
 // (sources.test.ts parses that file and fails when the two lists differ).
@@ -116,4 +116,33 @@ export const usableUsage = (u: unknown): RunUsage | undefined => {
   const x = u as Partial<Record<keyof RunUsage, unknown>> | null;
   const n = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0;
   return x && typeof x === "object" && n(x.prompt_tokens) && n(x.completion_tokens) && (x.cost_usd === null || n(x.cost_usd)) && typeof x.estimated === "boolean" ? (x as RunUsage) : undefined;
+};
+
+const DOC_REFS = 12, EMPTY_FILES = 20, DOC_TEXT = 1200, DOC_QUOTE = 600, DOC_NAME = 500;
+const s = (v: unknown, max: number): v is string => typeof v === "string" && v.length > 0 && v.length <= max;
+/** Stored/streamed doc citations are unvalidated: keep the well-formed ones (bounded), drop bad entries. Never throws. */
+export const usableDocRefs = (v: unknown): DocRef[] =>
+  (Array.isArray(v) ? v : []).flatMap((r: unknown): DocRef[] => {
+    const x = (r && typeof r === "object" ? r : {}) as Record<string, unknown>;
+    if (!s(x.id, 20) || !s(x.file_id, 100) || !s(x.file_name, DOC_NAME) || typeof x.page !== "number" || !Number.isInteger(x.page) || x.page < 1 || typeof x.text !== "string") return [];
+    return [{ id: x.id, file_id: x.file_id, file_name: x.file_name, page: x.page, text: x.text.slice(0, DOC_TEXT), quote: typeof x.quote === "string" && x.quote ? x.quote.slice(0, DOC_QUOTE) : null }];
+  }).slice(0, DOC_REFS);
+export const usableEmptyFiles = (v: unknown): EmptyFile[] =>
+  (Array.isArray(v) ? v : []).flatMap((r: unknown): EmptyFile[] => {
+    const x = (r && typeof r === "object" ? r : {}) as Record<string, unknown>;
+    return s(x.file_id, 100) && s(x.file_name, DOC_NAME) ? [{ file_id: x.file_id, file_name: x.file_name }] : [];
+  }).slice(0, EMPTY_FILES);
+/** An answer with its doc citations and empty-file notes cleaned: a key with nothing usable left is removed (the turn stays). */
+export const cleanDocs = <A extends object>(a: A): A => {
+  const { doc_refs, empty_files, ...rest } = a as A & { doc_refs?: unknown; empty_files?: unknown };
+  const d = usableDocRefs(doc_refs), e = usableEmptyFiles(empty_files);
+  return { ...rest, ...(d.length ? { doc_refs: d } : {}), ...(e.length ? { empty_files: e } : {}) } as unknown as A;
+};
+
+/** The PDFs a docs turn asked about: stored on the turn in this browser, else rebuilt from the answer (a synced or older turn). */
+export const docsOf = (t: { docs?: { id: string; name: string }[]; answer?: { doc_refs?: unknown; empty_files?: unknown } }): { id: string; name: string }[] => {
+  if (t.docs?.length) return t.docs;
+  const seen = new Map<string, string>();
+  for (const d of [...usableDocRefs(t.answer?.doc_refs), ...usableEmptyFiles(t.answer?.empty_files)]) if (!seen.has(d.file_id)) seen.set(d.file_id, d.file_name);
+  return [...seen].map(([id, name]) => ({ id, name }));
 };

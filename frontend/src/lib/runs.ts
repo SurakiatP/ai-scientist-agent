@@ -31,7 +31,7 @@ export type RunView = {
 };
 export type RunBody = {
   session_id: string; turn_id: string; kind: "ask" | "analyze"; question: string;
-  mode?: AskMode; pack?: PackId; history?: HistoryTurn[]; memory?: MemoryTurn[]; plan?: Search[]; file_id?: string; file_name?: string;
+  mode?: AskMode; pack?: PackId; history?: HistoryTurn[]; memory?: MemoryTurn[]; plan?: Search[]; file_id?: string; file_name?: string; doc_ids?: string[];
 };
 export type QueueStatus = Record<"research" | "analysis", { running: number; limit: number; queued: number }>;
 export const ACTIVE: RunView["status"][] = ["queued", "running"];

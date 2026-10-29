@@ -111,6 +111,7 @@ export function FilesPage() {
       { label: t.download, onClick: () => download(f) },
       { label: t.rename, onClick: () => setDialog({ kind: "rename", id: f.id }) },
       ...(ANALYZABLE.includes(f.kind) ? [{ label: t.fileAnalyze, onClick: () => analyze(f) }] : []),
+      ...(f.kind === "pdf" ? [{ label: t.fileAskDocs, onClick: () => analyze(f) }] : []), // same handoff: the composer sees a PDF and switches to "from documents"
       ...(others.length ? [{ label: t.moveTo, header: true, onClick: () => {} }] : []),
       ...others.map((p) => ({ key: p.id, label: projectName(p, t), onClick: () => useFilesStore.getState().move(f.id, p.id) })),
       { label: t.deleteItem, onClick: () => setDialog({ kind: "delete", id: f.id }) },

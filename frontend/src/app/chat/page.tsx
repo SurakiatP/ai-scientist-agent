@@ -28,13 +28,14 @@ export default function ChatPage() {
   }, [hydrated, active]);
   const wide = useMediaQuery(useTheme().breakpoints.up("lg"));
   const iref = useInspector((s) => s.ref);
-  const inspecting = !!iref && iref.sessionId === active?.id && !!active.turns.find((x) => x.id === iref.turnId)?.answer?.references.some((x) => x.id === iref.refId);
+  const inspected = iref && iref.sessionId === active?.id ? active.turns.find((x) => x.id === iref.turnId)?.answer : undefined;
+  const inspecting = !!iref && iref.sessionId === active?.id && (!!inspected?.references.some((x) => x.id === iref.refId) || !!inspected?.doc_refs?.some((x) => x.id === iref.refId));
   const rref = useReportPanel((s) => s.ref);
   const reporting = !!rref && rref.sessionId === active?.id && !!active.turns.find((x) => x.id === rref.turnId)?.answer;
   useEffect(() => { useInspector.setState({ ref: null }); useReportPanel.setState({ ref: null }); }, [active?.id]); // a source or report from another chat never lingers
   // right panel: the source being inspected, else the running (or last) turn's real progress
   const turn = active?.turns.find((x) => x.status === "running") ?? active?.turns.at(-1);
-  const progress = turn && turn.mode !== "chat" && turn.status !== "awaiting_plan" && (turn.status === "running" || turn.progress.searches.length > 0 || !!turn.answer) ? <ProgressPanel turn={turn} sessionId={active?.id} /> : null;
+  const progress = turn && turn.mode !== "chat" && turn.mode !== "docs" && turn.status !== "awaiting_plan" && (turn.status === "running" || turn.progress.searches.length > 0 || !!turn.answer) ? <ProgressPanel turn={turn} sessionId={active?.id} /> : null;
   return (
     <AppShell asideWide={wide && reporting && !inspecting} aside={wide ? (inspecting ? <SourceInspector variant="panel" /> : reporting ? <ReportPanel variant="panel" /> : progress) : null}>
       {!wide && <SourceInspector variant="sheet" />}

@@ -13,11 +13,12 @@ import { Composer, useDraft, useMode, usePack } from "./Composer";
 import { EmptyChat } from "./EmptyChat";
 import { Thread } from "./Thread";
 
-const run = vi.hoisted(() => ({ sessionId: null as string | null, turnId: null as string | null, startRun: vi.fn(async () => {}), startAnalysis: vi.fn(async () => {}), approvePlan: vi.fn(async () => {}), cancelPlan: vi.fn(), stopRun: vi.fn(async () => true) }));
+const run = vi.hoisted(() => ({ sessionId: null as string | null, turnId: null as string | null, startRun: vi.fn(async () => {}), startAnalysis: vi.fn(async () => {}), startDocs: vi.fn(async () => {}), approvePlan: vi.fn(async () => {}), cancelPlan: vi.fn(), stopRun: vi.fn(async () => true) }));
 vi.mock("@/lib/run", () => ({ useTurnLocked: () => false, stopAllRuns: vi.fn(), useSending: () => false, useStoppable: () => false, stopTurn: vi.fn(async () => true), 
   useRunState: (sid: string) => ({ sessionId: sid, turnId: run.sessionId === sid ? run.turnId : null }), // per session: another session's run never blocks this one
   startRun: run.startRun,
   startAnalysis: run.startAnalysis,
+  startDocs: vi.fn(async () => {}),
   approvePlan: run.approvePlan,
   cancelPlan: run.cancelPlan,
   stopRun: run.stopRun,
@@ -132,7 +133,7 @@ describe("Composer", () => {
   it("attach accepts the analysis formats", () => {
     render(<Composer sessionId={mk()} />);
     expect(screen.getByRole("button", { name: t.attach })).toBeEnabled();
-    expect(document.querySelector('input[type="file"]')).toHaveAttribute("accept", ".csv,.xlsx,.parquet,.json");
+    expect(document.querySelector('input[type="file"]')).toHaveAttribute("accept", ".csv,.xlsx,.parquet,.json,.pdf");
   });
 
   it("uploads one file, shows its name and size, then sends an analysis", async () => {

@@ -13,12 +13,12 @@ import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import { create } from "zustand";
 import { useChatStore } from "@/lib/chat";
 import { useStorageFull } from "@/lib/history";
-import { registerUpload, useAttach } from "@/lib/files";
+import { isPdf, registerUpload, useAttach } from "@/lib/files";
 import { ease, enterPop } from "@/lib/motion";
 import { API_BASE } from "@/lib/config";
 import { useT, usePrefs } from "@/lib/prefs";
 import { PACK_IDS, packName, usablePack, type PackId } from "@/lib/packs";
-import { canStart, startAnalysis, startError, startRun, stopRun, useRunState } from "@/lib/run";
+import { canStart, startAnalysis, startDocs, startError, startRun, stopRun, useRunState } from "@/lib/run";
 import { UploadError, uploadFile, type AskMode } from "@/lib/sse";
 import { MAX_QUESTION } from "@/lib/strings";
 
@@ -42,8 +42,9 @@ export const usePack = create<{ by: Record<string, PackId | undefined>; set: (si
 }));
 export const focusComposer = () => document.getElementById("composer")?.focus();
 
-type Attached = { name: string; size: number; status: "uploading" | "ready" | "error"; fileId?: string; error?: string };
-const ACCEPT = ".csv,.xlsx,.parquet,.json";
+type Attached = { key: string; name: string; size: number; status: "uploading" | "ready" | "error"; fileId?: string; error?: string };
+const ACCEPT = ".csv,.xlsx,.parquet,.json,.pdf";
+const MAX_DOCS = 5; // the server takes 1-5 PDFs per question
 const formatSize = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
 
 export function Composer({ sessionId, large = false }: { sessionId: string; large?: boolean }) {
@@ -73,50 +74,70 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const [composing, setComposing] = useState(false);
   const [modeAnchor, setModeAnchor] = useState<HTMLElement | null>(null);
   const [packAnchor, setPackAnchor] = useState<HTMLElement | null>(null);
-  const [file, setFile] = useState<Attached | null>(null);
-  const packOff = mode === "chat" && !file; // an analysis (file attached) uses the field even from answer mode
+  // Either one data file (analysis) or 1-5 PDFs (questions about documents), never both.
+  const [files, setFiles] = useState<Attached[]>([]);
+  const docs = files.length > 0 && files.every((f) => isPdf(f.name));
+  const file = docs ? null : files[0] ?? null; // the data file, when that is what is attached
+  const packOff = docs || (mode === "chat" && !file); // documents ignore packs; an analysis (file attached) uses the field even from answer mode
+  const packOffText = docs ? t.packOffDocs : t.packOffChat;
   const picker = useRef<HTMLInputElement>(null);
-  const upload = useRef<AbortController | null>(null);
-  useEffect(() => () => upload.current?.abort(), []);
+  const uploads = useRef(new Map<string, AbortController>());
+  useEffect(() => { const u = uploads.current; return () => u.forEach((a) => a.abort()); }, []);
+  const seq = useRef(0);
+  const patchFile = (key: string, p: Partial<Attached>) => setFiles((fs) => fs.map((f) => (f.key === key ? { ...f, ...p } : f)));
   const mine = !!run.turnId, busy = mine; // this session has a live run here; other sessions run on their own
   // icon pops only on a send<->stop change in this session, never on mount or session switch
   const [sw, setSw] = useState({ sid: sessionId, mine, anim: false });
   if (sw.sid !== sessionId || sw.mine !== mine) setSw({ sid: sessionId, mine, anim: sw.sid === sessionId });
   const over = text.length > MAX_QUESTION;
-  const fileReady = !file || (file.status === "ready" && !!file.fileId);
+  const fileReady = files.every((f) => f.status === "ready" && !!f.fileId);
   const canSend = !busy && !over && fileReady && text.trim().length > 0;
   const pick = async (e: ChangeEvent<HTMLInputElement>) => {
-    const chosen = e.target.files?.[0];
+    const chosen = [...(e.target.files ?? [])];
     e.target.value = "";
-    if (!chosen || busy) return;
-    upload.current?.abort();
-    const ac = new AbortController();
-    upload.current = ac;
-    setErr("");
-    setFile({ name: chosen.name, size: chosen.size, status: "uploading" });
-    try {
-      const up = await uploadFile(chosen, ac.signal);
-      if (ac.signal.aborted) return;
-      setFile({ name: up.name, size: up.size, status: "ready", fileId: up.id });
-      registerUpload(up, useChatStore.getState().sessions.find((x) => x.id === sessionId)?.projectId); // the library keeps it even if the chip is removed
-    } catch (e: unknown) {
-      if (ac.signal.aborted) return;
-      setFile({ name: chosen.name, size: chosen.size, status: "error", error: e instanceof UploadError ? e.message : t.uploadFailed });
-    } finally {
-      if (upload.current === ac) upload.current = null;
+    if (!chosen.length || busy) return;
+    const pdfs = chosen.filter((f) => isPdf(f.name));
+    if (pdfs.length && pdfs.length < chosen.length) { setErr(t.attachOneKind); return; }
+    let next: File[];
+    if (!pdfs.length) { removeAll(); next = chosen.slice(0, 1); } // one data file replaces whatever was attached
+    else {
+      const keep = docs ? files : []; // PDFs add to PDFs; a data file is replaced
+      if (!docs) removeAll();
+      next = pdfs.slice(0, MAX_DOCS - keep.length);
+      setErr(pdfs.length > next.length ? t.docsMax : "");
+    }
+    if (!next.length) return;
+    const added = next.map((f) => ({ f, a: { key: `k${++seq.current}`, name: f.name, size: f.size, status: "uploading" as const } }));
+    setFiles((fs) => [...(pdfs.length && docs ? fs : []), ...added.map((x) => x.a)]);
+    for (const { f, a } of added) {
+      const ac = new AbortController();
+      uploads.current.set(a.key, ac);
+      try {
+        const up = await uploadFile(f, ac.signal);
+        if (ac.signal.aborted) continue;
+        patchFile(a.key, { status: "ready", fileId: up.id, name: up.name, size: up.size });
+        registerUpload(up, useChatStore.getState().sessions.find((x) => x.id === sessionId)?.projectId); // the library keeps it even if the chip is removed
+      } catch (e: unknown) {
+        if (ac.signal.aborted) continue;
+        patchFile(a.key, { status: "error", error: e instanceof UploadError ? e.message : t.uploadFailed });
+      } finally {
+        uploads.current.delete(a.key);
+      }
     }
   };
   const handoff = useAttach((s) => s.file); // "Analyze" from My files: already on the server, so no upload
   useEffect(() => {
     if (!handoff) return;
     useAttach.setState({ file: null });
-    setFile({ name: handoff.name, size: handoff.size, status: "ready", fileId: handoff.id }); // eslint-disable-line react-hooks/set-state-in-effect -- one-shot handoff from another page
+    const added: Attached = { key: `k${++seq.current}`, name: handoff.name, size: handoff.size, status: "ready", fileId: handoff.id };
+    setFiles((fs) => (isPdf(handoff.name) && fs.length > 0 && fs.every((f) => isPdf(f.name)) ? [...fs.filter((f) => f.fileId !== handoff.id), added].slice(-MAX_DOCS) : [added]));
     setTimeout(focusComposer, 0);
   }, [handoff]);
-  const removeFile = () => {
-    upload.current?.abort();
-    upload.current = null;
-    setFile(null);
+  const removeAll = () => { uploads.current.forEach((a) => a.abort()); uploads.current.clear(); setFiles([]); };
+  const removeFile = (key: string) => {
+    uploads.current.get(key)?.abort();
+    uploads.current.delete(key);
+    setFiles((fs) => fs.filter((f) => f.key !== key));
     setErr("");
   };
   const send = () => {
@@ -124,17 +145,18 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
     const q = text.trim();
     if (!canStart(sessionId).ok) { setErr(t.busyElsewhere); return; } // text stays; never dropped silently
     setErr("");
-    const attached = file;
+    const attached = files;
     setText("");
-    setFile(null);
+    setFiles([]);
     const restore = (e: unknown) => {
       if ((e as { uncertain?: boolean })?.uncertain) { useStartErr.getState().set(sessionId, t.sendUncertain); return; } // it may be running: no draft to resend twice
       if (!useDraft.getState().drafts[sessionId]) set(sessionId, q); // restore unless the user already typed again
-      if (attached) setFile((cur) => cur ?? attached);
+      if (attached.length) setFiles((cur) => (cur.length ? cur : attached));
       // through the store: the first message of an empty chat remounts this composer, and local state would be lost
       useStartErr.getState().set(sessionId, e instanceof Error && e.message === "busy" ? t.busyElsewhere : startError(e) ?? t.startFailed);
     };
-    if (attached?.status === "ready" && attached.fileId) startAnalysis(sessionId, q, attached.fileId, attached.name, pack).catch(restore);
+    if (docs && attached.length) startDocs(sessionId, q, attached.map((f) => ({ id: f.fileId!, name: f.name }))).catch(restore);
+    else if (attached[0]?.status === "ready" && attached[0].fileId) startAnalysis(sessionId, q, attached[0].fileId, attached[0].name, pack).catch(restore);
     else startRun(sessionId, q, { mode, pack }).catch(restore);
   };
   const onKeyDown = (e: KeyboardEvent) => {
@@ -142,11 +164,11 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
     e.preventDefault();
     send();
   };
-  const note = over ? t.tooLong : err || startErr || (file?.status === "error" ? file.error || t.uploadFailed : file?.status === "ready" ? t.analysisModeNote : "");
+  const note = over ? t.tooLong : err || startErr || (files.find((f) => f.status === "error")?.error || (files.some((f) => f.status === "error") ? t.uploadFailed : "") || (docs ? t.docsModeNote : file?.status === "ready" ? t.analysisModeNote : ""));
   const counter = text.length >= MAX_QUESTION * 0.8;
   return (
     <Box sx={{ width: "100%" }}>
-      <input ref={picker} type="file" accept={ACCEPT} hidden onChange={pick} />
+      <input ref={picker} type="file" accept={ACCEPT} multiple hidden onChange={pick} />
       <Box sx={{
         display: "flex", alignItems: "stretch", bgcolor: "background.paper", border: 1, borderRadius: { xs: 3, sm: 4 },
         borderColor: large ? "color-mix(in srgb, var(--mui-palette-primary-main) 45%, var(--mui-palette-divider))" : "divider",
@@ -159,25 +181,25 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
           </IconButton>
         </Box>
         <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", gap: 0.5, py: 1.25, pl: 1.5, pr: 1 }}> {/* py matches the attach column (my 0.5 + py 0.75) so both centre on the same line */}
-          {file && (
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1, minHeight: 44, px: 1, border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.shell" }}>
-              <DescriptionOutlinedIcon fontSize="small" sx={{ color: file.status === "error" ? "error.main" : "primary.main", flexShrink: 0 }} />
+          {files.map((f) => (
+            <Box key={f.key} sx={{ display: "flex", alignItems: "center", gap: 1, minHeight: 44, px: 1, border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.shell" }}>
+              <DescriptionOutlinedIcon fontSize="small" sx={{ color: f.status === "error" ? "error.main" : "primary.main", flexShrink: 0 }} />
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={file.name}>{file.name}</Typography>
-                <Typography component="span" aria-live="polite" sx={{ display: "block", fontSize: "0.6875rem", lineHeight: 1.5, color: file.status === "error" ? "error.main" : "text.secondary" }}>
-                  {file.status === "uploading" ? t.uploadingFile : file.status === "error" ? t.uploadFailed : formatSize(file.size)}
+                <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.name}>{f.name}</Typography>
+                <Typography component="span" aria-live="polite" sx={{ display: "block", fontSize: "0.6875rem", lineHeight: 1.5, color: f.status === "error" ? "error.main" : "text.secondary" }}>
+                  {f.status === "uploading" ? t.uploadingFile : f.status === "error" ? t.uploadFailed : formatSize(f.size)}
                 </Typography>
               </Box>
-              {file.status === "uploading" && <CircularProgress size={16} sx={{ flexShrink: 0 }} aria-hidden />}
-              <IconButton aria-label={`${t.removeFile}: ${file.name}`} onClick={removeFile} size="small" sx={{ minWidth: 44, minHeight: 44, flexShrink: 0 }}>
+              {f.status === "uploading" && <CircularProgress size={16} sx={{ flexShrink: 0 }} aria-hidden />}
+              <IconButton aria-label={`${t.removeFile}: ${f.name}`} onClick={() => removeFile(f.key)} size="small" sx={{ minWidth: 44, minHeight: 44, flexShrink: 0 }}>
                 <CloseRoundedIcon fontSize="small" />
               </IconButton>
             </Box>
-          )}
+          ))}
           <Box sx={{ display: "flex", flexWrap: { xs: "wrap", sm: "nowrap" }, alignItems: "center", columnGap: 1, rowGap: 0.5 }}>
             <InputBase
               id="composer" multiline fullWidth minRows={1} maxRows={10} value={text}
-              placeholder={file ? t.analysisPlaceholder : t.askPlaceholder} onChange={(e) => { setText(e.target.value); setErr(""); }} onKeyDown={onKeyDown}
+              placeholder={docs ? t.docsPlaceholder : file ? t.analysisPlaceholder : t.askPlaceholder} onChange={(e) => { setText(e.target.value); setErr(""); }} onKeyDown={onKeyDown}
               onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
               slotProps={{ input: { "aria-label": t.composerLabel, "aria-describedby": "composer-note" } }}
               sx={{ flex: { xs: "1 1 100%", sm: "1 1 0" }, minWidth: 0, minHeight: 44, px: 0.5, py: 0, fontSize: "1rem", lineHeight: 1.6, alignItems: "center", "& textarea": { py: "9px" } }}
@@ -189,7 +211,11 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
             )}
             <Box sx={{ flex: { xs: 1, sm: "none" } }} />
             {/* deep research = solid fill (the user must see at a glance it is the heavier mode); general search stays outlined */}
-            <Button color="inherit" variant={mode === "deep" ? "contained" : "outlined"} disabled={!!file} aria-haspopup="menu" aria-expanded={!!modeAnchor}
+            {docs ? ( // fixed: PDFs always answer from the documents, so there is nothing to choose
+              <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, borderRadius: 99, border: 1, borderColor: "primary.main", bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)", color: "text.primary", fontSize: "0.875rem", fontWeight: 600, px: 1.5, minHeight: 36, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap" }}>
+                <DescriptionOutlinedIcon sx={{ fontSize: 20, color: "primary.main" }} aria-hidden />{t.modeDocs}
+              </Box>
+            ) : <Button color="inherit" variant={mode === "deep" ? "contained" : "outlined"} disabled={!!file} aria-haspopup="menu" aria-expanded={!!modeAnchor}
               aria-label={`${t.modeLabel}: ${modeName(mode)}`} onClick={(e) => setModeAnchor(e.currentTarget)}
               startIcon={mode === "chat" ? <ChatBubbleOutlineRoundedIcon sx={{ color: "primary.main" }} /> : <LayersOutlinedIcon sx={{ color: mode === "deep" ? "inherit" : "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
               sx={{
@@ -204,7 +230,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
                     : { borderColor: "divider", fontWeight: 400 }),
               }}>
               {modeName(mode)}
-            </Button>
+            </Button>}
             <Menu anchorEl={modeAnchor} open={!!modeAnchor} onClose={() => setModeAnchor(null)} slotProps={{ list: { "aria-label": t.chooseMode } }}>
               {(["deep", "quick", "chat"] as const).map((m) => {
                 const off = m === "chat" && !hasMemory;
@@ -218,7 +244,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               })}
             </Menu>
             {/* the field: same chip + menu pattern as the mode; outlined = General, tinted = a field is set. Answer-from-memory searches nothing, so it has no field */}
-            <Tooltip title={packOff ? t.packOffChat : ""}>
+            <Tooltip title={packOff ? packOffText : ""}>
               <Button color="inherit" variant="outlined" aria-disabled={packOff || undefined} aria-haspopup="menu" aria-expanded={!!packAnchor} aria-describedby={packOff ? packOffId : undefined}
                 aria-label={`${t.packLabel}: ${packText(pack)}`} onClick={(e) => { if (!packOff) setPackAnchor(e.currentTarget); }}
                 startIcon={<ScienceOutlinedIcon sx={{ color: packOff ? "inherit" : "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
@@ -235,7 +261,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
                 <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis" }}>{packText(pack)}</Box>
               </Button>
             </Tooltip>
-            {packOff && <Box id={packOffId} component="span" hidden>{t.packOffChat}</Box>}
+            {packOff && <Box id={packOffId} component="span" hidden>{packOffText}</Box>}
             <Menu anchorEl={packAnchor} open={!!packAnchor} onClose={() => setPackAnchor(null)} slotProps={{ list: { "aria-label": t.choosePack } }}>
               {([undefined, ...PACK_IDS] as (PackId | undefined)[]).map((p) => (
                 <MenuItem key={p ?? "general"} selected={p === pack} role="menuitemradio" aria-checked={p === pack} sx={{ minHeight: 44 }}

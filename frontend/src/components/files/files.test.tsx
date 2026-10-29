@@ -22,6 +22,15 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 const openMenu = (n: number, name = `file${n}.csv`) => fireEvent.click(screen.getByRole("button", { name: `${t.fileActions}: ${name}` }));
 
 describe("My files", () => {
+  it("a PDF offers Ask about this document, a CSV does not", () => {
+    useFilesStore.setState({ files: [{ ...entry(1), name: "paper.pdf", kind: "pdf" }, entry(2)] });
+    vi.stubGlobal("fetch", vi.fn(async () => reply(200, meta(1))));
+    render(<FilesPage />);
+    openMenu(1, "paper.pdf");
+    expect(screen.getByRole("menuitem", { name: t.fileAskDocs })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: t.fileAnalyze })).toBeNull();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  });
   it("shows the empty state with an upload button", () => {
     render(<FilesPage />);
     expect(screen.getByText(t.filesEmptyTitle)).toBeTruthy();

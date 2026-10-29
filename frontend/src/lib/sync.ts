@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { API_BASE, DEFER_HYDRATION, gate } from "./config";
 import { capSessions, isProject, isSession, isTurn, MAX_SESSIONS, PERSONAL, personal, useChatStore, type Project, type RefusalCode, type Session, type Turn } from "./chat";
+import { cleanDocs } from "./sources";
 import { usablePack } from "./packs";
 import { isFileEntry, useFilesStore, type FileEntry } from "./files";
 import { safeStorage } from "./history";
@@ -80,11 +81,11 @@ export const toTurn = (r: Row): Turn | null => {
   if (status === "running" && !runId && Date.now() - ms(r.updated_at) > STALE_RUNNING_MS) status = "interrupted"; // its tab died mid-run (a server run says so itself)
   const t = {
     id: str(r.id), question: str(r.question), createdAt: ms(r.created_at), status, progress: { ...emptyProgress, ...prog } as Turn["progress"],
-    ...(r.mode === "deep" || r.mode === "quick" || r.mode === "chat" ? { mode: r.mode } : {}),
+    ...(r.mode === "deep" || r.mode === "quick" || r.mode === "chat" || r.mode === "docs" ? { mode: r.mode } : {}),
     ...(usablePack(r.pack) ? { pack: usablePack(r.pack) } : {}),
     ...(analysis ? { kind: "analysis" as const } : {}),
     ...(runId ? { runId } : {}), ...(err === "cut_off" || err === "failed" || err === "interrupted" || err === "stopped" ? { errCode: err } : {}),
-    ...(r.plan ? { plan: r.plan } : {}), ...(r.answer ? { answer: r.answer } : {}), ...(r.analysis ? { analysis: r.analysis } : {}),
+    ...(r.plan ? { plan: r.plan } : {}), ...(r.answer ? { answer: r.answer && typeof r.answer === "object" && !Array.isArray(r.answer) ? cleanDocs(r.answer) : r.answer } : {}), ...(r.analysis ? { analysis: r.analysis } : {}),
     ...(r.refused ? { refused: str(r.refused) } : {}), ...(typeof code === "string" ? { refusedCode: code as RefusalCode } : {}), ...(r.error ? { error: str(r.error) } : {}),
   } as Turn;
   return isTurn(t) ? t : null;

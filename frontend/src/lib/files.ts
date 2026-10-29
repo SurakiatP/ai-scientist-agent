@@ -65,7 +65,9 @@ export const useFilesStore = create<State>()(
 export const registerUpload = (up: { id: string; name: string; size: number }, projectId = PERSONAL) =>
   useFilesStore.getState().add({ id: up.id, name: up.name, size: up.size, kind: kindOf(up.name), createdAt: Date.now(), projectId });
 
-// "Analyze" hands a library file to the composer without uploading again. In memory only.
+export const isPdf = (name: string) => kindOf(name) === "pdf";
+
+// "Analyze" / "Ask about this document" hand a library file to the composer without uploading again. In memory only.
 export const useAttach = create<{ file: { id: string; name: string; size: number } | null }>(() => ({ file: null }));
 
 // Same rules as the server (PATCH /v1/files/{id}) so most mistakes are caught before the request.

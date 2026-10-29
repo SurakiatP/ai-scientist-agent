@@ -9,7 +9,8 @@ import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import { useChatStore, type Turn } from "@/lib/chat";
 import { newId } from "@/lib/history";
 import { usePrefs, useT } from "@/lib/prefs";
-import { canStart, startAnalysis, startError, startRun, useRunState } from "@/lib/run";
+import { docsOf } from "@/lib/sources";
+import { canStart, startAnalysis, startDocs, startError, startRun, useRunState } from "@/lib/run";
 import { focusComposer, useDraft, useStartErr } from "./Composer";
 import { MAX_QUESTION } from "@/lib/strings";
 
@@ -32,7 +33,7 @@ export async function copyText(text: string): Promise<boolean> {
 
 // Same run the first send would start: analysis turns keep their file, others keep their mode.
 const ask = (sessionId: string, turn: Turn, question: string) =>
-  turn.analysis ? startAnalysis(sessionId, question, turn.analysis.fileId, turn.analysis.fileName, usablePack(turn.pack)) : startRun(sessionId, question, { mode: turn.mode, pack: usablePack(turn.pack) });
+  turn.mode === "docs" ? startDocs(sessionId, question, docsOf(turn)) : turn.analysis ? startAnalysis(sessionId, question, turn.analysis.fileId, turn.analysis.fileName, usablePack(turn.pack)) : startRun(sessionId, question, { mode: turn.mode, pack: usablePack(turn.pack) });
 
 const fine = "@media (hover: hover) and (pointer: fine)";
 const btn = { width: 44, height: 44, color: "text.secondary" };

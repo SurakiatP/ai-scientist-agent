@@ -6,7 +6,7 @@ import { emptyProgress, reduce, type Progress } from "./progress";
 import { ACTIVE, attachRun, cancelRun, getRun, refreshLoad, submitRun, type RunBody, type RunView } from "./runs";
 import { usablePack, type PackId } from "./packs";
 import { streamAnalyze, streamAsk, type AnalyzeEvent, type ApiError, type AskEvent, type AskMode, type HistoryTurn, type MemoryRef, type MemoryTurn, type Reference, type Search } from "./sse";
-import { usableProvenance, usableUsage } from "./sources";
+import { cleanDocs, usableProvenance, usableUsage } from "./sources";
 import { strings } from "./strings";
 import { recordServerTurn, refreshNow, reprobeSync, settleSession, toTurn, useSync } from "./sync";
 
@@ -115,14 +115,14 @@ const errorOutcome = (e: ApiError): Patch =>
 const askOutcome = (e: AskEvent): Patch | null => {
   if (e.type === "final_answer") {
     const usage = usableUsage(e.usage), provenance = usableProvenance(e.provenance);
-    return { status: "done", answer: { content: e.content, references: e.references, ...(e.records?.length ? { records: e.records } : {}), ...(usage ? { usage } : {}), ...(provenance ? { provenance } : {}) } };
+    return { status: "done", answer: { content: e.content, references: e.references, ...(e.records?.length ? { records: e.records } : {}), ...cleanDocs({ doc_refs: e.doc_refs, empty_files: e.empty_files }), ...(usage ? { usage } : {}), ...(provenance ? { provenance } : {}) } };
   }
   return e.type === "refused" ? { status: "refused", refused: e.reason, refusedCode: refusalCode(e.code) }
   : e.type === "error" ? errorOutcome(e) : null;
 };
 
 // The real ask stream, shared by startRun (direct runs) and approvePlan (a reviewed plan).
-async function runAsk(question: string, c: AbortController, opts: { mode: AskMode; pack?: PackId; history: HistoryTurn[]; plan?: Search[]; memory?: MemoryTurn[] }, patch: (p: Patch) => void): Promise<void> {
+async function runAsk(question: string, c: AbortController, opts: { mode: AskMode; pack?: PackId; history: HistoryTurn[]; plan?: Search[]; memory?: MemoryTurn[]; docIds?: string[] }, patch: (p: Patch) => void): Promise<void> {
   let progress: Progress = emptyProgress;
   let answer: Patch["answer"];
   let outcome: Patch | null = null;
@@ -276,6 +276,7 @@ async function sharedRun(sessionId: string, body: RunBody, local: Turn, existing
     t = body.kind === "analyze" && !row.analysis ? { ...row, kind: "analysis", analysis: analysisFrom(body.file_id ?? "", body.file_name) } : row;
     const seed = waitingFrom(run);
     t = seed ? { ...t, progress: seed } : t;
+    if (local.docs) t = { ...t, docs: local.docs }; // the server row does not carry the PDFs' names
     const lk = locks.get(sessionId); if (lk?.turnId === turnId) lk.activeRun = run.id;
     runOf.set(turnId, run.id); owners.set(turnId, true); addSubmitted(run.id);
     if (store().sessions.find((x) => x.id === sessionId)?.turns.some((x) => x.id === turnId)) store().patchTurn(sessionId, turnId, { ...t, createdAt: local.createdAt }); // M1: it is already shown: update, never add twice
@@ -340,6 +341,29 @@ export async function startRun(sessionId: string, question: string, opts: { mode
     } else {
       await runAsk(question, c, mode === "chat" ? { mode, history: [], memory: memoryFrom(session) } : { mode, ...withPack, history: historyFrom(session) }, patch);
     }
+  } finally {
+    release(sessionId);
+  }
+}
+
+/** Ask questions about 1-5 attached PDFs. Never reviews a plan, never searches: one model call over the retrieved passages. */
+export async function startDocs(sessionId: string, question: string, docs: { id: string; name: string }[]): Promise<void> {
+  if (!canStart(sessionId).ok) throw new Error("busy");
+  const session = useChatStore.getState().sessions.find((x) => x.id === sessionId);
+  if (!session) throw new Error("no such session");
+  if (!docs.length) throw new Error("no documents");
+  const turnId = newId(), c = new AbortController(), store = () => useChatStore.getState();
+  const local: Turn = { id: turnId, question, createdAt: Date.now(), status: "running", progress: emptyProgress, mode: "docs", docs };
+  take(sessionId, turnId, c);
+  try {
+    if (shared()) {
+      if (!session.title) store().renameSession(sessionId, question);
+      await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question, mode: "docs", doc_ids: docs.map((d) => d.id) }, local, false, c).catch((e) => { if (!c.signal.aborted) throw e; });
+      return;
+    }
+    store().addTurn(sessionId, local);
+    const patch = (p: Patch) => { if (leaving) return; try { store().patchTurn(sessionId, turnId, p); } catch {} };
+    await runAsk(question, c, { mode: "docs", history: [], docIds: docs.map((d) => d.id) }, patch);
   } finally {
     release(sessionId);
   }

@@ -16,6 +16,9 @@ const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./,
 const find = (s: ChatState, r: InspectorRef | null) =>
   r ? s.sessions.find((x) => x.id === r.sessionId)?.turns.find((x) => x.id === r.turnId)?.answer?.references.find((x) => x.id === r.refId) : undefined;
 
+const answerOf = (s: ChatState, r: InspectorRef | null) => (r ? s.sessions.find((x) => x.id === r.sessionId)?.turns.find((x) => x.id === r.turnId)?.answer : undefined);
+const findDoc = (s: ChatState, r: InspectorRef | null) => (find(s, r) ? undefined : answerOf(s, r)?.doc_refs?.find((x) => x.id === r?.refId)); // a docs answer has no papers: ids never collide
+
 function Body() {
   const t = useT();
   const r = useInspector((s) => s.ref);
@@ -25,6 +28,7 @@ function Body() {
     const ans = r && found ? s.sessions.find((x) => x.id === r.sessionId)?.turns.find((x) => x.id === r.turnId)?.answer : undefined;
     return !!ans && ans.content.includes(`[${found!.id}]`) && (!!found!.checks?.length || (found!.paper.abstract === null && ans.references.some((x) => !!x.checks?.length)));
   });
+  const doc = useChatStore((s) => findDoc(s, r));
   const btn = useRef<HTMLButtonElement>(null);
   useEffect(() => { btn.current?.focus(); }, [r?.refId, r?.turnId]);
   useEffect(() => {
@@ -34,6 +38,28 @@ function Body() {
     document.addEventListener("keydown", esc);
     return () => document.removeEventListener("keydown", esc);
   }, [r, close]);
+  if (r && doc) return (
+    <Stack spacing={2} sx={{ p: 2.5 }}>
+      <Stack direction="row" sx={{ alignItems: "flex-start", justifyContent: "space-between", gap: 1 }}>
+        <Typography component="h2" sx={{ fontSize: "0.75rem", fontWeight: 700, letterSpacing: "0.03em", color: "text.secondary", pt: 1.5 }}>{t.docTitle} [{doc.id}]</Typography>
+        <IconButton ref={btn} sx={{ minWidth: 44, minHeight: 44 }} aria-label={t.closeInspector} onClick={close}><CloseRoundedIcon /></IconButton>
+      </Stack>
+      <Box>
+        <Typography sx={{ fontWeight: 700, fontSize: "1.0625rem", lineHeight: 1.45, overflowWrap: "anywhere" }}>{doc.file_name}</Typography>
+        <Typography sx={{ fontSize: "0.875rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{t.docPage.replace("{n}", String(doc.page))}</Typography>
+      </Box>
+      {doc.quote && (
+        <Box component="section">
+          <Typography component="h3" sx={{ fontSize: "0.75rem", color: "text.secondary", mb: 0.75 }}>{t.docQuote}</Typography>
+          <Box component="blockquote" sx={{ m: 0, px: 1.5, py: 1, bgcolor: "surface.shell", border: 1, borderColor: "divider", borderRadius: 1, fontSize: "0.875rem", lineHeight: 1.7, overflowWrap: "anywhere" }}>{doc.quote}</Box>
+        </Box>
+      )}
+      <Box component="section">
+        <Typography component="h3" sx={{ fontSize: "0.75rem", color: "text.secondary", mb: 0.75 }}>{t.docPassage}</Typography>
+        <Typography sx={{ fontSize: "0.875rem", lineHeight: 1.7, overflowWrap: "anywhere", whiteSpace: "pre-wrap" }}>{doc.text}</Typography>
+      </Box>
+    </Stack>
+  );
   if (!r || !found) return null;
   const p = found.paper, link = paperLink(p), doi = doiOf(p), hostUrl = httpUrl(p.url) ?? link, h = hostUrl ? host(hostUrl) : "";
   const ok = found.status === "verified";
@@ -93,7 +119,7 @@ export function SourceInspector({ variant }: { variant: "panel" | "sheet" }) {
   const r = useInspector((s) => s.ref);
   const close = useInspector((s) => s.close);
   const t = useT();
-  const found = useChatStore((s) => find(s, r));
+  const found = useChatStore((s) => find(s, r) ?? findDoc(s, r));
   const open = !!found;
   useEffect(() => { if (r && !found) close(); }, [r, found, close]); // the source is gone (deleted chat/turn): leave nothing behind
   if (variant === "panel") return open ? <Box key={r?.refId} sx={enterSlide}><Body /></Box> : null;
