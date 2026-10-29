@@ -81,6 +81,7 @@ def test_packs_cancel_artifacts():
 @pytest.mark.parametrize("status,body,code,msg", [
     (401, {"detail": "invalid or missing API key"}, None, "invalid or missing API key"),
     (429, {"detail": "queue busy", "code": "client_busy"}, "client_busy", "queue busy"),
+    (429, {"detail": "rate limit exceeded; slow down", "code": "rate_limited"}, "rate_limited", "slow down"),
     (422, {"detail": "refused: out of scope", "code": "refused"}, "refused", "refused: out of scope"),
     (422, {"detail": [{"loc": ["body", "question"], "msg": "too short"}]}, None, "too short"),
     (502, {"detail": "no plan"}, None, "no plan"),
@@ -232,3 +233,8 @@ def test_error_pickles_and_key_not_leaked():
 def test_py_typed_present():
     import pathlib
     assert (pathlib.Path(sdk.__file__).parent / "py.typed").exists()
+
+
+def test_run_carries_the_refusal_or_error_code():
+    assert client(lambda r: httpx.Response(200, json={**RUN, "status": "refused", "code": "off_topic"})).run(RID).code == "off_topic"
+    assert client(lambda r: httpx.Response(200, json=RUN)).run(RID).code is None  # an older server

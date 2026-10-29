@@ -104,6 +104,7 @@ class Run:
     error: str | None
     answer: Answer | None
     progress: Progress | None
+    code: str | None = None  # refusal or error code of the run, when there is one
 
     @property
     def done(self) -> bool:
