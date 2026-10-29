@@ -11,13 +11,14 @@ down_revision = "0008"
 branch_labels = None
 depends_on = None
 
-NEW = ("worker", "lease_until", "attempt", "cancel_requested", "pool", "served_at")
+NEW = ("worker", "lease_until", "attempt", "crashes", "cancel_requested", "pool", "served_at")
 
 
 def upgrade() -> None:
     op.add_column("runs", sa.Column("worker", sa.Text))
     op.add_column("runs", sa.Column("lease_until", sa.DateTime(timezone=True)))
     op.add_column("runs", sa.Column("attempt", sa.Integer, nullable=False, server_default="1"))
+    op.add_column("runs", sa.Column("crashes", sa.Integer, nullable=False, server_default="0"))  # restarts after a crash; attempt also counts graceful releases
     op.add_column("runs", sa.Column("cancel_requested", sa.Boolean, nullable=False, server_default=sa.false()))
     op.add_column("runs", sa.Column("pool", sa.Text))
     op.add_column("runs", sa.Column("served_at", sa.DateTime(timezone=True)))

@@ -415,10 +415,10 @@ async def test_shutdown_interrupts_its_runs_and_the_next_boot_sweeps_only_expire
         await until(c, rid, "running")
         # a crashed process leaves rows behind: fake them with runs that no task owns (lease long gone)
         ghost, gt = u(), u()
-        sql(newdb, "insert into runs(id, client_id, session_id, turn_id, kind, status, pool, attempt, lease_until) "
-            "values (%s,%s,%s,%s,'ask','running','research',2, now() - interval '1 minute')", ghost, u(), sid, gt)
+        sql(newdb, "insert into runs(id, client_id, session_id, turn_id, kind, status, pool, attempt, crashes, lease_until) "
+            "values (%s,%s,%s,%s,'ask','running','research',2,1, now() - interval '1 minute')", ghost, u(), sid, gt)
         sql(newdb, "insert into turns(id, session_id, idx, question, status) values (%s,%s,9,'q','running')", gt, sid)
-        for _ in range(100):  # the scheduler's sweep ends the attempt-2 ghost
+        for _ in range(100):  # the scheduler's sweep ends the ghost that already crashed once
             if (await c.get(f"/v1/runs/{ghost}")).json()["status"] == "interrupted":
                 break
             await asyncio.sleep(0.05)

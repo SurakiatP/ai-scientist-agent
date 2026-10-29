@@ -122,7 +122,7 @@ answers stay in the browser (localStorage). The app binds to localhost and has n
   localhost only; revisit before any public exposure.
 - `unknown` on a reference means the lookup service did not answer (rate limit, 5xx or timeout), not that the
   paper is fake. Lookups are capped per host (Crossref and doi.org 2, NCBI 3, arXiv 1 at a time, shared by all
-  runs), all arXiv ids of a run go in one request, and a 429/503 with `Retry-After` is retried once (wait capped
+  runs; per process, so N workers allow N times as many), all arXiv ids of a run go in one request, and a 429/503 with `Retry-After` is retried once (wait capped
   at 5 s). A made-up DOI is `unverified` when the service answers and `unknown`
   when it does not, so `unknown` will appear occasionally.
 - Not verified: a live OpenRouter run with `openai/gpt-6-luna`, and its prompt-cache behaviour. Each model call

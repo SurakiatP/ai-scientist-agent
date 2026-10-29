@@ -51,11 +51,12 @@ class PgBus:
     def __init__(self, settings: Settings, db: Database):
         u = build_url(settings)  # same URL and password resolution as the engine
         self._db = db  # notify() goes through its pool; the dedicated connection below only listens
-        self._conninfo = psycopg.conninfo.make_conninfo(
-            host=u.host, port=u.port, user=u.username, password=u.password, dbname=u.database,
-            connect_timeout=settings.db_connect_timeout_s, options="-c idle_session_timeout=0",  # prod sets 10 min
-            keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3,
-            **{k: v for k, v in u.query.items() if isinstance(v, str)})  # e.g. sslmode
+        self._conninfo = psycopg.conninfo.make_conninfo(**{
+            "host": u.host, "port": u.port, "user": u.username, "password": u.password, "dbname": u.database,
+            **{k: v for k, v in u.query.items() if isinstance(v, str)},  # e.g. sslmode
+            # the bus's own settings come last and win over a same-named URL parameter
+            "connect_timeout": settings.db_connect_timeout_s, "options": "-c idle_session_timeout=0",  # prod sets 10 min
+            "keepalives": 1, "keepalives_idle": 30, "keepalives_interval": 10, "keepalives_count": 3})
         self._subs: dict[str, set[asyncio.Queue]] = {c: set() for c in CHANNELS}
         self._task: asyncio.Task | None = None
         self._up = asyncio.Event()

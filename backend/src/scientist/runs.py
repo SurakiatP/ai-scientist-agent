@@ -505,13 +505,20 @@ class RunService:
         self._loops = [asyncio.create_task(c) for c in (self._scheduler(), self._cancels(), self._renewer())]
 
     async def _scheduler(self) -> None:
+        failing = False
         async with self._listen("runs") as it:
             while True:
                 try:
                     await self._sweep()
                     await self._claim_all()
-                except Exception:
-                    log.exception("scheduler pass failed")
+                    failing = False
+                except Exception as e:
+                    # the first failure with its traceback; repeats (e.g. the database is down) as one line until a pass succeeds
+                    if failing:
+                        log.warning("scheduler pass still failing: %r", e)
+                    else:
+                        log.exception("scheduler pass failed")
+                    failing = True
                 await self._wait(it, self.st.settings.scheduler_poll_seconds)
 
     async def _claim_all(self) -> None:
@@ -603,10 +610,11 @@ class RunService:
             elif not run.ending:
                 run.cancel_lost()
 
-    async def _requeue(self, s, pred) -> None:
+    async def _requeue(self, s, pred, graceful: bool = False) -> None:
         """Running runs matching `pred` (an expired lease, or this process's own at shutdown) leave their owner: a
-        requested cancel stops them, attempts left send them back to the queue with a `restarted` event, the last
-        attempt interrupts them and their turns."""
+        requested cancel stops them. A graceful release always goes back to the queue; a crash (expired lease) does
+        so only while crashes are left, then interrupts the run and its turns. Both send a `restarted` event, and
+        `attempt` always counts up (the fencing token) while `crashes` counts only real crashes."""
         c, st = m.runs.c, self.st.settings
         stopped = [r for r in await s.execute(sa.update(m.runs).where(pred, c.cancel_requested)
                                               .values(status="stopped", finished_at=sa.func.now(), error="The run was stopped.")
@@ -618,8 +626,10 @@ class RunService:
             await self._notify("runs", "stopped", s)
         if ids := [r.turn_id for r in stopped if r.turn_id]:
             await self._end_turns(s, ids, "stopped", "The run was stopped.", "stopped")
-        again = (await s.execute(sa.update(m.runs).where(pred, c.attempt < st.run_max_attempts)
-                                 .values(status="queued", attempt=c.attempt + 1, worker=None, lease_until=None, started_at=None)
+        left = c.crashes < st.run_max_attempts - 1
+        again = (await s.execute(sa.update(m.runs).where(pred, sa.true() if graceful else left)
+                                 .values(status="queued", attempt=c.attempt + 1, crashes=c.crashes + (0 if graceful else 1),
+                                         worker=None, lease_until=None, started_at=None)
                                  .returning(c.id))).scalars().all()
         for rid in again:
             await self._event(s, str(rid), {"type": "restarted"})
@@ -627,7 +637,7 @@ class RunService:
             await self._restart_turns(s, turns)
         if again:
             await self._notify("runs", "restarted", s)
-        ended = list(await s.execute(sa.update(m.runs).where(pred, c.attempt >= st.run_max_attempts)
+        ended = list(await s.execute(sa.update(m.runs).where(pred, ~left)
                                      .values(status="interrupted", finished_at=sa.func.now()).returning(c.id, c.turn_id)))
         for r in ended:
             await self._notify("run_events", f"{r.id}:end", s)
@@ -640,13 +650,16 @@ class RunService:
         """Any process: a running run whose lease ran out is restarted, stopped or interrupted (see _requeue)."""
         c = m.runs.c
         async with self.data.tx() as s:
+            # rows a not yet upgraded process inserted without a pool get the one migration 0009 would give them
+            await s.execute(sa.update(m.runs).where(c.pool.is_(None), c.status.in_(("queued", "running")))
+                            .values(pool=sa.case((sa.or_(c.kind == "analyze", c.mode == "docs"), "analysis"), else_="research")))
             await self._requeue(s, sa.and_(c.status == "running", sa.or_(c.lease_until.is_(None), c.lease_until < sa.func.now())))
 
     async def _release(self) -> None:
         """Graceful shutdown: this process's runs (also ones claimed but not yet launched) go back to the queue."""
         c = m.runs.c
         async with self.data.tx() as s:
-            await self._requeue(s, sa.and_(c.status == "running", c.worker == self.pid))
+            await self._requeue(s, sa.and_(c.status == "running", c.worker == self.pid), graceful=True)
 
     async def shutdown(self) -> None:
         """Stop scheduling, cancel every local run (their finally blocks kill bridges), then release them to the queue."""

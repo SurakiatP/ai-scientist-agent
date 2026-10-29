@@ -106,7 +106,7 @@ async def test_migration_adds_lease_columns_and_backfills_pool(newdb):
         assert c.execute("select 1 from pg_indexes where indexname='runs_status_pool'").fetchone()
         command.downgrade(cfg, "0008")
         cols = {r[0] for r in c.execute("select column_name from information_schema.columns where table_name='runs'")}
-        assert not cols & {"worker", "lease_until", "attempt", "cancel_requested", "pool", "served_at"}
+        assert not cols & {"worker", "lease_until", "attempt", "crashes", "cancel_requested", "pool", "served_at"}
 
 
 def test_settings_defaults():
@@ -187,3 +187,11 @@ async def test_notify_uses_engine_pool(buses):
         before = d.engine.pool.checkedout()
         await a.notify("runs", "pooled")
         assert await got(it) == "pooled" and d.engine.pool.checkedout() == before
+
+
+def test_url_params_do_not_clash_with_the_buses_own_connection_options(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@h:5432/d?sslmode=require&connect_timeout=99&keepalives=0&options=-cfoo%3D1")
+    info = psycopg.conninfo.conninfo_to_dict(PgBus(get_settings(), None)._conninfo)
+    assert info["sslmode"] == "require"
+    assert info["connect_timeout"] == str(get_settings().db_connect_timeout_s)
+    assert info["keepalives"] == "1" and info["options"] == "-c idle_session_timeout=0"

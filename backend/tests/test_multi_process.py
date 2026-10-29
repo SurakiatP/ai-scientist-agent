@@ -87,7 +87,7 @@ async def cluster(newdb):  # noqa: F811
 
 
 async def submit(fake, svc, sid, cid, **kw):
-    sql(fake.db, "insert into sessions(id, title) values (%s, 't') on conflict do nothing", sid)
+    await asyncio.to_thread(sql, fake.db, "insert into sessions(id, title) values (%s, 't') on conflict do nothing", sid)  # not on the event loop
     body = RunIn(session_id=sid, turn_id=u(), kind="ask", question="What does base editing change?", mode="deep", **kw)
     return (await svc.submit(body, cid))["run"]["id"]
 
@@ -274,22 +274,75 @@ async def test_a_lost_lease_owner_writes_nothing_more(cluster):
     assert sql(fake.db, "select status from turns where id = %s", tid) == [("done",)]
 
 
-async def test_graceful_shutdown_releases_runs_to_the_queue_then_interrupts_at_max_attempts(cluster):
+async def test_graceful_releases_never_use_up_the_crash_restart(cluster):
     fake = cluster
     a = await fake.make(max_concurrent_runs=1)
     rid = await submit(fake, a, u(), "c1")
     await until(ran(fake, 1))
     await a.shutdown()
-    assert sql(fake.db, "select status, attempt, worker from runs where id = %s", rid) == [("queued", 2, None)]
+    assert sql(fake.db, "select status, attempt, crashes, worker from runs where id = %s", rid) == [("queued", 2, 0, None)]
     assert events_of(fake, rid) == [(1, "strategy"), (2, "restarted")]
     tid = sql(fake.db, "select turn_id::text from runs where id = %s", rid)[0][0]
     assert sql(fake.db, "select status, progress->>'restarted' from turns where id = %s", tid) == [("running", "true")]
     b = await fake.make(max_concurrent_runs=1)  # another process takes it over
     await until(ran(fake, 2))
     assert fake.ran[1][0] == b.pid
-    await b.shutdown()  # attempt 2 is the last
-    assert sql(fake.db, "select status, attempt from runs where id = %s", rid) == [("interrupted", 2)]
-    assert sql(fake.db, "select status, progress->>'_err' from turns where id = %s", tid) == [("interrupted", "interrupted")]
+    await b.shutdown()  # a second deploy: still not a crash
+    assert sql(fake.db, "select status, attempt, crashes from runs where id = %s", rid) == [("queued", 3, 0)]
+    a2 = await fake.make(max_concurrent_runs=1)
+    await until(ran(fake, 3))
+    assert fake.ran[2][0] == a2.pid
+    fake.release(rid, a2.pid)
+    await until(is_status(fake, rid, "done"))
+    assert sql(fake.db, "select attempt, crashes from runs where id = %s", rid) == [(3, 0)]
+
+
+async def test_a_crash_after_graceful_releases_still_gets_its_one_restart(cluster):
+    fake = cluster
+    a = await fake.make(max_concurrent_runs=1)
+    rid = await submit(fake, a, u(), "c1")
+    await until(ran(fake, 1))
+    await a.shutdown()
+    b = await fake.make(max_concurrent_runs=1)
+    await until(ran(fake, 2))
+    await die(b)
+    c = await fake.make(max_concurrent_runs=1)
+    await until(ran(fake, 3), 20)  # the one crash restart
+    assert sql(fake.db, "select attempt, crashes from runs where id = %s", rid) == [(3, 1)]
+    await die(c)
+    await fake.make(max_concurrent_runs=1)
+    await until(is_status(fake, rid, "interrupted"), 20)
+    assert len(fake.ran) == 3
+
+
+async def test_a_queued_row_without_pool_from_the_upgrade_window_is_backfilled_and_claimed(cluster):
+    fake = cluster
+    a = await fake.make(start=False, max_concurrent_runs=1)
+    rid = await submit(fake, a, u(), "c1")
+    sql(fake.db, "update runs set pool = null where id = %s", rid)  # a process still on the old version inserted it
+    await a.startup()
+    await until(ran(fake, 1))
+    assert sql(fake.db, "select pool, status from runs where id = %s", rid) == [("research", "running")]
+
+
+async def test_the_scheduler_logs_the_first_failure_with_a_traceback_and_repeats_in_one_line(cluster, caplog):
+    boom = {"on": True}
+
+    async def sweep():
+        if boom["on"]:
+            raise RuntimeError("db down")
+    a = await cluster.make(start=False)
+    a._sweep = sweep
+    await a.startup()
+    await asyncio.sleep(1.0)  # several passes at 0.2 s
+    recs = [r for r in caplog.records if "scheduler pass" in r.getMessage()]
+    assert len(recs) >= 3 and recs[0].exc_info and all(not r.exc_info for r in recs[1:])
+    boom["on"] = False
+    await asyncio.sleep(0.5)
+    boom["on"] = True
+    caplog.clear()
+    await asyncio.sleep(0.5)  # recovered, then failing again: a new first failure
+    assert caplog.records[0].exc_info
 
 
 async def test_a_cancel_requested_run_of_a_dead_process_is_stopped_not_restarted(cluster):

@@ -50,8 +50,8 @@ async def purge_previews(store) -> None:
 
 
 class PreviewStore:
-    # ponytail: in-process dict, so a preview lives in the worker that rendered it. Ceiling: with several workers the
-    # GET can land on another one (404, the user renders again); then keep previews in Redis/MinIO with the same TTL.
+    # Fallback when there is no object store: an in-process dict, so a preview lives in the worker that rendered it.
+    # With an object store (put_preview/get_preview above) every worker serves every preview.
     def __init__(self, max_entries: int, ttl: float, max_bytes: int = 5 << 20, clock=time.monotonic):
         self.max_entries, self.ttl, self.max_bytes, self.clock = max_entries, ttl, max_bytes, clock
         self._d: OrderedDict[str, tuple[float, bytes]] = OrderedDict()

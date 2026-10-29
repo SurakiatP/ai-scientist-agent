@@ -62,6 +62,7 @@ runs = sa.Table(
     sa.Column("mode", sa.Text), sa.Column("request", pg.JSONB), sa.Column("status", sa.Text, nullable=False),
     _ts("created_at", nullable=False, server_default=NOW), _ts("started_at"), _ts("finished_at"), sa.Column("error", sa.Text),
     sa.Column("worker", sa.Text), _ts("lease_until"), sa.Column("attempt", sa.Integer, nullable=False, server_default="1"),
+    sa.Column("crashes", sa.Integer, nullable=False, server_default="0"),
     sa.Column("cancel_requested", sa.Boolean, nullable=False, server_default=sa.false()), sa.Column("pool", sa.Text),
     _ts("served_at"), sa.Index("runs_status_pool", "status", "pool"))
 run_events = sa.Table(

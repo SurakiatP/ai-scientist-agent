@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import aclosing
 from typing import Literal
 
+from botocore.exceptions import ClientError
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
@@ -81,7 +82,10 @@ async def preview(body: ExportRequest, request: Request) -> StreamingResponse:
 
 @router.get("/v1/reports/preview/{key}")
 async def preview_pdf(key: str, request: Request) -> Response:
-    data = await get_preview(request.app.state, key) if re.fullmatch(ID_RE, key) else None
+    try:
+        data = await get_preview(request.app.state, key) if re.fullmatch(ID_RE, key) else None
+    except ClientError:  # the object store failed (not "missing"): tell the browser to retry, not that the preview is gone
+        raise HTTPException(503, "preview storage unavailable") from None
     if data is None:
         raise HTTPException(404, "preview not found")
     return Response(data, media_type="application/pdf", headers={

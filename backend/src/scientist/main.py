@@ -100,15 +100,14 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     async def _purge_hourly(app: FastAPI) -> None:
         while True:
             await asyncio.sleep(3600)
-            try:
-                if app.state.data:
-                    await app.state.data.purge()
-                    await app.state.data.purge_usage()
-                    await app.state.data.purge_runs()
-                if app.state.store:
-                    await purge_previews(app.state.store)
-            except Exception:
-                log.exception("trash purge failed")
+            jobs = [app.state.data.purge, app.state.data.purge_usage, app.state.data.purge_runs] if app.state.data else []
+            if app.state.store:
+                jobs.append(lambda: purge_previews(app.state.store))
+            for job in jobs:  # one failing purge must not skip the others
+                try:
+                    await job()
+                except Exception:
+                    log.exception("purge failed")
 
     store_mod.MAX_JSON_BYTES[0] = settings.store_max_turn_json_bytes
     app = FastAPI(title="scientist", lifespan=lifespan)

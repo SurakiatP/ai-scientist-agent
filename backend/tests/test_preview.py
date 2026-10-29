@@ -130,3 +130,15 @@ async def test_the_purge_removes_expired_previews_only():
     s.list_keys = lst
     await purge_previews(s)
     assert sorted(s.objs) == ["files/keep", "previews/new"]
+
+
+async def test_a_failing_object_store_answers_503_not_404(app):
+    from botocore.exceptions import ClientError
+    from test_routes_files import MemStore
+    s = MemStore()
+
+    async def boom(key):
+        raise ClientError({"Error": {"Code": "InternalError"}}, "GetObject")
+    s.get = boom
+    r = await call(create_app(store=s), "GET", "/v1/reports/preview/" + "a" * 32)
+    assert r.status_code == 503 and r.json()["detail"] == "preview storage unavailable"
