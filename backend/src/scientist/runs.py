@@ -44,6 +44,9 @@ def reduce_progress(p: dict, e: dict) -> dict:
         return {**p, "waiting": e["position"], "phase": "waiting"}
     if t == "strategy":
         return {**p, "reasoning": e["reasoning"], "searches": e["searches"], "phase": "searching"}
+    if t == "replan":
+        r = {"reasoning": e["reasoning"], "thin": e["thin"], "searches": e["searches"]}
+        return {**p, "searches": [*p["searches"], *e["searches"]], "replans": [*p.get("replans", []), r], "phase": "searching"}
     if t == "sources":
         return _seen({**p, "sources": {**p["sources"], e["term"]: p["sources"].get(e["term"], 0) + len(e["papers"])},
                       "phase": p["phase"] if p["phase"] == "writing" else "searching"},

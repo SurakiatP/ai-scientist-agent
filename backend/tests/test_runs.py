@@ -133,6 +133,18 @@ def test_reduce_progress_matches_progress_ts():
                  "answered": ["a"], "writing": False, "phase": "done"}  # waiting is kept, as in progress.ts
 
 
+def test_reduce_progress_replan_matches_progress_ts():
+    p = {"waiting": None, "reasoning": "", "searches": [], "sources": {}, "answered": [], "writing": False, "phase": "planning"}
+    evs = [{"type": "strategy", "reasoning": "r", "searches": [{"term": "a", "instructions": "i"}]}, {"type": "sources", "term": "a", "papers": [{}]},
+           {"type": "replan", "reasoning": "broaden", "thin": ["a"], "searches": [{"term": "b", "instructions": "j"}]},
+           {"type": "sources", "term": "b", "papers": [{}, {}]}]
+    for e in evs:
+        p = reduce_progress(p, e)
+    assert p == {"waiting": None, "reasoning": "r", "searches": [{"term": "a", "instructions": "i"}, {"term": "b", "instructions": "j"}],
+                 "sources": {"a": 1, "b": 2}, "answered": [], "writing": False, "phase": "searching",
+                 "replans": [{"reasoning": "broaden", "thin": ["a"], "searches": [{"term": "b", "instructions": "j"}]}]}
+
+
 def test_reduce_progress_seen_matches_progress_ts():
     p = {"waiting": None, "reasoning": "", "searches": [], "sources": {}, "answered": [], "writing": False, "phase": "planning"}
     evs = [{"type": "sources", "term": "a", "papers": [{"source": "pubmed"}, {}, {"source": None}]},

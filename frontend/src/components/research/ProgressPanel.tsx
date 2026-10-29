@@ -11,7 +11,7 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import LightbulbOutlinedIcon from "@mui/icons-material/LightbulbOutlined";
 import type { Turn } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
-import { queueText, stageIndex, stagesDone } from "./ProgressCard";
+import { queueText, replanText, stageIndex, stagesDone } from "./ProgressCard";
 
 const card = { border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.raised", p: 2 };
 const NO_PREF = "@media (prefers-reduced-motion: no-preference)";
@@ -137,6 +137,7 @@ export function ProgressPanel({ turn, sessionId }: { turn: Turn; sessionId?: str
             </Box>
           ))}
         </Box>
+        {p.replans?.map((r, i) => <Typography key={i} role="note" sx={{ mt: 1, pt: 1, borderTop: 1, borderColor: "divider", fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{replanText(r, t)}</Typography>)}
       </Box>
       <Stack direction="row" spacing={1.25} sx={{ ...card, alignItems: "flex-start" }}>
         <LightbulbOutlinedIcon aria-hidden sx={{ fontSize: 20, color: "evidence.unverified", mt: 0.25 }} />

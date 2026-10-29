@@ -26,6 +26,7 @@ export type AskEvent =
   | { type: "refused"; reason: string; code?: string }
   | { type: "waiting"; position: number; eta_seconds?: number }
   | { type: "strategy"; reasoning: string; searches: Search[] }
+  | { type: "replan"; reasoning: string; thin: string[]; searches: Search[] }
   | { type: "sources"; term: string; papers: Paper[] }
   | { type: "records"; term: string; records: DataRecord[] }
   | { type: "answer"; term: string; content: string }

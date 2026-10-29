@@ -60,6 +60,9 @@ const isProgress = (v: unknown): v is Progress => {
     !!p.sources && typeof p.sources === "object" && !Array.isArray(p.sources) && Object.keys(p.sources).length <= N &&
     Object.entries(p.sources).every(([k, n]) => k.length <= TERM && isNum(n)) &&
     Array.isArray(p.answered) && p.answered.length <= N && p.answered.every((x) => isStr(x, TERM)) &&
+    (p.replans === undefined || (Array.isArray(p.replans) && p.replans.length <= 2 && p.replans.every((r) => !!r && isStr(r.reasoning, REASON) &&
+      Array.isArray(r.thin) && r.thin.length <= N && r.thin.every((x) => isStr(x, TERM)) &&
+      Array.isArray(r.searches) && r.searches.length <= N && r.searches.every((x) => !!x && isStr(x.term, TERM) && isStr(x.instructions, TERM))))) &&
     (p.seen === undefined || (Array.isArray(p.seen) && p.seen.length <= 100 && p.seen.every((x) => isStr(x, 100)))) &&
     typeof p.writing === "boolean" && ["waiting", "planning", "searching", "writing", "done"].includes(p.phase);
 };
@@ -69,6 +72,9 @@ const clampProgress = (p: Progress): Progress => ({
   searches: p.searches.slice(0, N).map((x) => ({ term: x.term.slice(0, TERM), instructions: x.instructions.slice(0, TERM) })),
   sources: Object.fromEntries(Object.entries(p.sources).slice(0, N).map(([k, n]) => [k.slice(0, TERM), n])),
   answered: p.answered.slice(0, N).map((x) => x.slice(0, TERM)),
+  ...(p.replans && { replans: p.replans.slice(0, 2).map((r) => ({
+    reasoning: r.reasoning.slice(0, REASON), thin: r.thin.slice(0, N).map((x) => x.slice(0, TERM)),
+    searches: r.searches.slice(0, N).map((x) => ({ term: x.term.slice(0, TERM), instructions: x.instructions.slice(0, TERM) })) })) }),
   ...(p.seen && { seen: p.seen.slice(0, 100).map((x) => x.slice(0, 100)) }),
 });
 const clampRecord = (r: DataRecord): DataRecord => ({ database: r.database.slice(0, 100), id: r.id.slice(0, 500), title: r.title.slice(0, 300), url: r.url.slice(0, 2048), summary: r.summary.slice(0, 600) });

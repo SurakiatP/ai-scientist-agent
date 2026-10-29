@@ -56,6 +56,16 @@ describe("ProgressCard", () => {
     expect(screen.queryByText(t.rowSearching)).toBeNull();
     expect(screen.getByText(t.rowSkipped)).toBeInTheDocument();
   });
+  it("states the plan change and marks the added searches in text, and a finished turn keeps it", () => {
+    const rp = prog({ ...busy, searches: [...busy.searches, { term: "gamma", instructions: "" }], replans: [{ reasoning: "broaden", thin: ["beta"], searches: [{ term: "gamma", instructions: "" }] }] });
+    const { rerender } = render(<ProgressCard turn={turn(rp)} />);
+    expect(screen.getByText("Plan adjusted: few results for “beta”, searching 1 more terms")).toBeInTheDocument();
+    expect(screen.getAllByText(t.replanAdded)).toHaveLength(1);
+    expect(screen.getByText("gamma")).toBeInTheDocument();
+    rerender(<ProgressCard turn={turn({ ...rp, phase: "done" }, { status: "done" })} />);
+    expect(screen.getByText(/Plan adjusted/)).toBeInTheDocument();
+    expect(screen.queryByText(t.replanAdded)).toBeInTheDocument();
+  });
   it("shows the queue position while waiting", () => {
     render(<ProgressCard turn={turn({ phase: "waiting", waiting: 3 })} />);
     expect(screen.getAllByText(t.queueRow.replace("{n}", "3")).length).toBeGreaterThan(0);

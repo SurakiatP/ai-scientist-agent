@@ -284,6 +284,19 @@ describe("newSession blank reuse", () => {
     s.getState().patchTurn(id, "t", { answer: { content: "b", references: [] } });
     expect(s.getState().sessions[0].turns[0].answer).toEqual({ content: "b", references: [] });
   });
+  it("keeps the plan changes of a turn through save and reload; a malformed one drops the turn, older turns need none", async () => {
+    const rp = [{ reasoning: "broaden", thin: ["a"], searches: [{ term: "b", instructions: "i" }] }];
+    const s = await load();
+    const id = s.getState().newSession();
+    s.getState().addTurn(id, turn("t", "running") as never);
+    s.getState().patchTurn(id, "t", { status: "done", progress: { ...prog, searches: [{ term: "b", instructions: "i" }], replans: rp } as never });
+    expect(s.getState().sessions[0].turns[0].progress.replans).toEqual(rp);
+    const bad = { ...turn("t"), progress: { ...prog, replans: [{ reasoning: 1, thin: [], searches: [] }] } };
+    localStorage.setItem(KEY, JSON.stringify({ version: 1, state: { sessions: [sess("s", [turn("old"), bad])], activeId: "s" } }));
+    vi.resetModules();
+    const s2 = await load();
+    expect(s2.getState().sessions[0].turns.map((x) => x.id)).toEqual(["old"]);
+  });
   it("loads a persisted turn with malformed records, keeping only the valid ones", async () => {
     const ok = { database: "uniprot", id: "P1", title: "p53", url: "https://uniprot.org/P1", summary: "" };
     const withRecords = (records: unknown) => ({ ...turn("t"), answer: { content: "a", references: [], records } });

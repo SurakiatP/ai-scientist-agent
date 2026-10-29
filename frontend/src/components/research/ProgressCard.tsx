@@ -25,6 +25,10 @@ export const queueText = (p: Progress, t: Strings) => {
 export const statusText = (p: Progress, t: Strings) =>
   p.phase === "waiting" ? queueText(p, t) : p.phase === "planning" ? t.planning : p.phase === "writing" ? t.writing : p.phase === "done" ? t.done : t.searching;
 
+// "Plan adjusted: few results for “a”, “b”, searching 2 more terms": what was thin, and how many searches were added.
+export const replanText = (r: { thin: string[]; searches: unknown[] }, t: Strings) =>
+  t.replanLine.replace("{terms}", r.thin.join("”, “")).replace("{n}", String(r.searches.length));
+
 const mmss = (ms: number) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 
 // Progress track: a 22px node per stage on a hairline rail whose completed segments fill with the
@@ -101,6 +105,35 @@ function Elapsed({ since }: { since: number }) {
 
 const tint = (pct: number) => `color-mix(in srgb, var(--mui-palette-evidence-unverified) ${pct}%, transparent)`;
 
+// The search list. Searches the re-plan added (index >= the first re-plan's start) carry the quiet plan-change line
+// above them and an "Added later" chip, so the change is stated in text, not by position or colour.
+function SearchRows({ p, from, rows0 }: { p: Progress; from: number; rows0: number }) {
+  const t = useT();
+  const starts: number[] = [];
+  let at = p.searches.length - (p.replans ?? []).reduce((n, r) => n + r.searches.length, 0);
+  for (const r of p.replans ?? []) { starts.push(at); at += r.searches.length; }
+  return (
+    <Box component="ul" sx={{ m: 0, mt: 1, p: 0, listStyle: "none" }}>
+      {p.searches.map((s, i) => {
+        if (i < from) return null;
+        const ri = starts.indexOf(i), added = starts.length > 0 && i >= starts[0];
+        return (
+          <Box component="li" key={`${s.term}#${i}`} sx={{ listStyle: "none" }}>
+            {ri >= 0 && <Typography role="note" sx={{ py: 1, borderTop: i === from ? 0 : 1, borderColor: "divider", fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{replanText(p.replans![ri], t)}</Typography>}
+            <Stack direction="row" useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", gap: 1, py: 1, borderTop: i === from || ri >= 0 ? 0 : 1, borderColor: "divider", ...(i >= rows0 ? enterRise : {}) }}>
+              <Typography sx={{ width: 20, flexShrink: 0, fontSize: "0.6875rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{String(i + 1).padStart(2, "0")}</Typography>
+              <Typography sx={{ flex: "1 1 160px", minWidth: 0, fontSize: "0.875rem", lineHeight: 1.5, overflowWrap: "anywhere" }}>{s.term}</Typography>
+              {added && <Chip size="small" variant="outlined" label={t.replanAdded} />}
+              {s.term in p.sources && <Chip size="small" variant="outlined" label={`${t.found} ${p.sources[s.term]} ${p.sources[s.term] === 1 ? t.paper : t.papers}`} />}
+              {p.answered.includes(s.term) && <Chip size="small" variant="outlined" icon={<CheckRoundedIcon />} label={t.branchDone} sx={{ color: "evidence.verified", borderColor: "evidence.verified", "& .MuiChip-icon": { color: "inherit", fontSize: 14 } }} />}
+            </Stack>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+}
+
 export function ProgressCard({ turn }: { turn: Turn }) {
   const t = useT();
   const p = turn.progress, running = turn.status === "running";
@@ -144,6 +177,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
           <Box>
             <PlanCard searches={turn.plan} editable={false} heading={t.planUsedTitle} rowState={rowState} onApprove={() => {}} onCancel={() => {}} />
             {p.reasoning && <Typography sx={{ mt: 1.5, fontSize: "0.875rem", lineHeight: 1.7, color: "text.secondary", overflowWrap: "anywhere" }}>{p.reasoning}</Typography>}
+            {p.replans?.length ? <SearchRows p={p} from={turn.plan.length} rows0={rows0} /> : null}
           </Box>
         ) : (
           (p.reasoning || p.searches.length > 0) && (
@@ -151,18 +185,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
               <Typography component="h3" sx={{ fontSize: "0.75rem", fontWeight: 700, color: "text.secondary", letterSpacing: "0.03em" }}>{t.researchPlan}</Typography>
               <Typography sx={{ fontSize: "0.75rem", color: "text.secondary", mt: 0.25 }}>{t.planNote}</Typography>
               {p.reasoning && <Typography sx={{ mt: 1, fontSize: "0.875rem", lineHeight: 1.7, color: "text.secondary", overflowWrap: "anywhere" }}>{p.reasoning}</Typography>}
-              {p.searches.length > 0 && (
-                <Box component="ul" sx={{ m: 0, mt: 1, p: 0, listStyle: "none" }}>
-                  {p.searches.map((s, i) => (
-                    <Stack component="li" key={`${s.term}#${i}`} direction="row" useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", gap: 1, py: 1, borderTop: i === 0 ? 0 : 1, borderColor: "divider", ...(i >= rows0 ? enterRise : {}) }}>
-                      <Typography sx={{ width: 20, flexShrink: 0, fontSize: "0.6875rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{String(i + 1).padStart(2, "0")}</Typography>
-                      <Typography sx={{ flex: "1 1 160px", minWidth: 0, fontSize: "0.875rem", lineHeight: 1.5, overflowWrap: "anywhere" }}>{s.term}</Typography>
-                      {s.term in p.sources && <Chip size="small" variant="outlined" label={`${t.found} ${p.sources[s.term]} ${p.sources[s.term] === 1 ? t.paper : t.papers}`} />}
-                      {p.answered.includes(s.term) && <Chip size="small" variant="outlined" icon={<CheckRoundedIcon />} label={t.branchDone} sx={{ color: "evidence.verified", borderColor: "evidence.verified", "& .MuiChip-icon": { color: "inherit", fontSize: 14 } }} />}
-                    </Stack>
-                  ))}
-                </Box>
-              )}
+              {p.searches.length > 0 && <SearchRows p={p} from={0} rows0={rows0} />}
             </Box>
           )
         )}
