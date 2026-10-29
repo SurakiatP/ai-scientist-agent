@@ -219,6 +219,20 @@ async def test_run_persists_doc_refs_with_the_turn_and_streams_docs_indexing(ser
         await usage.drain()
 
 
+async def test_docs_turn_stashes_the_attached_pdfs_in_its_progress(serve, fx):  # noqa: F811
+    fx["reply"] = reply("ATP [1].", {"1": "oxidative phosphorylation in the inner membrane"})
+    async with serve() as c:
+        sid = await mk_session(c)
+        f1, f2 = await mkpdf(c, "bio.pdf"), await mkpdf(c, "other.pdf")
+        b = dbody(sid, [f1, f2])
+        r = await post(c, b)
+        want = [{"id": f1, "name": "bio.pdf"}, {"id": f2, "name": "other.pdf"}]
+        assert r.json()["turn"]["progress"]["_docs"] == want  # on insert
+        await until(c, r.json()["run"]["id"], "done")
+        t = await turn_of(c, sid, b["turn_id"])
+        assert t["progress"]["_docs"] == want and t["progress"]["phase"] == "done"  # survives reduce and the final write
+
+
 @pytest.mark.parametrize("make", ["none", "six", "dup", "unknown", "deleted", "csv", "badid"])
 async def test_run_validates_doc_ids(serve, fx, make):  # noqa: F811
     async with serve() as c:

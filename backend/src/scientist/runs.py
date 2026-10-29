@@ -108,8 +108,9 @@ class RunService:
         analyze = body.kind == "analyze"
         docs = not analyze and body.mode == "docs"
         name = ext = ""
+        picked: list[dict] = []
         if docs:
-            await self._check_docs(body.doc_ids)
+            picked = await self._check_docs(body.doc_ids)
         if analyze:
             if not body.file_id:
                 raise Invalid("file_id is required")
@@ -118,11 +119,13 @@ class RunService:
         self.queue.admit(client_id)  # Rejected -> 429; no await between admit and ticket
         ticket = self.queue.ticket(rid, client_id, "analysis" if analyze or docs else "research")  # docs read PDFs in the sandbox: its pool
         try:
-            row, turn = await self._create(body, client_id, rid, name)
+            row, turn = await self._create(body, client_id, rid, name, picked)
         except BaseException:
             ticket.close()
             raise
         run = Run(row, ticket, body, name, ext)
+        if picked:
+            run.progress = {**run.progress, "_docs": picked}
         self.live[rid] = run
         run.task = asyncio.create_task(self._run(run))
         self._bg.add(run.task)
@@ -131,10 +134,10 @@ class RunService:
         self.data._changed("turn", turn, session_id=str(turn["session_id"]))
         return {"run": self.view(row, client_id), "turn": turn}
 
-    async def _check_docs(self, ids: list[str]) -> None:
-        """422 unless every id is a live (not deleted) PDF file of the shared store."""
+    async def _check_docs(self, ids: list[str]) -> list[dict]:
+        """422 unless every id is a live (not deleted) PDF file of the shared store. Returns [{id, name}] in request order."""
         async with self.data.db.session() as s:
-            ok = {r.id for r in await s.execute(sa.select(m.files.c.id).where(
+            ok = {r.id: r.name for r in await s.execute(sa.select(m.files.c.id, m.files.c.name).where(
                 m.files.c.id.in_(ids), m.files.c.deleted_at.is_(None), sa.func.lower(m.files.c.kind) == "pdf"))}
         if bad := [i for i in ids if i not in ok]:
             raise HTTPException(422, f"document {bad[0]} was not found or is not a PDF")
@@ -142,8 +145,9 @@ class RunService:
             raise HTTPException(503, "documents need the sandbox, which is disabled on this deployment")
         if self.st.store is None:
             raise HTTPException(503, "file storage unavailable")
+        return [{"id": i, "name": ok[i][:500]} for i in ids]
 
-    async def _create(self, body, client_id: str, rid: str, file_name: str) -> tuple[dict, dict]:
+    async def _create(self, body, client_id: str, rid: str, file_name: str, picked: list[dict] | None = None) -> tuple[dict, dict]:
         """The turn (new, or an approved plan) and the run row, in one transaction under the session lock."""
         analyze = body.kind == "analyze"
         async with self.data.tx() as s:
@@ -161,7 +165,7 @@ class RunService:
                     raise TooMany("session is full")
                 fname = (body.file_name or file_name)[:120]
                 vals = {"id": body.turn_id, "session_id": body.session_id, "idx": top + 1, "question": body.question[:4000],
-                        "mode": "analysis" if analyze else body.mode, "pack": None if body.mode in ("chat", "docs") and not analyze else body.pack, "status": "running", "progress": EMPTY_PROGRESS,
+                        "mode": "analysis" if analyze else body.mode, "pack": None if body.mode in ("chat", "docs") and not analyze else body.pack, "status": "running", "progress": {**EMPTY_PROGRESS, "_docs": picked} if picked else EMPTY_PROGRESS,
                         "plan": plan, "run_id": rid, "version": 1,
                         "analysis": {"fileId": body.file_id, **({"fileName": fname} if fname else {}), "steps": []}
                         if analyze else None}
