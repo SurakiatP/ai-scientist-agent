@@ -504,3 +504,28 @@ async def test_records_with_papers_but_no_summary_still_returned(settings, tmp_p
     events = await run(Q, runner(settings, tmp_path, {"a": [rec(1), paper("A0", "10.1000/a0")]}), settings)
     final = next(e for e in events if isinstance(e, FinalAnswer))
     assert [r.id for r in final.records] == ["P1"]
+
+
+async def test_corrected_record_retry_is_not_noted_but_unfixed_one_is(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    bad = lambda i: {"event": "record_rejected", "record": {"database": "uniprot", "id": f"P{i}"}, "reason": "off-site"}  # noqa: E731
+    rt = runner(settings, tmp_path, {"a": [bad(1), rec(1), bad(2), paper("A0", "10.1000/a0"), answer("a")]})
+    final = next(e for e in await run(Q, rt, settings) if isinstance(e, FinalAnswer))
+    assert "1 database record(s) were left out because their data was invalid" in final.content
+
+
+async def test_duplicate_record_takes_no_cap_slot(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    settings.max_records_per_branch = 20
+    items = [rec(i) for i in range(1, 21)] + [rec(1), rec(21)]
+    rt = runner(settings, tmp_path, {"a": [*items, paper("A0", "10.1000/a0"), answer("a")]})
+    final = next(e for e in await run(Q, rt, settings) if isinstance(e, FinalAnswer))
+    assert len(final.records) == 20 and "1 database record(s) were left out because a search reported more than 20" in final.content
+
+
+async def test_final_records_never_exceed_the_stores_limit(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    settings.max_records_per_branch = 150
+    rt = runner(settings, tmp_path, {"a": [*[rec(i) for i in range(120)], paper("A0", "10.1000/a0"), answer("a")]})
+    final = next(e for e in await run(Q, rt, settings) if isinstance(e, FinalAnswer))
+    assert len(final.records) == 100

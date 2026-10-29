@@ -610,3 +610,13 @@ async def test_turn_answer_keeps_records_and_caps_them(api):
     s = next(x for x in (await api.get("/v1/store/snapshot")).json()["sessions"] if x["id"] == sid)
     assert s["turns"][0]["answer"]["records"] == [rec]
     assert (await api.put(f"/v1/store/sessions/{sid}/turns/{u()}", json=turn(1, answer={"content": "c", "records": [rec] * 101}))).status_code == 422
+
+
+async def test_import_keeps_records_capped(api):
+    rec = {"database": "uniprot", "id": "P1", "title": "p", "url": "https://uniprot.org/P1", "summary": ""}
+    sid = u()
+    body = {"sessions": [{"id": sid, "title": "T", "turns": [{"question": "q", "status": "done",
+                          "answer": {"content": "c", "references": [], "records": [rec] * 150}}]}]}
+    assert (await api.post("/v1/store/import", json=body)).json()["turns"] == 1
+    s = next(x for x in (await api.get("/v1/store/snapshot")).json()["sessions"] if x["id"] == sid)
+    assert len(s["turns"][0]["answer"]["records"]) == 100

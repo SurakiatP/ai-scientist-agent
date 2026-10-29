@@ -163,13 +163,14 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
             elif isinstance(item, InvalidRecord):
                 rec_invalid.add(item.key or object())
             elif isinstance(item, DataRecord):
+                if (item.database, item.id) in records:  # the same entry again is one record and takes no slot
+                    continue
                 if (n := rec_per_branch.get(term, 0)) >= settings.max_records_per_branch:
                     rec_capped += 1
                 else:
                     rec_per_branch[term] = n + 1
-                    if (item.database, item.id) not in records:  # the same entry from two searches is one record
-                        records[item.database, item.id] = item
-                        yield Records(term=term, records=[item])
+                    records[item.database, item.id] = item
+                    yield Records(term=term, records=[item])
             elif (n := per_branch.get(term, 0)) >= settings.max_papers_per_branch:
                 capped += 1
             else:
@@ -195,11 +196,13 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     # same keys, same order
     refs = await verify_references([r.paper for r in references.values()], client=client,
                                    contact_email=settings.contact_email)
+    final_records = list(records.values())[:100]  # the store rejects an answer with more than 100 records (store.Answer)
     note = "".join(f'\n\nNote: the search for "{t}" failed, so this answer does not cover it.' for t in failed)
     if dropped:
         note += f"\n\nNote: {dropped} paper(s) were left out because their metadata was invalid."
-    if rec_invalid:
-        note += f"\n\nNote: {len(rec_invalid)} database record(s) were left out because their data was invalid."
+    rec_dropped = sum(1 for k in rec_invalid if not isinstance(k, str) or tuple(k.split(":", 1)) not in records)  # a corrected retry is not a drop
+    if rec_dropped:
+        note += f"\n\nNote: {rec_dropped} database record(s) were left out because their data was invalid."
     if rec_capped:
         note += (f"\n\nNote: {rec_capped} database record(s) were left out because a search reported more than "
                  f"{settings.max_records_per_branch}.")
@@ -218,10 +221,10 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     if not answers:  # papers but no branch summary: say so plainly; never synthesise a comparison from titles alone
         yield FinalAnswer(content=f"Found {len(refs)} paper(s), but the search did not finish summarising them. "
                                   "The references below were found and checked; try again or narrow the question."
-                                  + note, references=refs, records=list(records.values()))
+                                  + note, references=refs, records=final_records)
         yield Complete()
         return
-    user = (_history_block(history) + _data_block(refs, answers, list(records.values()))
+    user = (_history_block(history) + _data_block(refs, answers, final_records)
             + "".join(f'\nThe search for "{t}" failed and returned no findings.' for t in failed)
             + f"\n\nQuestion:\n{question}")
     try:
@@ -229,7 +232,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     except Exception:
         yield Error(message="Could not write the answer. Please try again.")
         return
-    yield FinalAnswer(content=r.text.strip() + note, references=refs, records=list(records.values()))
+    yield FinalAnswer(content=r.text.strip() + note, references=refs, records=final_records)
     yield Complete()
 
 
