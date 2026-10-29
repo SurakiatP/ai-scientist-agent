@@ -232,6 +232,22 @@ describe("realtime", () => {
     await vi.waitFor(() => expect(useChatStore.getState().sessions.map((s) => s.title)).toEqual(["Missed while the feed was down"]), { timeout: 4000 });
   });
 
+  it("a resync is not starved by a stream of turn changes", async () => {
+    snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "Old", turns: [] })] };
+    await online();
+    vi.useFakeTimers();
+    try {
+      const n = () => calls.filter((c) => c.url.startsWith("/v1/store/snapshot")).length;
+      const before = n();
+      FakeES.all[0].emit({ type: "resync" });
+      for (let i = 0; i < 12; i++) { // a change every second keeps resetting the 2 s trailing debounce
+        FakeES.all[0].emit({ type: "changed", entity: "turn", id: U(3), version: 10 + i });
+        await vi.advanceTimersByTimeAsync(1000);
+      }
+      expect(n()).toBeGreaterThan(before);
+    } finally { vi.useRealTimers(); }
+  });
+
   it("never overwrites a turn that is running in this tab", async () => {
     snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "S", turns: [row(U(3), { idx: 0, question: "q", status: "running", progress: null, updated_at: new Date().toISOString() })] })] };
     await online();

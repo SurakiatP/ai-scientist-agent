@@ -12,6 +12,7 @@ from scientist import llm, usage
 from scientist.config import get_settings
 from scientist.events import Complete, Error, FinalAnswer, Refused, Strategy
 from scientist.main import create_app
+from scientist.pgbus import GAP
 from test_config import ENV
 from test_analyze import fakes  # noqa: F401
 from test_db import _alembic, newdb, pg  # noqa: F401  (throwaway-Postgres fixtures)
@@ -721,7 +722,7 @@ async def test_feed_rollback_publishes_nothing(procs):
 
 async def test_feed_oversize_goes_by_reference(procs):
     (a, _), (b, _) = procs
-    sid, tid = u(), u()
+    sid = u()
     await a.upsert("session", sid, {"title": "t"}, None)
     r = await a.upsert("session", sid, {"title": "t2"}, None)
     async with b.bus.subscribe() as qb:
@@ -742,5 +743,42 @@ async def test_feed_gap_sends_resync_to_both(procs):
         while not qb.empty():
             qb.get_nowait()
         for pbus in (pa, pb):
-            pbus._fan(__import__("scientist.pgbus", fromlist=["GAP"]).GAP)
+            pbus._fan(GAP)
         assert await next_msg(qa) == {"type": "resync"} and await next_msg(qb) == {"type": "resync"}
+
+
+async def test_feed_ref_for_a_deleted_row_has_no_version(procs):
+    (a, pa), (b, _) = procs
+    sid = u()
+    async with b.bus.subscribe() as qb:
+        await pa.notify("store_changes", json.dumps({"ref": True, "entity": "session", "id": sid}))
+        mb = await next_msg(qb)
+        assert mb["id"] == sid and mb["version"] is None
+
+
+async def test_feed_import_sends_one_batched_notice(procs, monkeypatch):
+    (a, pa), (b, _) = procs
+    calls = []
+    orig = pa.notify
+
+    async def spy(*x, **k):
+        calls.append(x[0])
+        return await orig(*x, **k)
+    monkeypatch.setattr(pa, "notify", spy)
+    sess = [{"id": u(), "title": f"s{i}"} for i in range(5)]
+    async with b.bus.subscribe() as qb:
+        await a.import_all({"sessions": sess})
+        got = {(await next_msg(qb))["id"] for _ in range(5)}
+        assert got == {x["id"] for x in sess}
+    assert calls == []  # batched notices bypass per-row notify()
+
+
+async def test_feed_bulk_over_queue_max_sends_one_resync(procs):
+    from scientist.pgbus import QUEUE_MAX
+    (a, _), (b, _) = procs
+    async with b.bus.subscribe() as qb:
+        async with a.tx() as s:
+            await a._changed_many(s, [("session", {"id": u(), "version": 1}, {}) for _ in range(QUEUE_MAX + 1)])
+        assert await next_msg(qb) == {"type": "resync"}
+        await asyncio.sleep(0.3)
+        assert qb.empty()

@@ -40,7 +40,7 @@ const lastTurnSend = new Map<string, number>();
 let inflight: Op | null = null;
 let releases: (() => void)[] = []; // store subscriptions and window listeners, released by the test reset
 let applying = false, pumping = false, started = false, blockedUntil = 0, delay = 1000;
-let timer: ReturnType<typeof setTimeout> | undefined, snapTimer: ReturnType<typeof setTimeout> | undefined, es: EventSource | null = null, limit = MAX_SESSIONS;
+let timer: ReturnType<typeof setTimeout> | undefined, resyncTimer: ReturnType<typeof setTimeout> | undefined, snapTimer: ReturnType<typeof setTimeout> | undefined, es: EventSource | null = null, limit = MAX_SESSIONS;
 
 const vkey = (k: Kind, id: string) => `${k}:${id}`;
 const ms = (v: unknown) => { const n = typeof v === "string" ? Date.parse(v) : NaN; return Number.isFinite(n) ? n : Date.now(); };
@@ -288,7 +288,9 @@ function listen() {
     src.onmessage = (m) => {
       let e: Row | null = null;
       try { e = JSON.parse(m.data); } catch {}
-      if (e?.type === "resync") { snapSoon(); return; } // the server may have missed changes (its feed reconnected): full sync
+      // The server may have missed changes (its feed reconnected): full sync. Jittered so every open tab does not hit the server at
+      // once, and on its own timer so a steady stream of changes (which keeps resetting snapSoon) cannot starve it.
+      if (e?.type === "resync") { if (!resyncTimer) resyncTimer = setTimeout(() => { resyncTimer = undefined; void snapshot(); }, Math.random() * 3000); return; }
       if (!e || e.type !== "changed" || typeof e.id !== "string" || typeof e.entity !== "string" || !["project", "session", "file", "turn"].includes(e.entity)) return;
       const known = versions.get(vkey(e.entity as Kind, e.id));
       if (known !== undefined && typeof e.version === "number" && e.version <= known) return; // our own write echoing back
@@ -430,7 +432,7 @@ export async function reprobeSync(): Promise<void> {
 export function __resetSync() {
   queue = []; versions = new Map(); maxIdx.clear(); idxOf.clear(); tombstones.clear(); lastTurnSend.clear();
   inflight = null; applying = false; pumping = false; started = false; blockedUntil = 0; delay = 1000; limit = MAX_SESSIONS;
-  clearTimeout(timer); clearTimeout(snapTimer); es?.close(); es = null; releases.forEach((f) => f()); releases = [];
+  clearTimeout(timer); clearTimeout(snapTimer); clearTimeout(resyncTimer); resyncTimer = undefined; es?.close(); es = null; releases.forEach((f) => f()); releases = [];
   set({ status: DEFER_HYDRATION ? "connecting" : "disabled", ready: !DEFER_HYDRATION, lastSyncAt: null, pending: 0, notice: null, hasMore: false, rev: 0, undo: null });
 }
 export const __queue = () => queue;

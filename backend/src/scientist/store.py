@@ -19,7 +19,7 @@ from scientist import models as m
 from scientist.config import Settings
 from scientist.db import Database
 from scientist.packs import PACKS
-from scientist.pgbus import GAP, MAX_PAYLOAD_BYTES, PgBus
+from scientist.pgbus import GAP, MAX_PAYLOAD_BYTES, QUEUE_MAX, PgBus
 
 log = logging.getLogger(__name__)
 
@@ -183,23 +183,30 @@ class Store:
         for a in s.info.pop("changes", ()):  # no PgBus: published after the commit, never on rollback
             self.bus.publish(*a[:3], **a[3])
 
-    async def _changed(self, s, entity: str, r: dict, **extra: str) -> None:
-        """Announce a change from inside the write's transaction `s`: with a PgBus the NOTIFY is delivered by Postgres on
-        commit (atomic with the write, nothing on rollback); without one it is queued and published after the commit."""
-        id, version = str(r["id"]), r.get("version")
-        if self.pgbus is None:
-            s.info.setdefault("changes", []).append((entity, id, version, extra))
-            return
-        msg = {"type": "changed", "entity": entity, "id": id, "version": version, "at": _now().isoformat(), **extra}
+    def _body(self, entity: str, r: dict, extra: dict) -> str:
+        msg = {"type": "changed", "entity": entity, "id": str(r["id"]), "version": r.get("version"), "at": _now().isoformat(), **extra}
         body = json.dumps(msg)
         if len(body.encode()) > MAX_PAYLOAD_BYTES:
-            body = json.dumps({"ref": True, "entity": entity, "id": id})  # the listener rebuilds the message from the row
-        await self.pgbus.notify("store_changes", body, session=s)
+            body = json.dumps({"ref": True, "entity": entity, "id": str(r["id"])})  # the listener rebuilds it from the row
+        return body
 
-    async def announce(self, entity: str, r: dict, **extra: str) -> None:
-        """For a change whose write already committed elsewhere."""
-        async with self.tx() as s:
-            await self._changed(s, entity, r, **extra)
+    async def _changed(self, s, entity: str, r: dict, **extra: str) -> None:
+        """Announce a change from inside the write's transaction `s`: with a PgBus the NOTIFY is delivered by Postgres on
+        commit (atomic with the write, nothing on rollback); without one it is queued in `s.info` and published after the
+        commit by Store.tx only, so `s` must come from Store.tx."""
+        if self.pgbus is None:
+            s.info.setdefault("changes", []).append((entity, str(r["id"]), r.get("version"), extra))
+            return
+        await self.pgbus.notify("store_changes", self._body(entity, r, extra), session=s)
+
+    async def _changed_many(self, s, items: list[tuple[str, dict, dict]]) -> None:
+        """Many changes in one statement; over QUEUE_MAX rows (a subscriber queue would overflow anyway) one resync."""
+        if self.pgbus is None:
+            for entity, r, extra in items:
+                await self._changed(s, entity, r, **extra)
+        elif items:
+            ps = [json.dumps({"type": "resync"})] if len(items) > QUEUE_MAX else [self._body(*i[:2], i[2]) for i in items]
+            await s.execute(sa.text("select pg_notify('store_changes', p) from unnest(cast(:ps as text[])) p"), {"ps": ps})
 
     async def start_feed(self, pgbus: PgBus) -> None:
         """One listener per process: every store_changes message (this process's own writes included) goes to the bus."""
@@ -289,9 +296,7 @@ class Store:
                         cu["updated_at"] = sa.func.now()
                     res = await s.execute(sa.update(child).where(child.c.project_id == id).values(**cu).returning(child.c.id, child.c.version))
                     moved += [(name, {"id": x.id, "version": x.version}) for x in res]
-            await self._changed(s, entity, out)
-            for name, x in moved:
-                await self._changed(s, name, x)
+            await self._changed_many(s, [(entity, out, {}), *((name, x, {}) for name, x in moved)])
         return {"id": id, "deleted": True, "version": out["version"]}
 
     async def restore(self, entity: str, id: str) -> dict:
@@ -521,9 +526,8 @@ class Store:
                                   "added_at": _when(d.get("added_at")) or _now()})
             new_files = await ins(s, m.files, frows)
             n["files"] = len(new_files)
-            for ent, ids in (("project", new_proj), ("session", new_sess), ("file", new_files)):
-                for i in ids:
-                    await self._changed(s, ent, {"id": i, "version": 1})
+            await self._changed_many(s, [(ent, {"id": i, "version": 1}, {}) for ent, ids in
+                                         (("project", new_proj), ("session", new_sess), ("file", new_files)) for i in ids])
         return n
 
 

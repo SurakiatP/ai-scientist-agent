@@ -131,7 +131,6 @@ class RunService:
         self._bg.add(run.task)
         run.task.add_done_callback(self._bg.discard)
         run.task.add_done_callback(lambda _: ticket.close())  # whatever happened, the slot is given back
-        await self.data.announce("turn", turn, session_id=str(turn["session_id"]))
         return {"run": self.view(row, client_id), "turn": turn}
 
     async def _check_docs(self, ids: list[str]) -> list[dict]:
@@ -186,6 +185,7 @@ class RunService:
                 request=body.model_dump(mode="json", exclude={"session_id", "turn_id"})).returning(m.runs))).one())
             await s.execute(sa.update(m.sessions).where(m.sessions.c.id == body.session_id)
                             .values(updated_at=sa.func.now(), sort_ts=sa.func.now()))
+            await self.data._changed(s, "turn", turn, session_id=str(turn["session_id"]))
         return row, turn
 
     # --- the run itself --------------------------------------------------------------------------------------------

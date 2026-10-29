@@ -769,3 +769,26 @@ async def test_chat_turn_has_no_pack(serve, fake_complete):
         assert r.status_code == 202 and r.json()["turn"]["pack"] is None
         await until(c, r.json()["run"]["id"], "done", "error", "refused")
         assert (await turn_of(c, sid, b["turn_id"]))["pack"] is None
+
+
+async def test_submit_announces_the_new_turn_inside_the_create_transaction(serve, fake_complete):
+    async with serve() as c:
+        sid = await mk_session(c)
+        data, svc = c.app.state.data, c.app.state.runs
+        inside, seen, orig, orig_create = [], [], data._changed, svc._create
+
+        async def create(*a, **k):
+            inside.append(True)
+            try:
+                return await orig_create(*a, **k)
+            finally:
+                inside.pop()
+
+        async def spy(s, entity, r, **extra):
+            if entity == "turn" and r.get("version") == 1:
+                seen.append(bool(inside))
+            return await orig(s, entity, r, **extra)
+        svc._create, data._changed = create, spy
+        b = chat(sid)
+        await until(c, (await post(c, b)).json()["run"]["id"], "done")
+        assert seen == [True]  # once, from inside the create transaction
