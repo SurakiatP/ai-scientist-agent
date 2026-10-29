@@ -154,41 +154,41 @@ const clampCell = (v: unknown): string | number | boolean | null => {
 const clampAnalysis = (a: TurnAnalysis): TurnAnalysis => {
   const prov = usableProvenance(a.provenance);
   return {
-  fileId: a.fileId.slice(0, FILE),
-  ...(a.fileName !== undefined && { fileName: a.fileName.slice(0, FILE_NAME) }),
-  steps: a.steps.filter(isStep).slice(0, STEP_MAX).filter((s, i, all) => all.indexOf(s) === i),
-  ...(a.script !== undefined && { script: a.script.slice(0, SCRIPT) }),
-  ...(a.quality && { quality: {
-    rows: Math.max(0, Math.trunc(a.quality.rows)),
-    columns: Math.max(0, Math.trunc(a.quality.columns)),
-    ...(a.quality.truncated !== undefined && { truncated: a.quality.truncated }),
-    ...(a.quality.columns_info && { columns_info: a.quality.columns_info.slice(0, COLUMNS).map((c) => ({ name: c.name.slice(0, COL), dtype: c.dtype.slice(0, 100), null_pct: Math.min(100, Math.max(0, c.null_pct)) })) }),
-  } }),
-  ...(a.tables && { tables: a.tables.slice(0, TABLE_MAX).map((t) => ({
-    name: t.name.slice(0, 80),
-    columns: t.columns.slice(0, COLUMNS).map((c) => c.slice(0, COL)),
-    rows: t.rows.slice(0, TABLE_ROWS).map((r) => r.slice(0, COLUMNS).map(clampCell)),
-    ...(t.truncated !== undefined && { truncated: t.truncated }),
-  })) }),
-  ...(a.findings && { findings: a.findings.slice(0, FINDINGS).map((f) => f.slice(0, FINDING)) }),
-  ...(a.timings && { timings: Object.fromEntries(Object.entries(a.timings).slice(0, TIMINGS).filter(([, n]) => isNum(n) && n >= 0).map(([k, n]) => [k.slice(0, 100), n])) }),
-  ...(a.artifacts && { artifacts: a.artifacts.slice(0, ARTIFACTS).map((x) => ({ id: x.id.slice(0, FILE), name: x.name.slice(0, 300), kind: x.kind, url: x.url.slice(0, 2048) })) }),
-  ...(prov && { provenance: prov }),
+    fileId: a.fileId.slice(0, FILE),
+    ...(a.fileName !== undefined && { fileName: a.fileName.slice(0, FILE_NAME) }),
+    steps: a.steps.filter(isStep).slice(0, STEP_MAX).filter((s, i, all) => all.indexOf(s) === i),
+    ...(a.script !== undefined && { script: a.script.slice(0, SCRIPT) }),
+    ...(a.quality && { quality: {
+      rows: Math.max(0, Math.trunc(a.quality.rows)),
+      columns: Math.max(0, Math.trunc(a.quality.columns)),
+      ...(a.quality.truncated !== undefined && { truncated: a.quality.truncated }),
+      ...(a.quality.columns_info && { columns_info: a.quality.columns_info.slice(0, COLUMNS).map((c) => ({ name: c.name.slice(0, COL), dtype: c.dtype.slice(0, 100), null_pct: Math.min(100, Math.max(0, c.null_pct)) })) }),
+    } }),
+    ...(a.tables && { tables: a.tables.slice(0, TABLE_MAX).map((t) => ({
+      name: t.name.slice(0, 80),
+      columns: t.columns.slice(0, COLUMNS).map((c) => c.slice(0, COL)),
+      rows: t.rows.slice(0, TABLE_ROWS).map((r) => r.slice(0, COLUMNS).map(clampCell)),
+      ...(t.truncated !== undefined && { truncated: t.truncated }),
+    })) }),
+    ...(a.findings && { findings: a.findings.slice(0, FINDINGS).map((f) => f.slice(0, FINDING)) }),
+    ...(a.timings && { timings: Object.fromEntries(Object.entries(a.timings).slice(0, TIMINGS).filter(([, n]) => isNum(n) && n >= 0).map(([k, n]) => [k.slice(0, 100), n])) }),
+    ...(a.artifacts && { artifacts: a.artifacts.slice(0, ARTIFACTS).map((x) => ({ id: x.id.slice(0, FILE), name: x.name.slice(0, 300), kind: x.kind, url: x.url.slice(0, 2048) })) }),
+    ...(prov && { provenance: prov }),
   };
 };
 const clampPatch = (p: Partial<Turn>): Partial<Turn> => {
   const usage = usableUsage(p.answer?.usage), prov = usableProvenance(p.answer?.provenance);
   return {
-  ...p,
-  ...(p.progress && { progress: clampProgress(p.progress) }),
-  ...(p.error !== undefined && { error: p.error.slice(0, 2048) }),
-  ...(p.refused !== undefined && { refused: p.refused.slice(0, REASON) }),
-  ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef), ...(p.answer.records !== undefined && { records: usableRecords(p.answer.records).slice(0, RECORDS).map(clampRecord) }), ...(usage && { usage }), ...(prov && { provenance: prov }) } }),
-  ...(p.analysis && { analysis: clampAnalysis(p.analysis) }),
-  ...(p.plan !== undefined && { plan: clampPlan(p.plan) }),
+    ...p,
+    ...(p.progress && { progress: clampProgress(p.progress) }),
+    ...(p.error !== undefined && { error: p.error.slice(0, 2048) }),
+    ...(p.refused !== undefined && { refused: p.refused.slice(0, REASON) }),
+    ...(p.answer && { answer: { content: p.answer.content.slice(0, ANSWER), references: p.answer.references.slice(0, REFS).map(clampRef), ...(p.answer.records !== undefined && { records: usableRecords(p.answer.records).slice(0, RECORDS).map(clampRecord) }), ...(usage && { usage }), ...(prov && { provenance: prov }) } }),
+    ...(p.analysis && { analysis: clampAnalysis(p.analysis) }),
+    ...(p.plan !== undefined && { plan: clampPlan(p.plan) }),
   };
 };
-// A stored answer's records are unvalidated: keep the usable ones, drop the field when it is not a list.
+// A stored turn is unvalidated: clean its references and records, and keep usage and provenance only when usable (the turn itself is never dropped).
 const cleanTurn = (t: Turn): Turn => {
   const { provenance: ap, ...an } = t.analysis ?? ({} as Partial<TurnAnalysis>);
   const pa = usableProvenance(ap);

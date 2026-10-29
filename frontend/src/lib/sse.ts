@@ -12,7 +12,13 @@ export type Paper = {
 };
 export type RunUsage = { prompt_tokens: number; completion_tokens: number; cost_usd: number | null; estimated: boolean }; // the whole run so far; cost null = unknown
 /** The run's provenance file body (backend Provenance); only schema is checked on read, the rest is passed through as the server wrote it. */
-export type Provenance = { schema: 1; created_at?: string; [k: string]: unknown };
+export type Provenance = {
+  schema: 1; created_at?: string;
+  plan_source?: "strategy" | "given"; // research: "strategy" = the run's model planned round 1; "given" = the client supplied the plan (possibly edited)
+  input_sha256?: string | null; // analysis: sha256 of the analysed file's bytes
+  history_turns?: number; // earlier turns sent to the model as history
+  [k: string]: unknown;
+};
 export type DataRecord = { database: string; id: string; title: string; url: string; summary: string }; // one record from a scientific database; database = id in lib/sources.ts
 export type Check = { claim: string; support: "supported" | "partial" | "unsupported" | "no_quote"; quote: string | null }; // the reviewer's verdict on one claim a reference is cited for
 export type Reference = { id: string; paper: Paper; status: "verified" | "unverified" | "unknown"; checks?: Check[] }; // checks: absent on turns saved before the reviewer existed

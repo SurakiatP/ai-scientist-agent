@@ -24,12 +24,12 @@ export function buildProvenanceFile(turn: Turn, now = new Date()) {
       })),
       records: turn.answer?.records ?? [],
     },
-    analysis: turn.kind === "analysis" ? { script: a?.script ?? "" } : null,
+    analysis: turn.kind === "analysis" ? { script: a?.script ?? "", file_id: a?.fileId ?? null, file_name: a?.fileName ?? null } : null,
     provenance,
   };
 }
 
-export const provenanceFilename = (turn: Turn) => `provenance-${new Date(turn.createdAt).toISOString().slice(0, 10)}-${turn.id.slice(0, 8)}.json`;
+export const provenanceFilename = (turn: Turn) => `ai-scientist-provenance-${new Date(turn.createdAt).toISOString().slice(0, 10)}-${turn.id.slice(0, 8)}.json`;
 
 export function downloadProvenance(turn: Turn) {
   const file = buildProvenanceFile(turn);

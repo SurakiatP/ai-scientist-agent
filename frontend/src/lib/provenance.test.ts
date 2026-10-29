@@ -21,14 +21,14 @@ describe("provenance file", () => {
     expect(JSON.stringify(f)).not.toContain("SECRET ABSTRACT");
   });
   it("analysis turns carry the script and their own provenance", () => {
-    const t = turn({ kind: "analysis", answer: undefined, analysis: { fileId: "f", steps: [], script: "print(1)", findings: ["x"], provenance: prov } });
-    expect(buildProvenanceFile(t)).toMatchObject({ analysis: { script: "print(1)" }, provenance: prov, answer: { content: "x", references: [] } });
+    const t = turn({ kind: "analysis", answer: undefined, analysis: { fileId: "f", fileName: "d.csv", steps: [], script: "print(1)", findings: ["x"], provenance: prov } });
+    expect(buildProvenanceFile(t)).toMatchObject({ analysis: { script: "print(1)", file_id: "f", file_name: "d.csv" }, provenance: prov, answer: { content: "x", references: [] } });
   });
   it("old turns have none", () => {
     expect(provenanceOf(turn({ answer: { content: "A", references: [] } }))).toBeUndefined();
     expect(buildProvenanceFile(turn({ answer: { content: "A", references: [] } }))).toBeNull();
   });
-  it("filename is dated and short", () => expect(provenanceFilename(turn())).toBe("provenance-2026-10-29-abcdef12.json"));
+  it("filename is dated and short", () => expect(provenanceFilename(turn())).toBe("ai-scientist-provenance-2026-10-29-abcdef12.json"));
   it("a server-synced turn with a bad provenance has none to download", () => {
     const row = (provenance: unknown) => ({ id: "x", question: "q", status: "done", mode: "deep", created_at: "2026-10-29T00:00:00Z", progress: {}, answer: { content: "a", references: [], provenance } });
     expect(provenanceOf(toTurn(row(prov))!)).toEqual(prov);
@@ -40,17 +40,18 @@ describe("provenance file", () => {
   it("downloads pretty JSON through a connected temporary link and revokes the URL", async () => {
     vi.useFakeTimers();
     let blob: Blob | undefined; let name = ""; let connected = false;
-    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: (b: Blob) => { blob = b; return "blob:x"; }, revokeObjectURL: vi.fn() }));
+    const revoke = vi.fn();
+    vi.stubGlobal("URL", class extends URL { static createObjectURL = (b: Blob) => { blob = b; return "blob:x"; }; static revokeObjectURL = revoke; });
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) { name = this.download; connected = this.isConnected; });
     downloadProvenance(turn());
-    expect(name).toBe("provenance-2026-10-29-abcdef12.json");
+    expect(name).toBe("ai-scientist-provenance-2026-10-29-abcdef12.json");
     expect(connected).toBe(true);
     expect(document.querySelector("a[download]")).toBeNull();
     expect(blob!.type).toContain("application/json");
     expect(blob!.type).toContain("charset=utf-8");
     expect(await blob!.text()).toContain('\n  "format": "ai-scientist-provenance"');
     vi.advanceTimersByTime(10_000);
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:x");
+    expect(revoke).toHaveBeenCalledWith("blob:x");
   });
   it("usableProvenance drops non-objects, other schemas and oversize", () => {
     expect(usableProvenance(prov)).toBe(prov);
