@@ -82,9 +82,12 @@ describe("landing page", () => {
     expect(within(nav).queryByText(/เข้าสู่ระบบ|log ?in|sign ?up/i)).toBeNull();
   });
 
-  it("steps and section titles are h2s; the example label is not a heading; nav anchors exist", () => {
+  it("section titles are h2s, steps are h3s; the example label is not a heading; nav anchors exist", () => {
     const { container } = render(<Home />);
-    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([...landing.th.steps.map((x) => x.t), landing.th.whyTitle, landing.th.faqTitle]);
+    const L = landing.th;
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([L.painA + L.painB + L.painC, L.capTitle.replace("|", ""), L.howTitle, L.dataTitle, L.faqTitle]);
+    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(expect.arrayContaining(L.steps.map((x) => x.t)));
+    expect(screen.queryByRole("heading", { name: L.exampleLabel })).toBeNull();
     for (const id of ["why", "how", "faq"]) expect(container.querySelector(`#${id}`)).not.toBeNull();
   });
 
@@ -98,12 +101,12 @@ describe("landing page", () => {
     expect(landing.en.steps).toHaveLength(landing.th.steps.length);
   });
 
-  it("draws the trace once and is static under reduced motion (CSS only)", () => {
+  it("draws the answer sheet once and is static under reduced motion (CSS only)", () => {
     const src = readFileSync("src/app/page.tsx", "utf8");
     expect(src).toMatch(/prefers-reduced-motion: no-preference/);
     expect(src).not.toMatch(/gsap/);
     expect(src).not.toMatch(/opacity: 0[^.]/); // copy is never hidden on first paint
-    expect(src).not.toMatch(/landing-settle[^}]*opacity/);
+    expect(src).not.toMatch(/opacity: 0[,\s}]/);
   });
 });
 

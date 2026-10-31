@@ -34,7 +34,11 @@ export const Mark = () => (
   </Box>
 );
 
-const rowSx = { justifyContent: "flex-start", gap: 1.5, ...UI.row, px: 1.25, borderRadius: 1.2, fontWeight: 400, fontSize: "0.875rem", minWidth: 0, "& .MuiSvgIcon-root": { fontSize: 20 } } as const;
+const rowSx = { justifyContent: "flex-start", gap: 1.5, ...UI.row, px: 1.25, borderRadius: "12px", fontWeight: 400, fontSize: "0.875rem", minWidth: 0, "& .MuiSvgIcon-root": { fontSize: 20 } } as const;
+// The current page is a filled navy row (the one solid shape in the sidebar), the rest stay ink on paper.
+const pageRow = (on: boolean) => ({ ...rowSx, fontWeight: on ? 600 : 400, ...(on
+  ? { bgcolor: "primary.main", color: "primary.contrastText", boxShadow: "0 8px 18px -10px rgb(28 78 143 / 0.8)", "&:hover": { bgcolor: "primary.dark" } }
+  : { bgcolor: "transparent", color: "text.primary", "& .MuiSvgIcon-root": { fontSize: 20, color: "text.secondary" } }) });
 
 // How busy the server is: one quiet line. The shared poller runs only while this is mounted and the tab is visible;
 // it also refreshes right after this tab submits, cancels or finishes a run, and when the shared store changes.
@@ -73,12 +77,16 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
   }
 
   return (
-    <Stack component="nav" aria-label={t.sidebar} sx={{ height: "100%", p: 1.25, gap: 1, bgcolor: "surface.shell", overflowY: "auto" }}>
+    <Stack component="nav" aria-label={t.sidebar} sx={{ height: "100%", p: 1.5, gap: 1.25, bgcolor: "surface.shell", overflowY: "auto" }}>
       <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", px: 0.5, minHeight: 44 }}>
         {/* the brand is a link to the landing page too (same target as the home icon) */}
         <Stack component={Link} href="/" aria-label={`${t.brand}: ${t.goHome}`} onClick={() => onPick?.()} direction="row" spacing={1}
           sx={{ alignItems: "center", minHeight: 44, px: 0.5, mx: -0.5, borderRadius: 1.5, color: "text.primary", textDecoration: "none", "&:hover": { bgcolor: "action.hover" } }}>
-          <Mark /><Typography component="span" sx={{ fontWeight: 600, fontSize: "1.0625rem", letterSpacing: "-0.01em" }}>{t.brand}</Typography>
+          <Box sx={{ width: 32, height: 32, borderRadius: "9px", display: "grid", placeItems: "center", bgcolor: "primary.main", color: "primary.contrastText", "& svg": { color: "inherit", width: 22, height: 22 } }}><Mark /></Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography component="span" sx={{ display: "block", fontWeight: 700, fontSize: "1rem", lineHeight: 1.3, letterSpacing: "-0.01em" }}>{t.brand}</Typography>
+            <Typography component="span" sx={{ display: "block", fontSize: "0.6875rem", lineHeight: 1.3, color: "text.secondary" }}>{t.brandSub}</Typography>
+          </Box>
         </Stack>
         <Stack direction="row" sx={{ alignItems: "center" }}>
           <IconButton component={Link} href="/" aria-label={t.goHome} title={t.goHome} onClick={() => onPick?.()} sx={{ color: "text.secondary" }}><HomeOutlinedIcon /></IconButton>
@@ -87,8 +95,9 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
           )}
         </Stack>
       </Stack>
-      <Button id="new-chat" variant="outlined" startIcon={<EditSquareIcon />} onClick={newChat}
-        sx={{ justifyContent: "flex-start", gap: 0.5, px: 1.5, minHeight: { xs: 44, md: 40 }, borderRadius: 1.5, fontSize: "0.875rem", borderColor: "primary.main", bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 12%, transparent)", "&:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 20%, transparent)", borderColor: "primary.main" } }}>
+      <Button id="new-chat" color="inherit" onClick={newChat}
+        startIcon={<Box component="span" sx={{ display: "grid", placeItems: "center", width: 28, height: 28, borderRadius: "50%", bgcolor: "primary.main", color: "primary.contrastText", "& svg": { fontSize: 16 } }}><EditSquareIcon /></Box>}
+        sx={{ justifyContent: "flex-start", gap: 0.25, pl: 1, pr: 1.5, minHeight: 48, borderRadius: "14px", fontSize: "0.875rem", fontWeight: 600, color: "text.primary", bgcolor: "background.paper", border: 1, borderColor: "color-mix(in srgb, var(--mui-palette-divider) 70%, transparent)", boxShadow: "0 6px 16px -12px rgb(14 26 44 / 0.35)", "&:hover": { bgcolor: "background.paper", borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 40%, transparent)" } }}>
         {t.newChat}
       </Button>
       <ProjectTree query={query} onPick={onPick} />
@@ -103,13 +112,13 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
         <SyncChip />
         <ServerLoad />
         <Button component={Link} href="/files" color="inherit" startIcon={<FolderCopyOutlinedIcon />} onClick={() => onPick?.()} aria-current={onFiles ? "page" : undefined}
-          sx={{ ...rowSx, bgcolor: onFiles ? "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)" : "transparent", fontWeight: onFiles ? 600 : 400 }}>{t.files}</Button>
+          sx={pageRow(onFiles)}>{t.files}</Button>
         {shared && (
           <Button component={Link} href="/trash" color="inherit" startIcon={<DeleteOutlineRoundedIcon />} onClick={() => onPick?.()} aria-current={onTrash ? "page" : undefined}
-            sx={{ ...rowSx, bgcolor: onTrash ? "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)" : "transparent", fontWeight: onTrash ? 600 : 400 }}>{t.trashTitle}</Button>
+            sx={pageRow(onTrash)}>{t.trashTitle}</Button>
         )}
         <Button color="inherit" startIcon={<SettingsOutlinedIcon />} endIcon={<ChevronRightRoundedIcon />} onClick={() => useSettingsOpen.getState().set(true)}
-          sx={{ ...rowSx, "& .MuiButton-endIcon": { ml: "auto" } }}>{t.settings}</Button>
+          sx={{ ...pageRow(false), "& .MuiButton-endIcon": { ml: "auto" } }}>{t.settings}</Button>
       </Stack>
     </Stack>
   );

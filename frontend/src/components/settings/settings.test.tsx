@@ -186,11 +186,11 @@ describe("session and project management", () => {
     const id = seed("gone");
     useChatStore.getState().setActive(id);
     render(<ChatPage />);
-    expect(screen.queryByRole("heading", { name: t.emptyHeading })).toBeNull(); // thread, not empty chat
+    expect(screen.queryByText(t.emptyHeading)).toBeNull(); // thread, not empty chat
     fireEvent.click(kebab("gone"));
     await pick(t.deleteItem);
     fireEvent.click(within(sb()).getByRole("button", { name: t.confirm }));
-    expect(await screen.findByRole("heading", { name: t.emptyHeading })).toBeInTheDocument();
+    expect(await screen.findByText(t.emptyHeading)).toBeInTheDocument();
     expect(useChatStore.getState().sessions).toHaveLength(1);
     expect(useChatStore.getState().sessions[0].turns).toHaveLength(0);
   });

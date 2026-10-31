@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useId, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { Box, Button, CircularProgress, IconButton, InputBase, Menu, MenuItem, Tooltip, Typography } from "@mui/material";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import AttachFileRoundedIcon from "@mui/icons-material/AttachFileRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
@@ -20,7 +21,7 @@ import { useT, usePrefs } from "@/lib/prefs";
 import { PACK_IDS, packName, usablePack, type PackId } from "@/lib/packs";
 import { canStart, startAnalysis, startDocs, startError, startRun, stopRun, useRunState } from "@/lib/run";
 import { UploadError, uploadFile, type AskMode } from "@/lib/sse";
-import { MAX_QUESTION } from "@/lib/strings";
+import { MAX_QUESTION, sampleQuestions, sampleQuestionsEn } from "@/lib/strings";
 
 // Shared draft so starter chips / "ask follow-up" can fill the one composer. In memory only.
 // Per session, so a draft never travels into (and sends from) another session.
@@ -178,28 +179,35 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
     else if (attached[0]?.status === "ready" && attached[0].fileId) startAnalysis(sessionId, q, attached[0].fileId, attached[0].name, pack).catch(restore);
     else startRun(sessionId, q, { mode, pack }).catch(restore);
   };
+  const example = large && !docs && !file ? (lang === "en" ? sampleQuestionsEn : sampleQuestions)[0] : ""; // the home composer shows a real question and Tab takes it
   const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Tab" && !e.shiftKey && example && !text) { e.preventDefault(); setText(example); return; } // empty only: with text, Tab leaves the field as usual
     if (e.key !== "Enter" || e.shiftKey || composing || e.nativeEvent.isComposing || e.keyCode === 229) return; // 229: IME (Safari fires keydown after compositionend)
     e.preventDefault();
     send();
   };
   const note = over ? t.tooLong : err || startErr || (files.find((f) => f.status === "error")?.error || (files.some((f) => f.status === "error") ? t.uploadFailed : "") || (docs ? t.docsModeNote : file?.status === "ready" ? t.analysisModeNote : ""));
   const counter = text.length >= MAX_QUESTION * 0.8;
+  const attachButton = (
+    <IconButton aria-label={t.attach} title={attachOff ? t.attachUnavailable : undefined} onClick={() => picker.current?.click()} disabled={busy || attachOff} sx={{ minWidth: 44, minHeight: 44, color: "text.secondary" }}>
+      {large ? <AddRoundedIcon /> : <AttachFileRoundedIcon sx={{ transform: "rotate(45deg)" }} />}
+    </IconButton>
+  );
   return (
     <Box sx={{ width: "100%" }}>
       <input ref={picker} type="file" accept={ACCEPT} multiple hidden onChange={pick} />
       <Box sx={{
-        display: "flex", alignItems: "stretch", bgcolor: "background.paper", border: 1, borderRadius: { xs: 3, sm: 4 },
-        borderColor: large ? "color-mix(in srgb, var(--mui-palette-primary-main) 45%, var(--mui-palette-divider))" : "divider",
+        display: "flex", alignItems: "stretch", bgcolor: "background.paper", border: 1, borderRadius: large ? { xs: "22px", sm: "28px" } : { xs: 3, sm: 4 },
+        borderColor: large ? "color-mix(in srgb, var(--mui-palette-divider) 55%, transparent)" : "divider",
+        // the home composer is the page's one object: lifted off the paper with a long, soft navy shadow
+        boxShadow: large ? "0 30px 60px -30px rgb(28 78 143 / 0.4), 0 2px 10px -4px rgb(14 26 44 / 0.08)" : "none",
         transition: `border-color 180ms ${ease}, box-shadow 180ms ${ease}`,
-        "&:focus-within": { borderColor: "primary.main", boxShadow: "0 0 0 1px var(--mui-palette-primary-main), 0 0 28px color-mix(in srgb, var(--mui-palette-primary-main) 28%, transparent)" },
+        "&:focus-within": large
+          ? { borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 55%, transparent)", boxShadow: "0 30px 60px -28px rgb(28 78 143 / 0.5), 0 0 0 4px rgb(var(--mui-palette-primary-mainChannel) / 0.08)" }
+          : { borderColor: "primary.main", boxShadow: "0 0 0 1px var(--mui-palette-primary-main), 0 0 28px color-mix(in srgb, var(--mui-palette-primary-main) 28%, transparent)" },
       }}>
-        <Box sx={{ display: "flex", alignItems: large ? "center" : "flex-end", borderRight: 1, borderColor: "divider", px: 0.75, py: 0.75, my: 0.5 }}>
-          <IconButton aria-label={t.attach} title={attachOff ? t.attachUnavailable : undefined} onClick={() => picker.current?.click()} disabled={busy || attachOff} sx={{ minWidth: 44, minHeight: 44, color: "text.secondary" }}>
-            <AttachFileRoundedIcon sx={{ transform: "rotate(45deg)" }} />
-          </IconButton>
-        </Box>
-        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", gap: 0.5, py: 1.25, pl: 1.5, pr: 1 }}> {/* py matches the attach column (my 0.5 + py 0.75) so both centre on the same line */}
+        {!large && <Box sx={{ display: "flex", alignItems: "flex-end", borderRight: 1, borderColor: "divider", px: 0.75, py: 0.75, my: 0.5 }}>{attachButton}</Box>}
+        <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", gap: 0.5, py: large ? 1.5 : 1.25, pl: large ? 2 : 1.5, pr: large ? 1.5 : 1 }}> {/* py matches the attach column (my 0.5 + py 0.75) so both centre on the same line */}
           {files.map((f) => (
             <Box key={f.key} sx={{ display: "flex", alignItems: "center", gap: 1, minHeight: 44, px: 1, border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.shell" }}>
               <DescriptionOutlinedIcon fontSize="small" sx={{ color: f.status === "error" ? "error.main" : "primary.main", flexShrink: 0 }} />
@@ -215,14 +223,15 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               </IconButton>
             </Box>
           ))}
-          <Box sx={{ display: "flex", flexWrap: { xs: "wrap", sm: "nowrap" }, alignItems: "center", columnGap: 1, rowGap: 0.5 }}>
+          <Box sx={{ display: "flex", flexWrap: large ? "wrap" : { xs: "wrap", sm: "nowrap" }, alignItems: "center", columnGap: 1, rowGap: large ? 1.5 : 0.5 }}>
             <InputBase
-              id="composer" multiline fullWidth minRows={1} maxRows={10} value={text}
-              placeholder={docs ? t.docsPlaceholder : file ? t.analysisPlaceholder : t.askPlaceholder} onChange={(e) => { setText(e.target.value); setErr(""); }} onKeyDown={onKeyDown}
+              id="composer" multiline fullWidth minRows={large ? 2 : 1} maxRows={10} value={text}
+              placeholder={docs ? t.docsPlaceholder : file ? t.analysisPlaceholder : example ? t.examplePrefix + example : t.askPlaceholder} onChange={(e) => { setText(e.target.value); setErr(""); }} onKeyDown={onKeyDown}
               onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}
               slotProps={{ input: { "aria-label": t.composerLabel, "aria-describedby": "composer-note" } }}
-              sx={{ flex: { xs: "1 1 100%", sm: "1 1 0" }, minWidth: 0, minHeight: 44, px: 0.5, py: 0, fontSize: "1rem", lineHeight: 1.6, alignItems: "center", "& textarea": { py: "9px" } }}
+              sx={{ flex: large ? "1 1 100%" : { xs: "1 1 100%", sm: "1 1 0" }, minWidth: 0, minHeight: 44, px: 0.5, py: 0, fontSize: large ? "1.0625rem" : "1rem", lineHeight: 1.6, alignItems: large ? "flex-start" : "center", "& textarea": { py: "9px" }, "& textarea::placeholder": { color: "text.secondary", opacity: 1 } }}
             />
+            {large && <Box sx={{ ml: -1 }}>{attachButton}</Box>}
             {counter && (
               <Typography sx={{ fontSize: "0.75rem", fontVariantNumeric: "tabular-nums", color: over ? "error.main" : "text.secondary", alignSelf: "center" }}>
                 {text.length}/{MAX_QUESTION}
@@ -273,7 +282,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
                 startIcon={<ScienceOutlinedIcon sx={{ color: packOff ? "inherit" : "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
                 sx={{
                   borderRadius: 99, fontSize: "0.875rem", px: 1.5, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap", maxWidth: { xs: 190, sm: 240 },
-                  "& .MuiButton-startIcon": { mr: 0.5 }, "& .MuiButton-endIcon": { ml: 0.5 },
+                  "& .MuiButton-startIcon": { mr: large ? { xs: 0, sm: 0.5 } : 0.5 }, "& .MuiButton-endIcon": { ml: 0.5 }, ...(large && { minWidth: { xs: 0 } }),
                   ...(packOff
                     ? { bgcolor: "action.disabledBackground", color: "text.disabled", borderColor: "transparent", fontWeight: 400, cursor: "default", "&:hover": { bgcolor: "action.disabledBackground", borderColor: "transparent" } }
                     : pack
@@ -281,7 +290,8 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
                           "&:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 22%, transparent)", borderColor: "primary.main" } }
                       : { borderColor: "divider", fontWeight: 400 }),
                 }}>
-                <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis" }}>{packText(pack)}</Box>
+                {/* on a phone the home composer keeps one row of controls: the field chip shows its icon only (its name stays in aria-label) */}
+                <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", display: large ? { xs: "none", sm: "inline" } : "inline" }}>{packText(pack)}</Box>
               </Button>
             </Tooltip>
             {packOff && <Box id={packOffId} component="span" hidden>{packOffText}</Box>}

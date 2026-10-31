@@ -35,9 +35,10 @@ export function AppShell({ children, aside, asideWide }: { children: ReactNode; 
       <Drawer open={drawer} onClose={() => setDrawer(false)} sx={{ display: { md: "none" } }} slotProps={{ paper: { sx: { width: W, maxWidth: "85vw" } } }}>
         <Sidebar onPick={() => setDrawer(false)} />
       </Drawer>
-      <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+      {/* the desk: cool paper with one soft wash of light from the top right */}
+      <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", backgroundImage: "radial-gradient(70% 55% at 85% 0%, rgb(var(--mui-palette-primary-mainChannel) / 0.12), transparent 70%), radial-gradient(50% 40% at 15% 100%, rgb(255 255 255 / 0.35), transparent 70%)", "[data-dark] &": { backgroundImage: "radial-gradient(70% 55% at 85% 0%, rgb(var(--mui-palette-primary-mainChannel) / 0.1), transparent 70%)" } }}>
         <Stack component="header" direction="row" sx={{ alignItems: "center", gap: 1, px: { xs: 1.5, md: 2 }, pt: { md: 1 }, minHeight: 56, borderBottom: { xs: 1, md: 0 }, borderColor: "divider" }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: "center", display: { md: "none" } }}><Mark /><Box component="span" sx={{ fontWeight: 600, fontSize: "1.0625rem", whiteSpace: "nowrap" }}>{t.brand}</Box></Stack>
+          <Stack direction="row" spacing={1} sx={{ alignItems: "center", display: { md: "none" } }}><Box sx={{ width: 30, height: 30, borderRadius: "8px", display: "grid", placeItems: "center", bgcolor: "primary.main", color: "primary.contrastText", "& svg": { color: "inherit", width: 20, height: 20 } }}><Mark /></Box><Box component="span" sx={{ fontWeight: 600, fontSize: "1.0625rem", whiteSpace: "nowrap" }}>{t.brand}</Box></Stack>
           {collapsed && (
             <IconButton aria-label={t.expandSidebar} aria-expanded={false} onClick={() => { setMoved(true); set(false); }} sx={{ display: { xs: "none", md: "inline-flex" }, color: "text.secondary" }}>
               <ViewSidebarOutlinedIcon />

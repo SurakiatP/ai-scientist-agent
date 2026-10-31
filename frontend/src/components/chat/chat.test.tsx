@@ -268,12 +268,23 @@ describe("EmptyChat", () => {
     mk([turn("done", { question: "OTHER-SESSION-Q", answer: { content: "OTHER-ANSWER", references: [] } })]);
     render(<EmptyChat sessionId={mk()} />);
     expect(screen.queryByText(/OTHER-/)).toBeNull();
-    expect(screen.getByRole("heading", { name: t.emptyHeading })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: new RegExp(`^(${[t.greetMorning, t.greetAfternoon, t.greetEvening, t.greetPlain].join("|")})$`) })).toBeInTheDocument();
+    expect(screen.getByText(t.emptyHeading)).toBeInTheDocument();
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
     expect(screen.getAllByRole("button").filter((b) => sampleQuestions.includes(b.getAttribute("aria-label") as never))).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: sampleQuestions[1] }));
     expect(box().value).toBe(sampleQuestions[1]);
     expect(run.startRun).not.toHaveBeenCalled();
+  });
+
+  it("Tab in the empty home composer takes the example shown; with text it does nothing special", () => {
+    render(<EmptyChat sessionId={mk()} />);
+    expect(box().placeholder).toBe(t.examplePrefix + sampleQuestions[0]);
+    fireEvent.keyDown(box(), { key: "Tab" });
+    expect(box().value).toBe(sampleQuestions[0]);
+    fireEvent.change(box(), { target: { value: "mine" } });
+    fireEvent.keyDown(box(), { key: "Tab" });
+    expect(box().value).toBe("mine");
   });
 });
 

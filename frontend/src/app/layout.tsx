@@ -1,12 +1,12 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Sans_Thai } from "next/font/google";
+import { Noto_Sans_Thai_Looped } from "next/font/google";
 import InitColorSchemeScript from "@mui/material/InitColorSchemeScript";
 import { Box } from "@mui/material";
 import { Providers } from "@/components/Providers";
 import { SkipLink } from "@/components/SkipLink";
 import { BG } from "@/lib/config";
 
-const notoSansThai = Noto_Sans_Thai({ subsets: ["thai", "latin"], display: "swap" });
+const notoSansThai = Noto_Sans_Thai_Looped({ subsets: ["thai", "latin"], display: "swap" }); // looped Thai: the formal, document-like voice of the reference
 
 export const metadata: Metadata = {
   title: "AI Scientist",

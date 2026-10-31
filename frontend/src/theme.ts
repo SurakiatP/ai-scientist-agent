@@ -5,41 +5,42 @@ import { BG } from "@/lib/config";
 declare module "@mui/material/styles" {
   interface Palette {
     evidence: { verified: string; unverified: string; unknown: string };
-    surface: { shell: string; raised: string };
+    surface: { shell: string; raised: string; ai: string; aiSoft: string };
   }
   interface PaletteOptions {
     evidence?: { verified: string; unverified: string; unknown: string };
-    surface?: { shell: string; raised: string };
+    surface?: { shell: string; raised: string; ai: string; aiSoft: string };
   }
 }
 
 export const FONT_FAMILY =
-  '"Noto Sans Thai", "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif';
+  '"Noto Sans Thai Looped", "Noto Sans Thai", "Noto Sans", system-ui, -apple-system, "Segoe UI", sans-serif';
 
-// Arctic Teal. Light + dark both checked for AA in theme.test.ts.
+// Ink Navy on blue-grey paper (a government-document desk: cool paper, navy ink, a violet mark for what the AI did).
+// Light + dark both checked for AA in theme.test.ts.
 export const theme = createTheme({
   cssVariables: { colorSchemeSelector: "data" },
   colorSchemes: {
     light: {
       palette: {
-        primary: { main: "#0A6B6B", contrastText: "#FFFFFF" },
-        secondary: { main: "#3F4F55" },
+        primary: { main: "#1C4E8F", dark: "#143B6E", contrastText: "#FFFFFF" },
+        secondary: { main: "#4A5B72" },
         background: { default: BG.light, paper: "#FFFFFF" },
-        text: { primary: "#0B1620", secondary: "#3F4F55" },
-        divider: "#D3E2E5",
-        evidence: { verified: "#0A6B5A", unverified: "#8A5A00", unknown: "#5A6B70" },
-        surface: { shell: "#EBF2F4", raised: "#FFFFFF" },
+        text: { primary: "#0E1A2C", secondary: "#475670" },
+        divider: "#D3DCE8",
+        evidence: { verified: "#0A6B5A", unverified: "#8A5A00", unknown: "#566579" },
+        surface: { shell: "#F4F6FA", raised: "#FFFFFF", ai: "#5B4CC4", aiSoft: "#E3E1F7" },
       },
     },
     dark: {
       palette: {
-        primary: { main: "#69D8D1", contrastText: "#06201E" },
-        secondary: { main: "#9DB0B4" },
-        background: { default: BG.dark, paper: "#13232C" },
-        text: { primary: "#ECF4F4", secondary: "#9DB0B4" },
-        divider: "#23404B",
-        evidence: { verified: "#5FD6B5", unverified: "#E5B44F", unknown: "#9DB0B4" },
-        surface: { shell: "#0D1A21", raised: "#1B3340" },
+        primary: { main: "#8DB5F2", dark: "#6E9BE0", contrastText: "#0A1B33" },
+        secondary: { main: "#9AA9BE" },
+        background: { default: BG.dark, paper: "#121C2E" },
+        text: { primary: "#E9EEF7", secondary: "#9DABC0" },
+        divider: "#24324A",
+        evidence: { verified: "#5FD6B5", unverified: "#E5B44F", unknown: "#9DABC0" },
+        surface: { shell: "#0E1727", raised: "#1A2639", ai: "#B3A9F5", aiSoft: "#2A2650" },
       },
     },
   },
