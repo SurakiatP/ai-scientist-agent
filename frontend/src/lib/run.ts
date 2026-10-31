@@ -348,7 +348,7 @@ export async function startRun(sessionId: string, question: string, opts: { mode
 }
 
 /** Ask questions about 1-5 attached PDFs. Never reviews a plan, never searches: one model call over the retrieved passages. */
-export async function startDocs(sessionId: string, question: string, docs: { id: string; name: string }[]): Promise<void> {
+export async function startDocs(sessionId: string, question: string, docs: { id: string; name: string }[], task: "answer" | "reproduce" = "answer"): Promise<void> {
   if (!canStart(sessionId).ok) throw new Error("busy");
   const session = useChatStore.getState().sessions.find((x) => x.id === sessionId);
   if (!session) throw new Error("no such session");
@@ -360,7 +360,7 @@ export async function startDocs(sessionId: string, question: string, docs: { id:
   take(sessionId, turnId, c);
   try {
     if (!session.title) store().renameSession(sessionId, question);
-    await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question, mode: "docs", doc_ids: docs.map((d) => d.id), history: historyFrom(session) }, local, false, c).catch((e) => { if (!c.signal.aborted) throw e; });
+    await sharedRun(sessionId, { session_id: sessionId, turn_id: turnId, kind: "ask", question, mode: "docs", doc_ids: docs.map((d) => d.id), ...(task === "reproduce" ? { docs_task: task } : {}), history: historyFrom(session) }, local, false, c).catch((e) => { if (!c.signal.aborted) throw e; });
   } finally {
     release(sessionId);
   }

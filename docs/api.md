@@ -32,7 +32,7 @@ uv run --project backend python -m scientist.apikeys revoke sci_AbCdEfGh
 | `GET /v1/api/runs/{run_id}/artifacts/{kind}` | `provenance` (JSON), `bibtex`, `ris` of a finished run |
 | `GET /v1/api/packs` | the research packs `[{id, th, en}]` |
 
-`POST /research` body: `{"question": str, "mode": "deep"|"quick" = "deep", "pack": str|null, "plan": [{"term","instructions"}]|null, "doc_ids": [str]|null}`. `doc_ids` (1 to 5 ids of PDFs already in the app) switches the run to documents mode. Guardrail refusals come back through the run: `status: "refused"` with the reason in `error`.
+`POST /research` body: `{"question": str, "mode": "deep"|"quick" = "deep", "pack": str|null, "plan": [{"term","instructions"}]|null, "doc_ids": [str]|null}`. `doc_ids` (1 to 5 ids of PDFs already in the app) switches the run to documents mode; with `"task": "reproduce"` the run returns a cited plan to reproduce the attached paper (claims, data, method, steps, what the paper leaves out) instead of an answer. Guardrail refusals come back through the run: `status: "refused"` with the reason in `error`.
 
 `GET /runs/{run_id}`:
 

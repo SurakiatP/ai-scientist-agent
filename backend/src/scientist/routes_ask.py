@@ -55,6 +55,7 @@ class PlanSearch(BaseModel):
 class AskRequest(BaseModel):
     question: str
     mode: Literal["deep", "quick", "chat", "docs"] = "deep"
+    docs_task: Literal["answer", "reproduce"] = "answer"  # mode docs: "reproduce" = a plan to reproduce the attached paper
     doc_ids: list[str] = Field(default=[], max_length=5)  # mode docs: 1-5 ids of attached PDFs (checked against the files table by the run service)
     memory: list[MemoryTurn] = []
     history: list[HistoryTurn] = Field(default=[], max_length=20)
@@ -75,7 +76,7 @@ class AskRequest(BaseModel):
     @model_validator(mode="after")
     def _docs(self):
         if self.mode != "docs":
-            self.doc_ids = []  # no meaning outside docs mode
+            self.doc_ids, self.docs_task = [], "answer"  # no meaning outside docs mode
         elif not 1 <= len(self.doc_ids) <= 5 or len(set(self.doc_ids)) != len(self.doc_ids) \
                 or not all(re.fullmatch(FILE_RE, i) for i in self.doc_ids):
             raise ValueError("docs mode needs 1 to 5 different document ids")

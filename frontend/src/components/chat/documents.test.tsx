@@ -44,6 +44,20 @@ describe("Composer with PDFs", () => {
     expect(input().multiple).toBe(true);
   });
 
+  it("the reproduction toggle sends a docs run with task reproduce", async () => {
+    const id = mk();
+    render(<Composer sessionId={id} />);
+    pick(pdf("paper.pdf"));
+    const toggle = await screen.findByRole("button", { name: t.reproduceToggle });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "reproduce" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: t.ask })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: t.ask }));
+    expect(run.startDocs).toHaveBeenCalledWith(id, "reproduce", [{ id: expect.any(String), name: "paper.pdf" }], "reproduce");
+  });
+
   it("PDF chips replace the mode chip with a fixed label, turn the field chip off with a reason, and send startDocs", async () => {
     const id = mk();
     render(<Composer sessionId={id} />);
@@ -59,7 +73,7 @@ describe("Composer with PDFs", () => {
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "what?" } });
     await waitFor(() => expect(screen.getByRole("button", { name: t.ask })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: t.ask }));
-    expect(run.startDocs).toHaveBeenCalledWith(id, "what?", [{ id: expect.any(String), name: "a.pdf" }, { id: expect.any(String), name: "b.pdf" }]);
+    expect(run.startDocs).toHaveBeenCalledWith(id, "what?", [{ id: expect.any(String), name: "a.pdf" }, { id: expect.any(String), name: "b.pdf" }], "answer");
     expect(run.startRun).not.toHaveBeenCalled();
     expect(run.startAnalysis).not.toHaveBeenCalled();
   });
@@ -90,7 +104,7 @@ describe("Composer with PDFs", () => {
     expect(upload.fn).not.toHaveBeenCalled();
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "go" } });
     fireEvent.click(screen.getByRole("button", { name: t.ask }));
-    expect(run.startDocs).toHaveBeenCalledWith(id, "go", [{ id: "f".repeat(32), name: "paper.pdf" }]);
+    expect(run.startDocs).toHaveBeenCalledWith(id, "go", [{ id: "f".repeat(32), name: "paper.pdf" }], "answer");
   });
 
   it("remove 4 of 5 picked PDFs before they upload: only the kept one is uploaded", async () => {

@@ -240,7 +240,7 @@ class RunService:
                                  name=run.file_name, ext=run.ext, pack=body.pack), "analysis"
         elif body.mode == "docs":
             events, mode = answer_docs(body.question, body.doc_ids, db=st.db, store=st.store, settings=st.settings,
-                                       gate=run.ticket, history=body.history), "docs"
+                                       gate=run.ticket, history=body.history, task=body.docs_task), "docs"
         else:
             events, mode = ask(body.question, st.runner, settings=st.settings, client=st.client, gate=run.ticket,
                                mode=body.mode, history=body.history, plan=body.plan, memory=body.memory,

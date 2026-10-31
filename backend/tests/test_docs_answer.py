@@ -62,8 +62,8 @@ def reply(answer, quotes=None):
     return json.dumps({"answer": answer, "quotes": quotes or {}})
 
 
-async def run(d, settings, ids, store, q=Q, gate=None):  # noqa: F811
-    events = usage.track(docs_answer.answer_docs(q, ids, db=d, store=store, settings=settings, gate=gate or RunGate(2)),
+async def run(d, settings, ids, store, q=Q, gate=None, task="answer"):  # noqa: F811
+    events = usage.track(docs_answer.answer_docs(q, ids, db=d, store=store, settings=settings, gate=gate or RunGate(2), task=task),
                          mode="docs", db=None)
     out = [e async for e in events]
     await usage.drain()
@@ -511,3 +511,21 @@ def test_unlink_stays_linear_on_pathological_input():
     _unlink("](" * 200_000 + ")")
     _unlink("](\n" * 100_000)
     assert time.monotonic() - t < 2
+
+
+async def test_reproduce_task_uses_its_own_prompt_and_still_verifies_citations(d, settings, fx):  # noqa: F811
+    f = mkfile(d, "paper.pdf")
+    fx["reply"] = reply("Claims: ATP output [1]. Made-up claim [9].", {"1": "oxidative phosphorylation in the inner membrane"})
+    a = final(await run(d, settings, [f], Store(**{f: b"%PDF"}), q="Plan to reproduce this paper", task="reproduce"))
+    assert fx["calls"][0]["system"] == docs_answer.REPRODUCE != docs_answer.DOCS
+    assert a.content == "Claims: ATP output [1]. Made-up claim ." and a.doc_refs[0].quote  # [9] is not a sent passage
+    assert a.provenance.prompts == {"docs": digest(docs_answer.REPRODUCE)}
+
+
+def test_docs_task_only_means_something_in_docs_mode(settings, monkeypatch):
+    from scientist import routes_ask
+    from scientist.routes_ask import AskRequest
+    monkeypatch.setattr(routes_ask, "get_settings", lambda: settings)
+    ids = ["a" * 32]
+    assert AskRequest(question="q", mode="docs", doc_ids=ids, docs_task="reproduce").docs_task == "reproduce"
+    assert AskRequest(question="q", mode="quick", docs_task="reproduce").docs_task == "answer"

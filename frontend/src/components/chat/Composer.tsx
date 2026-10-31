@@ -72,6 +72,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
   const run = useRunState(sessionId);
   const full = useStorageFull();
   const [composing, setComposing] = useState(false);
+  const [repro, setRepro] = useState(false); // documents only: ask for a reproduction plan of the attached paper
   const [modeAnchor, setModeAnchor] = useState<HTMLElement | null>(null);
   const [packAnchor, setPackAnchor] = useState<HTMLElement | null>(null);
   // Either one data file (analysis) or 1-5 PDFs (questions about documents), never both.
@@ -173,7 +174,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
       // through the store: the first message of an empty chat remounts this composer, and local state would be lost
       useStartErr.getState().set(sessionId, e instanceof Error && e.message === "busy" ? t.busyElsewhere : startError(e) ?? t.startFailed);
     };
-    if (docs && attached.length) startDocs(sessionId, q, attached.map((f) => ({ id: f.fileId!, name: f.name }))).catch(restore);
+    if (docs && attached.length) startDocs(sessionId, q, attached.map((f) => ({ id: f.fileId!, name: f.name })), repro ? "reproduce" : "answer").catch(restore);
     else if (attached[0]?.status === "ready" && attached[0].fileId) startAnalysis(sessionId, q, attached[0].fileId, attached[0].name, pack).catch(restore);
     else startRun(sessionId, q, { mode, pack }).catch(restore);
   };
@@ -233,6 +234,10 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, borderRadius: 99, border: 1, borderColor: "primary.main", bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)", color: "text.primary", fontSize: "0.875rem", fontWeight: 600, px: 1.5, minHeight: 36, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap" }}>
                 <DescriptionOutlinedIcon sx={{ fontSize: 20, color: "primary.main" }} aria-hidden />{t.modeDocs}
               </Box>
+            ) : null}
+            {docs ? (
+              <Button color="inherit" size="small" variant={repro ? "contained" : "outlined"} aria-pressed={repro} title={t.reproduceHint} onClick={() => setRepro((v) => !v)}
+                sx={{ borderRadius: 99, fontSize: "0.875rem", px: 1.5, minHeight: 36, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap", boxShadow: "none" }}>{t.reproduceToggle}</Button>
             ) : <Button color="inherit" variant={mode === "deep" ? "contained" : "outlined"} disabled={!!file} aria-haspopup="menu" aria-expanded={!!modeAnchor}
               aria-label={`${t.modeLabel}: ${modeName(mode)}`} onClick={(e) => setModeAnchor(e.currentTarget)}
               startIcon={mode === "chat" ? <ChatBubbleOutlineRoundedIcon sx={{ color: "primary.main" }} /> : <LayersOutlinedIcon sx={{ color: mode === "deep" ? "inherit" : "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}

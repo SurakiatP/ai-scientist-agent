@@ -19,6 +19,8 @@ from scientist.guardrail import guard
 from scientist.pipeline import _exact, _history_block, _squash
 
 DOCS = (Path(__file__).parent / "prompts/docs.md").read_text()
+REPRODUCE = (Path(__file__).parent / "prompts/reproduce.md").read_text()
+REPRO_TERMS = "method dataset data code experiment training hyperparameter evaluation metric results table baseline implementation"  # retrieval hint
 DASH = "[\u2013-]"
 NUM = rf"\d{{1,4}}(?:\s*{DASH}\s*\d{{1,4}})?"  # one number or one range per part, at most 4 digits
 MARK = re.compile(rf"\[({NUM}(?:\s*,\s*{NUM})*)\]")  # [2], [1, 2], [1-3]
@@ -113,7 +115,7 @@ def _fail(name: str, error: str | None) -> Error:
 
 
 async def answer_docs(question: str, doc_ids: list[str], *, db, store, settings: Settings, gate: RunGate,
-                      history: list = ()) -> AsyncIterator[Event]:
+                      history: list = (), task: str = "answer") -> AsyncIterator[Event]:
     """Scope check (as deep mode), then, holding a gate slot of the sandbox pool: index, retrieve, answer."""
     verdict = await guard("docs", question, settings=settings)
     if not verdict.in_scope:
@@ -151,18 +153,20 @@ async def answer_docs(question: str, doc_ids: list[str], *, db, store, settings:
             if status[fid]["status"] != "ready":
                 yield _fail(name, status[fid]["error"])
                 return
+        reproduce = task == "reproduce"
+        prompt = REPRODUCE if reproduce else DOCS
         readable = [i for i in files if status[i]["chunks"]]
         empty = [EmptyFile(file_id=i, file_name=files[i]) for i in files if i not in readable]  # names never enter the text
         pf = [ProvDocFile(file_id=i, sha256=status[i].get("sha256"), truncated=bool(status[i].get("truncated"))) for i in files]
         if not readable:
             yield FinalAnswer(content=NO_TEXT, references=[], empty_files=empty, usage=usage.snapshot(),
-                              provenance=provenance.docs(settings, DOCS, pf, passages=0, cited=0, history_turns=len(history)))
+                              provenance=provenance.docs(settings, prompt, pf, passages=0, cited=0, history_turns=len(history)))
             yield Complete()
             return
-        passages = await documents.search(db, readable, question)
+        passages = await documents.search(db, readable, f"{question} {REPRO_TERMS}" if reproduce else question)
         user = _history_block(history) + _block(files, passages) + f"\n\nQuestion:\n{question}"
         try:
-            r = await llm.complete(DOCS, user, max_tokens=settings.synthesis_max_tokens, json_mode=True, settings=settings)
+            r = await llm.complete(prompt, user, max_tokens=settings.synthesis_max_tokens, json_mode=True, settings=settings)
         except Exception:
             log.warning("docs: model call failed", exc_info=True)
             yield Error(message=FAIL, code="failed")
@@ -170,7 +174,7 @@ async def answer_docs(question: str, doc_ids: list[str], *, db, store, settings:
         text, quotes = _parse(r.text)
         content, refs = _safe_verify(text, quotes, passages, files)
         yield FinalAnswer(content=content, references=[], doc_refs=refs, empty_files=empty, usage=usage.snapshot(),
-                          provenance=provenance.docs(settings, DOCS, pf, passages=len(passages), cited=len(refs), history_turns=len(history)))
+                          provenance=provenance.docs(settings, prompt, pf, passages=len(passages), cited=len(refs), history_turns=len(history)))
         yield Complete()
     finally:
         gate.release()
