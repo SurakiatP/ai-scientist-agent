@@ -48,6 +48,24 @@ const ACCEPT = ".csv,.xlsx,.parquet,.json,.pdf";
 const MAX_DOCS = 5; // the server takes 1-5 PDFs per question
 const formatSize = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
 
+// The home composer's arrival: a rainbow light starts at the bottom centre, splits, runs up both sides and meets at the top,
+// then fades (once per mount; a new session remounts it). Two rings: a crisp 1.5px line and a blurred glow under it.
+// One pseudo-element draws the clockwise arc; its mirror (scaleX -1) is the counter-clockwise one. --aurora is the head angle
+// measured from the bottom (registered as an <angle> in the theme so it can animate). Under reduced motion nothing runs.
+const arc = "conic-gradient(from 180deg, transparent 0deg, transparent calc(var(--aurora) - 90deg), #34A853 calc(var(--aurora) - 66deg), #FBBC05 calc(var(--aurora) - 44deg), #EA4335 calc(var(--aurora) - 22deg), #4285F4 var(--aurora), transparent calc(var(--aurora) + 0.5deg))";
+const aurora = (width: number, blur: number, strength: number) => ({
+  display: "none", position: "absolute", inset: -1, borderRadius: "inherit", pointerEvents: "none", zIndex: 1,
+  "@media (prefers-reduced-motion: no-preference)": { display: "block" },
+  "&::before, &::after": {
+    content: '""', position: "absolute", inset: 0, borderRadius: "inherit", padding: `${width}px`, background: arc, filter: blur ? `blur(${blur}px)` : "none",
+    mask: "linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0)", WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)", WebkitMaskComposite: "xor",
+    opacity: 0, animation: `aurora-run 1.7s cubic-bezier(0.4, 0, 0.2, 1) 0.35s both, aurora-fade 1.7s linear 0.35s both`,
+  },
+  "&::after": { transform: "scaleX(-1)" },
+  "@keyframes aurora-run": { from: { "--aurora": "0deg" }, to: { "--aurora": "200deg" } },
+  "@keyframes aurora-fade": { "0%": { opacity: 0 }, "10%": { opacity: strength }, "72%": { opacity: strength }, "100%": { opacity: 0 } },
+}) as const;
+
 export function Composer({ sessionId, large = false }: { sessionId: string; large?: boolean }) {
   const t = useT();
   const text = useDraft((s) => s.drafts[sessionId] ?? ""), set = useDraft((s) => s.set);
@@ -197,7 +215,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
     <Box sx={{ width: "100%" }}>
       <input ref={picker} type="file" accept={ACCEPT} multiple hidden onChange={pick} />
       <Box sx={{
-        display: "flex", alignItems: "stretch", bgcolor: "background.paper", border: 1, borderRadius: large ? { xs: "22px", sm: "28px" } : { xs: 3, sm: 4 },
+        position: "relative", display: "flex", alignItems: "stretch", bgcolor: "background.paper", border: 1, borderRadius: large ? { xs: "22px", sm: "28px" } : { xs: 3, sm: 4 },
         borderColor: large ? "color-mix(in srgb, var(--mui-palette-divider) 55%, transparent)" : "divider",
         // the home composer is the page's one object: lifted off the paper with a long, soft navy shadow
         boxShadow: large ? "0 30px 60px -30px rgb(28 78 143 / 0.4), 0 2px 10px -4px rgb(14 26 44 / 0.08)" : "none",
@@ -206,6 +224,8 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
           ? { borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 55%, transparent)", boxShadow: "0 30px 60px -28px rgb(28 78 143 / 0.5), 0 0 0 4px rgb(var(--mui-palette-primary-mainChannel) / 0.08)" }
           : { borderColor: "primary.main", boxShadow: "0 0 0 1px var(--mui-palette-primary-main), 0 0 28px color-mix(in srgb, var(--mui-palette-primary-main) 28%, transparent)" },
       }}>
+        {large && <Box key={`${sessionId}-glow`} aria-hidden="true" sx={aurora(6, 10, 0.55)} />}
+        {large && <Box key={`${sessionId}-line`} aria-hidden="true" sx={aurora(1.5, 0, 1)} />}
         {!large && <Box sx={{ display: "flex", alignItems: "flex-end", borderRight: 1, borderColor: "divider", px: 0.75, py: 0.75, my: 0.5 }}>{attachButton}</Box>}
         <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", gap: 0.5, py: large ? 1.5 : 1.25, pl: large ? 2 : 1.5, pr: large ? 1.5 : 1 }}> {/* py matches the attach column (my 0.5 + py 0.75) so both centre on the same line */}
           {files.map((f) => (

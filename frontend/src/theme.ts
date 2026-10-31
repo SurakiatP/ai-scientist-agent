@@ -53,6 +53,7 @@ export const theme = createTheme({
     MuiMenuItem: { styleOverrides: { root: { "&.Mui-focusVisible": { outlineOffset: -2 } } } }, // menu paper clips an outside ring
     MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } },
     MuiCssBaseline: { styleOverrides: {
+      "@property --aurora": { syntax: "'<angle>'", inherits: "false", initialValue: "0deg" }, // the home composer's light (Composer.tsx)
       html: { scrollbarColor: "var(--mui-palette-text-secondary) transparent" },
       "::selection": { backgroundColor: "var(--mui-palette-primary-main)", color: "var(--mui-palette-primary-contrastText)" },
       "input, textarea": { caretColor: "var(--mui-palette-primary-main)" },
