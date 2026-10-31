@@ -48,11 +48,12 @@ const ACCEPT = ".csv,.xlsx,.parquet,.json,.pdf";
 const MAX_DOCS = 5; // the server takes 1-5 PDFs per question
 const formatSize = (n: number) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1024 * 1024)).toFixed(1)} MB`;
 
-// The home composer's arrival: a rainbow light starts at the bottom centre, splits, runs up both sides and meets at the top,
-// then fades (once per mount; a new session remounts it). Two rings: a crisp 1.5px line and a blurred glow under it.
+// The home composer's arrival: a light starts at the bottom centre, splits, runs up both sides and meets at the top,
+// then fades (once per mount; a new session remounts it). Two rings: a crisp 1px line and a faint 3px glow under it.
 // One pseudo-element draws the clockwise arc; its mirror (scaleX -1) is the counter-clockwise one. --aurora is the head angle
 // measured from the bottom (registered as an <angle> in the theme so it can animate). Under reduced motion nothing runs.
-const arc = "conic-gradient(from 180deg, transparent 0deg, transparent calc(var(--aurora) - 90deg), #34A853 calc(var(--aurora) - 66deg), #FBBC05 calc(var(--aurora) - 44deg), #EA4335 calc(var(--aurora) - 22deg), #4285F4 var(--aurora), transparent calc(var(--aurora) + 0.5deg))";
+// Theme colours only: a pale sky tail, the navy primary, the AI violet at the head (both follow light and dark mode).
+const arc = "conic-gradient(from 180deg, transparent 0deg, transparent calc(var(--aurora) - 90deg), color-mix(in srgb, var(--mui-palette-primary-main) 35%, transparent) calc(var(--aurora) - 60deg), var(--mui-palette-primary-main) calc(var(--aurora) - 28deg), var(--mui-palette-surface-ai) var(--aurora), transparent calc(var(--aurora) + 0.5deg))";
 const aurora = (width: number, blur: number, strength: number) => ({
   display: "none", position: "absolute", inset: -1, borderRadius: "inherit", pointerEvents: "none", zIndex: 1,
   "@media (prefers-reduced-motion: no-preference)": { display: "block" },
@@ -224,8 +225,8 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
           ? { borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 55%, transparent)", boxShadow: "0 30px 60px -28px rgb(28 78 143 / 0.5), 0 0 0 4px rgb(var(--mui-palette-primary-mainChannel) / 0.08)" }
           : { borderColor: "primary.main", boxShadow: "0 0 0 1px var(--mui-palette-primary-main), 0 0 28px color-mix(in srgb, var(--mui-palette-primary-main) 28%, transparent)" },
       }}>
-        {large && <Box key={`${sessionId}-glow`} aria-hidden="true" sx={aurora(6, 10, 0.55)} />}
-        {large && <Box key={`${sessionId}-line`} aria-hidden="true" sx={aurora(1.5, 0, 1)} />}
+        {large && <Box key={`${sessionId}-glow`} aria-hidden="true" sx={aurora(3, 5, 0.35)} />}
+        {large && <Box key={`${sessionId}-line`} aria-hidden="true" sx={aurora(1, 0, 0.9)} />}
         {!large && <Box sx={{ display: "flex", alignItems: "flex-end", borderRight: 1, borderColor: "divider", px: 0.75, py: 0.75, my: 0.5 }}>{attachButton}</Box>}
         <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", gap: 0.5, py: large ? 1.5 : 1.25, pl: large ? 2 : 1.5, pr: large ? 1.5 : 1 }}> {/* py matches the attach column (my 0.5 + py 0.75) so both centre on the same line */}
           {files.map((f) => (
