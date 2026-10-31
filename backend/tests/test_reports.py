@@ -183,3 +183,64 @@ async def test_export_gated_and_json_only(monkeypatch):
         assert r.status_code in (415, 422)
         app.state.preview_gate.free = 0
         assert (await c.post("/v1/reports/export", json=body())).status_code == 429
+
+
+# --- LaTeX export -------------------------------------------------------------------------------------------------
+from scientist import report_latex  # noqa: E402
+
+EVIL = r"\input{/etc/passwd} \write18{rm -rf /} $x^2$ 50% #1 a_b ~ {x} & <y> |z|"
+
+
+def tex_body(**kw):
+    return body(format="tex", language="en", title="RAG vs fine-tuning", subtitle=EVIL,
+                sections=[{"heading": "Abstract", "paragraphs": ["We compare [1] and [2]."]},
+                          {"heading": "Method " + EVIL, "paragraphs": ["As in [1, 3] and [9]. " + EVIL],
+                           "blocks": [{"type": "paragraph", "runs": [{"text": "As in [1, 3] and [9]. " + EVIL}]},
+                                      {"type": "paragraph", "runs": [{"text": "Bold ", "bold": True}, {"text": "code_x", "code": True},
+                                                                     {"text": " see [1-2]."}]},
+                                      {"type": "bullets", "items": [[{"text": "one"}], [{"text": "two [3]"}]]},
+                                      {"type": "table", "header": ["A", "B_2"], "rows": [["1", "50%"], ["x"]]}]}], **kw)
+
+
+@pytest.mark.parametrize("template", list(report_latex.TEMPLATES))
+async def test_tex_templates(template, monkeypatch):
+    r = await post(tex_body(template=template), monkeypatch)
+    assert r.status_code == 200 and r.headers["content-type"].startswith("application/x-tex")
+    assert unquote(r.headers["content-disposition"]).endswith(".tex")
+    src = r.text
+    assert src.startswith("% !TeX program = xelatex") and report_latex.TEMPLATES[template][0] in src
+    assert r"\begin{abstract}" in src and "We compare \\cite{ref1} and \\cite{ref2}." in src
+    assert "\\cite{ref1,ref3} and [9]." in src and "see \\cite{ref1,ref2}." in src  # [9] is no reference: stays text
+    assert "\\bibitem{ref1} Kim. Paper A. 2020. \\url{https://doi.org/10.1/x}" in src
+    assert "javascript" not in src  # an unsafe URL is never written
+    assert ("\\begin{table*}" if template == "ieee" else "\\begin{supertabular}") in src and "\\textbf{B\\_2}" in src and "50\\%" in src and "\\texttt{code\\_x}" in src
+
+
+def test_tex_escapes_every_markup_character():
+    out = report_latex.tex(EVIL)
+    assert "\\input{" not in out and "\\write18{" not in out
+    assert out.count("\\textbackslash{}") == 2 and "\\$x\\textasciicircum{}2\\$" in out and "50\\%" in out and "\\#1" in out
+    assert "\\{x\\}" in out and "\\&" in out and "\\textless{}y\\textgreater{}" in out and "\\textbar{}z\\textbar{}" in out
+
+
+def test_thai_uses_laksaman_and_thai_line_breaking():
+    src = report_latex.render_latex({**body(format="tex"), "template": "ieee"}).decode()
+    assert "\\setmainfont{Laksaman}" in src and "ผู้ป่วย\\allowbreak{}ที่\\allowbreak{}เป็น" in src and "\\renewcommand{\\refname}{เอกสารอ้างอิง}" in src
+    assert TH in src.replace("\\allowbreak{}", "")
+
+
+async def test_unknown_template_is_422(monkeypatch):
+    assert (await post(tex_body(template="nature"), monkeypatch)).status_code == 422
+
+
+def test_greek_and_symbols_become_maths_and_thai_borrows_a_latin_face_for_accents():
+    assert report_latex.tex("α ≥ 5 µg ΔT") == r"\ensuremath{\alpha} \ensuremath{\geq} 5 \ensuremath{\mu}g \ensuremath{\Delta}T"
+    assert report_latex.tex("Szőke") == "Szőke"  # Latin faces have it
+    src = report_latex.render_latex({**body(format="tex"), "title": "ผลของ Szőke β"}).decode()
+    assert r"\title{ผล\allowbreak{}ของ Sz{\latinfont ő}ke \ensuremath{\beta}}" in src and r"\newfontfamily\latinfont{texgyretermes}" in src
+    assert report_latex.tex("ő") == "ő"  # the Thai setting does not leak out of the render
+
+
+def test_adjacent_citations_merge_into_one_cite():
+    keys = {"6": "ref6", "7": "ref7", "8": "ref8", "12": "ref12"}
+    assert report_latex._text("restored.[6][7][8][12] and [6][99]", keys) == "restored.\\cite{ref6,ref7,ref8,ref12} and [6][99]"

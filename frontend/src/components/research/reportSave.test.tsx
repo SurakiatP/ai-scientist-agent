@@ -58,7 +58,7 @@ describe("ReportForm save", () => {
     flow(() => upJson(), () => new Response("x"));
     fetchMock.mockImplementationOnce(() => new Promise(() => {})); // preview or export, whichever comes first stays pending
     render(<ReportForm turn={turn} onClose={() => {}} />);
-    await act(async () => { void useExport.getState().save({ style: "standard", font: "sarabun", title: "T", subtitle: "", refs: false, lang: "en", lead: "L", doc: docFromSections([{ heading: "h", text: "b" }]) }, "pdf", turn); });
+    await act(async () => { void useExport.getState().save({ style: "standard", tex: null, font: "sarabun", title: "T", subtitle: "", refs: false, lang: "en", lead: "L", doc: docFromSections([{ heading: "h", text: "b" }]) }, "pdf", turn); });
     expect(screen.getByRole("button", { name: t.fSaveDocx })).toBeDisabled();
   });
   it.each([[422, "fErr422"], [503, "fErr503"]] as const)("export %i leaves the library untouched", async (status, key) => {
@@ -150,6 +150,25 @@ describe("ReportForm font", () => {
     open(t.fStyle); fireEvent.click(screen.getByRole("option", { name: t.fStyleOfficial }));
     fireEvent.click(screen.getByRole("button", { name: t.fSavePdf, hidden: true }));
     await waitFor(() => expect(exportBody()).toMatchObject({ style: "official", font: "th-sarabun-new" }));
+  });
+});
+
+describe("ReportForm LaTeX templates", () => {
+  it("a LaTeX template swaps the save buttons for one .tex download that sends the template, and turns the font off", async () => {
+    flow(() => upJson(), () => new Response("% !TeX program = xelatex", { status: 200, headers: { "Content-Disposition": "attachment; filename*=UTF-8''T.tex" } }));
+    URL.createObjectURL = vi.fn(() => "blob:x"); URL.revokeObjectURL = vi.fn();
+    render(<ReportForm turn={turn} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: t.fSettings }));
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: t.fStyle }));
+    expect(screen.getByText(t.fGroupTex)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: t.fTex_ieee }));
+    expect(screen.queryByRole("button", { name: t.fSavePdf, hidden: true })).toBeNull();
+    expect(screen.getByRole("combobox", { name: t.fFont })).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(screen.getByRole("button", { name: t.fDownloadTex, hidden: true }));
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/reports/export"))).toBe(true));
+    const sent = JSON.parse(String(fetchMock.mock.calls.find((c) => String(c[0]).includes("/reports/export"))![1].body));
+    expect(sent).toMatchObject({ format: "tex", template: "ieee" });
+    expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/files"))).toBe(false); // downloaded, not put in the library
   });
 });
 

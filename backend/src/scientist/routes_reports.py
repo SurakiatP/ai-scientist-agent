@@ -1,4 +1,4 @@
-"""POST /v1/reports/export: a report draft in, a PDF or DOCX file out. No network, no server paths, plain text only."""
+"""POST /v1/reports/export: a report draft in, a PDF, DOCX or LaTeX (.tex) file out. No network, no server paths, plain text only."""
 import asyncio
 import hashlib
 import json
@@ -13,13 +13,14 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, model_validator
 
-from scientist import llm, report_render, usage
+from scientist import llm, report_latex, report_render, usage
 from scientist.routes_store import require_json
 
 router = APIRouter()
 TIMEOUT_S, MAX_CHARS, MAX_BYTES = 20, 200_000, 10 << 20
 TYPES = {"pdf": "application/pdf",
-         "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+         "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+         "tex": "application/x-tex; charset=utf-8"}
 
 
 class Run(BaseModel):
@@ -92,7 +93,7 @@ class Reference(BaseModel):
 
 
 class ExportRequest(BaseModel):
-    format: Literal["pdf", "docx"]
+    format: Literal["pdf", "docx", "tex"]
     language: Literal["th", "en"]
     title: str = Field(max_length=200)
     subtitle: str | None = Field(default=None, max_length=300)
@@ -101,6 +102,7 @@ class ExportRequest(BaseModel):
     style: Literal["standard", "official"] = "standard"  # official = Thai government letter layout
     # None = style default (sarabun; DOCX of official style names "TH Sarabun New"). PDF always embeds a bundled OFL face.
     font: Literal[tuple(report_render.FONTS_BY_ID)] | None = None
+    template: Literal[tuple(report_latex.TEMPLATES)] = "article"  # format tex only: the journal/conference class
 
     @model_validator(mode="after")
     def _total(self):
@@ -122,7 +124,7 @@ async def export(req: ExportRequest, request: Request):
     if g.free == 0:
         raise HTTPException(429, "too many exports in progress; try again shortly")
     g.free -= 1
-    render = report_render.render_pdf if req.format == "pdf" else report_render.render_docx
+    render = {"pdf": report_render.render_pdf, "docx": report_render.render_docx, "tex": report_latex.render_latex}[req.format]
     try:
         data = await asyncio.wait_for(asyncio.to_thread(render, req.model_dump()), TIMEOUT_S)
     except (TimeoutError, ImportError):

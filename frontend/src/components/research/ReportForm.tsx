@@ -4,13 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel, ListSubheader, Popover, IconButton, MenuItem, Stack, Switch, TextField, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import BookmarkAddOutlinedIcon from "@mui/icons-material/BookmarkAddOutlined";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import CodeRoundedIcon from "@mui/icons-material/CodeRounded";
+import DownloadRoundedIcon from "@mui/icons-material/DownloadRounded";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import { useEditor } from "@tiptap/react";
 import type { Turn } from "@/lib/chat";
-import { defaultFont, draftIssue, hasLead, errorText, FONTS, initialDraft, refsOf, toPayload, useExport, type Draft, type Format } from "@/lib/exportReport";
+import { defaultFont, draftIssue, hasLead, errorText, FONTS, initialDraft, refsOf, requestExport, TEX_TEMPLATES, toPayload, useExport, type Draft, type Format, type TexTemplate } from "@/lib/exportReport";
 import { reportExtensions } from "@/lib/reportExtensions";
 import { enterFade } from "@/lib/motion";
 import { useGoFiles } from "@/lib/nav";
@@ -25,6 +27,20 @@ import { ReportSheet } from "./ReportSheet";
 import { ReportToolbar } from "./ReportToolbar";
 
 const hidden = srOnly;
+
+// The LaTeX source the download will contain, refreshed a moment after the last edit.
+function TexSource({ payload, label }: { payload: ReturnType<typeof toPayload> | null; label: string }) {
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    if (!payload) return;
+    const ac = new AbortController();
+    const id = setTimeout(() => { requestExport(payload, ac.signal).then((r) => r.blob.text()).then(setSrc).catch(() => {}); }, 600);
+    return () => { clearTimeout(id); ac.abort(); };
+  }, [payload]);
+  return (
+    <Box component="pre" tabIndex={0} aria-label={label} sx={{ m: 0, p: 2, minHeight: 200, borderRadius: 2, border: 1, borderColor: "divider", bgcolor: "surface.shell", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "0.75rem", lineHeight: 1.6, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{src}</Box>
+  );
+}
 // Create-document dialog: the answer opens as an A4 page that is edited like a Word document. Mount it only while open so each open starts from the answer again.
 export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void }) {
   const t = useT();
@@ -46,7 +62,9 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const dirty = ver !== clean.ver || base !== clean.base;
   const leave = () => (dirty ? setAsk(true) : onClose());
-  const preview = usePreview(useMemo(() => (pv && !issue ? toPayload(d, "pdf", turn) : null), [pv, d, issue, turn]));
+  const tex = base.tex;
+  const preview = usePreview(useMemo(() => (pv && !issue && !tex ? toPayload(d, "pdf", turn) : null), [pv, d, issue, turn, tex]));
+  const texPayload = useMemo(() => (pv && !issue && tex ? toPayload(d, "tex", turn) : null), [pv, d, issue, turn, tex]);
   const sheetRefs = useMemo(() => refsOf(turn), [turn]);
   // Translation. versions[l] = the document as last seen in language l; srcHash = hash of the other-language segments it was made from
   // (or turned into). Equal hashes on a switch mean nothing changed since, so the stored version is restored without a request.
@@ -111,6 +129,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   };
   const set = (p: Partial<Draft>) => setBase((x) => ({ ...x, ...p }));
   const make = async (f: Format) => { if (issue) return; const at = { ver, base }; await save(d, f, turn); if (useExport.getState().saved) setClean(at); };
+  const download = async () => { if (issue) return; const at = { ver, base }; await useExport.getState().run(d, "tex", turn); if (useExport.getState().done) setClean(at); };
   const trBar = tr && (
     <Stack direction="row" sx={{ alignItems: "center", gap: 1 }}>
       <CircularProgress size={16} aria-hidden />
@@ -125,11 +144,21 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
         <MenuItem value="en">English</MenuItem>
       </TextField>
       {wide && trBar}
-      <TextField select size="small" label={t.fStyle} value={base.style} onChange={(e) => { const style = e.target.value as Draft["style"]; set(fontTouched ? { style } : { style, font: defaultFont(style) }); }} sx={{ minWidth: 160 }}>
-        <MenuItem value="standard">{t.fStyleStd}</MenuItem>
-        <MenuItem value="official">{t.fStyleOfficial}</MenuItem>
+      {/* one choice of layout: the PDF/Word styles, or a LaTeX journal/conference template (then the file is .tex) */}
+      <TextField select size="small" label={t.fStyle} value={tex ? `tex:${tex}` : base.style} sx={{ minWidth: 220 }}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v.startsWith("tex:")) { set({ tex: v.slice(4) as TexTemplate }); return; }
+          const style = v as Draft["style"];
+          set(fontTouched ? { style, tex: null } : { style, tex: null, font: defaultFont(style) });
+        }}>
+        <ListSubheader>{t.fGroupDoc}</ListSubheader>
+        <MenuItem value="standard" sx={{ minHeight: 44 }}>{t.fStyleStd}</MenuItem>
+        <MenuItem value="official" sx={{ minHeight: 44 }}>{t.fStyleOfficial}</MenuItem>
+        <ListSubheader>{t.fGroupTex}</ListSubheader>
+        {TEX_TEMPLATES.map((x) => <MenuItem key={x} value={`tex:${x}`} sx={{ minHeight: 44 }}>{t[`fTex_${x}`]}</MenuItem>)}
       </TextField>
-      <TextField select size="small" label={t.fFont} value={base.font} onChange={(e) => { setFontTouched(true); set({ font: e.target.value as Draft["font"] }); }} sx={{ minWidth: 200 }} slotProps={{ select: { MenuProps: { slotProps: { paper: { sx: { maxHeight: 360 } } } } } }}>
+      <TextField select size="small" label={t.fFont} disabled={!!tex} helperText={tex ? t.fTexFont : undefined} value={base.font} onChange={(e) => { setFontTouched(true); set({ font: e.target.value as Draft["font"] }); }} sx={{ minWidth: 200 }} slotProps={{ select: { MenuProps: { slotProps: { paper: { sx: { maxHeight: 360 } } } } } }}>
         {(["gov", "sipa", "general"] as const).flatMap((g) => [
           <ListSubheader key={g}>{t[`fFontGroup_${g}`]}</ListSubheader>,
           ...FONTS.filter((f) => f.group === g).map((f) => <MenuItem key={f.id} value={f.id} sx={{ fontFamily: f.cssFamily, minHeight: 44 }}>{f.label}</MenuItem>),
@@ -145,15 +174,27 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
         <Typography id="rf-title" component="h2" sx={{ flex: "1 1 0", minWidth: 0, fontSize: "1.0625rem", fontWeight: 700 }}>{t.fTitle}</Typography>
         {wide ? (
           <>
-            <Button variant="outlined" disabled={!!busy || !!issue || !!tr} startIcon={<BookmarkAddOutlinedIcon />} onClick={() => make("docx")} sx={{ minHeight: 44 }}>{t.fSaveDocx}</Button>
-            <Button variant="contained" disabled={!!busy || !!issue || !!tr} startIcon={<BookmarkAddOutlinedIcon />} onClick={() => make("pdf")} sx={{ minHeight: 44 }}>{t.fSavePdf}</Button>
-            <Button variant={pv ? "contained" : "outlined"} color={pv ? "secondary" : "inherit"} aria-pressed={pv} disabled={!!tr} startIcon={<VisibilityOutlinedIcon />} onClick={() => setPv((v) => !v)} sx={{ minHeight: 44, borderColor: "divider" }}>{t.pvShow}</Button>
+            {tex ? (
+              <Button variant="contained" disabled={!!busy || !!issue || !!tr} startIcon={<DownloadRoundedIcon />} onClick={download} sx={{ minHeight: 44 }}>{t.fDownloadTex}</Button>
+            ) : (
+              <>
+                <Button variant="outlined" disabled={!!busy || !!issue || !!tr} startIcon={<BookmarkAddOutlinedIcon />} onClick={() => make("docx")} sx={{ minHeight: 44 }}>{t.fSaveDocx}</Button>
+                <Button variant="contained" disabled={!!busy || !!issue || !!tr} startIcon={<BookmarkAddOutlinedIcon />} onClick={() => make("pdf")} sx={{ minHeight: 44 }}>{t.fSavePdf}</Button>
+              </>
+            )}
+            <Button variant={pv ? "contained" : "outlined"} color={pv ? "secondary" : "inherit"} aria-pressed={pv} disabled={!!tr} startIcon={tex ? <CodeRoundedIcon /> : <VisibilityOutlinedIcon />} onClick={() => setPv((v) => !v)} sx={{ minHeight: 44, borderColor: "divider" }}>{tex ? t.pvTex : t.pvShow}</Button>
           </>
         ) : (
           <>
-            <Tooltip title={t.fSaveDocx} describeChild><span><IconButton aria-label={t.fSaveDocx} disabled={!!busy || !!issue || !!tr} onClick={() => make("docx")} sx={{ width: 44, height: 44 }}><DescriptionOutlinedIcon /></IconButton></span></Tooltip>
-            <Tooltip title={t.fSavePdf} describeChild><span><IconButton aria-label={t.fSavePdf} color="primary" disabled={!!busy || !!issue || !!tr} onClick={() => make("pdf")} sx={{ width: 44, height: 44 }}><PictureAsPdfOutlinedIcon /></IconButton></span></Tooltip>
-            <Tooltip title={t.pvShow} describeChild><IconButton aria-label={t.pvShow} aria-pressed={pv} disabled={!!tr} color={pv ? "primary" : "default"} onClick={() => setPv((v) => !v)} sx={{ width: 44, height: 44 }}><VisibilityOutlinedIcon /></IconButton></Tooltip>
+            {tex ? (
+              <Tooltip title={t.fDownloadTex} describeChild><span><IconButton aria-label={t.fDownloadTex} color="primary" disabled={!!busy || !!issue || !!tr} onClick={download} sx={{ width: 44, height: 44 }}><DownloadRoundedIcon /></IconButton></span></Tooltip>
+            ) : (
+              <>
+                <Tooltip title={t.fSaveDocx} describeChild><span><IconButton aria-label={t.fSaveDocx} disabled={!!busy || !!issue || !!tr} onClick={() => make("docx")} sx={{ width: 44, height: 44 }}><DescriptionOutlinedIcon /></IconButton></span></Tooltip>
+                <Tooltip title={t.fSavePdf} describeChild><span><IconButton aria-label={t.fSavePdf} color="primary" disabled={!!busy || !!issue || !!tr} onClick={() => make("pdf")} sx={{ width: 44, height: 44 }}><PictureAsPdfOutlinedIcon /></IconButton></span></Tooltip>
+              </>
+            )}
+            <Tooltip title={tex ? t.pvTex : t.pvShow} describeChild><IconButton aria-label={tex ? t.pvTex : t.pvShow} aria-pressed={pv} disabled={!!tr} color={pv ? "primary" : "default"} onClick={() => setPv((v) => !v)} sx={{ width: 44, height: 44 }}><VisibilityOutlinedIcon /></IconButton></Tooltip>
           </>
         )}
         <Tooltip title={t.fCancel} describeChild>
@@ -173,7 +214,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
         {!wide && trBar}
         <Box role="status" sx={hidden}>{tr ? (tr === "en" ? t.trToEn : t.trToTh) : ""}</Box>
         <Box role="status" sx={busy ? { fontSize: "0.875rem", color: "text.secondary" } : hidden}>{busy ? t.fBusy : saved ? t.fSaved : ""}</Box>
-        <Typography sx={wide ? { fontSize: "0.8125rem", color: "text.secondary" } : hidden}>{t.fSaveNote}</Typography>
+        <Typography sx={wide ? { fontSize: "0.8125rem", color: "text.secondary" } : hidden}>{tex ? t.fTexNote : t.fSaveNote}</Typography>
       </Box>
       <ReportToolbar
         editor={editor}
@@ -197,7 +238,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
         </Box>
         {pv && (
           <Box sx={{ ...enterFade, flex: { xs: 1, md: "0 0 380px" }, minWidth: 0, overflow: "auto", p: 2, borderLeft: { md: 1 }, borderColor: "divider" }}>
-            <PreviewPane p={preview} issue={!!issue} />
+            {tex && !issue ? <TexSource payload={texPayload} label={t.pvTexLabel} /> : <PreviewPane p={preview} issue={!!issue} />}
           </Box>
         )}
       </Box>
