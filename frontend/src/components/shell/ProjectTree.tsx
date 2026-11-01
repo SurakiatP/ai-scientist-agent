@@ -113,7 +113,7 @@ export function ProjectTree({ query, onPick }: { query: string; onPick?: () => v
     <Box component="section" aria-label={t.projects}>
       <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", pl: 1.25, pt: 0.5 }}>
         <Button color="inherit" aria-expanded={listOpen} aria-label={`${t.toggleProject} ${t.projects}`} onClick={() => setListOpen((v) => !v)} endIcon={<ExpandMoreRoundedIcon sx={{ transform: listOpen ? "none" : "rotate(-90deg)" }} />}
-          sx={{ ...coarse(32), px: 0.75, ml: -0.75, fontSize: "0.6875rem", fontWeight: 500, color: "text.secondary", "& .MuiButton-endIcon": { ml: 0.25, "& svg": { fontSize: 16 } } }}>
+          sx={{ ...coarse(32), px: 0.75, ml: -0.75, fontSize: "0.75rem", fontWeight: 500, color: "text.secondary", "& .MuiButton-endIcon": { ml: 0.25, "& svg": { fontSize: 16 } } }}>
           <Box component="span">{t.projects}</Box>
         </Button>
         <IconButton size="small" aria-label={t.newProject} aria-expanded={adding} onClick={() => (adding ? closeForm() : setAdding(true))} sx={{ color: "text.primary" }}>

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { Box, Button, Typography } from "@mui/material";
-import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import ErrorOutlineRoundedIcon from "@mui/icons-material/ErrorOutlineRounded";
 import TravelExploreRoundedIcon from "@mui/icons-material/TravelExploreRounded";
@@ -14,6 +14,7 @@ import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
 import IosShareRoundedIcon from "@mui/icons-material/IosShareRounded";
 import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
 import { ArrowPill, LandingHeader, lift, ring, wrap } from "@/components/landing/LandingHeader";
+import { LogoMark } from "@/components/landing/Dropdown";
 import { useHydrated } from "@/lib/history";
 import { PACK_IDS } from "@/lib/packs";
 import { usePrefs } from "@/lib/prefs";
@@ -139,7 +140,6 @@ export default function Home() {
             <Typography sx={{ mt: 1.5, fontSize: "0.875rem", color: "text.secondary" }}>{L.footerSub}</Typography>
             <Box component={Link} href="/chat" aria-label={`${L.example}. ${L.exampleHint}`}
               sx={{ mt: { xs: 4, md: 6 }, display: "flex", gap: 1.5, alignItems: "flex-start", maxWidth: "36rem", p: 2, borderRadius: "16px", border: 1, borderColor: "divider", bgcolor: "color-mix(in srgb, var(--mui-palette-background-paper) 55%, transparent)", color: "text.primary", textDecoration: "none", transition: `background-color 200ms ${out}, border-color 200ms ${out}`, ...ring, "&:hover": { bgcolor: "background.paper", borderColor: "primary.main" } }}>
-              <AutoAwesomeRoundedIcon sx={{ mt: 0.25, fontSize: 18, color: "surface.ai" }} />
               <Box>
                 <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{L.exampleLabel}</Typography>
                 <Typography sx={{ mt: 0.25, fontSize: "0.9375rem", lineHeight: 1.6, textWrap: "pretty" }}>“{L.example}”</Typography>
@@ -155,8 +155,7 @@ export default function Home() {
           <Box sx={{ ...section, display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0,1fr))", md: "repeat(4, minmax(0,1fr))" } }}>
             {L.stats.map((s, i) => (
               <Box key={s.t} sx={{ py: { xs: 3, md: 4.5 }, pl: { xs: i % 2 ? 2.5 : 0, md: i ? 4 : 0 }, borderLeft: { xs: i % 2 ? line : "none", md: i ? line : "none" }, borderTop: { xs: i > 1 ? line : "none", md: "none" } }}>
-                <Typography sx={{ fontSize: "0.75rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{String(i + 1).padStart(2, "0")}</Typography>
-                <Typography sx={{ mt: 1, fontSize: { xs: "1.75rem", md: "2.5rem" }, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{stats[i]}</Typography>
+                <Typography sx={{ mt: 0, fontSize: { xs: "1.5rem", md: "2.5rem" }, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{stats[i]}</Typography>
                 <Typography sx={{ mt: 1, fontSize: "0.875rem", fontWeight: 600 }}>{s.t}</Typography>
                 <Typography sx={{ fontSize: "0.75rem", color: "text.secondary", lineHeight: 1.6 }}>{s.d.replace("{papers}", String(usable.papers)).replace("{dbs}", String(usable.dbs))}</Typography>
               </Box>
@@ -180,11 +179,11 @@ export default function Home() {
             {L.capTitle.split("|").map((x) => <Box key={x} component="span" sx={{ display: "block" }}>{x}</Box>)}
           </Typography>
           <Box sx={{ display: "grid", gap: 2.5, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1.85fr) minmax(0,1fr)" } }}>
-            <Box sx={{ ...card, position: "relative", overflow: "hidden", p: { xs: 3, md: 4.5 }, "&::after": { content: '""', position: "absolute", top: -80, right: -60, width: 320, height: 320, borderRadius: "50%", background: "radial-gradient(closest-side, color-mix(in srgb, var(--mui-palette-surface-ai) 18%, transparent), transparent)", pointerEvents: "none" } }}>
-              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, px: 1.25, py: 0.25, borderRadius: 99, bgcolor: "surface.aiSoft", color: "surface.ai", fontSize: "0.75rem", fontWeight: 600 }}><AutoAwesomeRoundedIcon sx={{ fontSize: 14 }} />{L.capMain.chip}</Box>
+            <Box sx={{ ...card, position: "relative", overflow: "hidden", p: { xs: 3, md: 4.5 } }}>
+              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, px: 1.25, py: 0.25, borderRadius: 99, bgcolor: "surface.aiSoft", color: "surface.ai", fontSize: "0.75rem", fontWeight: 600 }}><LogoMark size={14} />{L.capMain.chip}</Box>
               <Typography component="h3" sx={{ m: 0, mt: 2, fontSize: { xs: "1.375rem", md: "1.875rem" }, fontWeight: 700, lineHeight: 1.4, textWrap: "balance" }}>{L.capMain.t}</Typography>
-              <Box sx={{ mt: 2, display: "inline-flex", p: 0.5, gap: 0.5, borderRadius: 99, bgcolor: "background.default", flexWrap: "wrap" }}>
-                {L.capMain.tabs.map((x, i) => <Box key={x} component="span" sx={{ px: 1.5, py: 0.5, borderRadius: 99, fontSize: "0.8125rem", fontWeight: i ? 400 : 600, color: i ? "text.secondary" : "primary.main", bgcolor: i ? "transparent" : "background.paper", boxShadow: i ? "none" : "0 1px 3px rgb(14 26 44 / 0.1)" }}>{x}</Box>)}
+              <Box sx={{ mt: 2, display: "inline-flex", gap: 0.5, flexWrap: "wrap" }}>
+                {L.capMain.tabs.map((x) => <Box key={x} component="span" sx={{ px: 1.25, py: 0.25, borderRadius: 99, border: 1, borderColor: "divider", fontSize: "0.8125rem", color: "text.secondary" }}>{x}</Box>)}
               </Box>
               <Typography sx={{ ...body, mt: 2, maxWidth: "36rem" }}>{L.capMain.d}</Typography>
               <Box sx={{ mt: 3.5, display: "grid", gap: 3, gridTemplateColumns: { xs: "minmax(0,1fr)", sm: "minmax(0,1.1fr) minmax(0,1fr)" }, alignItems: "end" }}>
@@ -233,13 +232,15 @@ export default function Home() {
               </Box>
             </Box>
           </Box>
-          <Box sx={{ mt: 2.5, display: "grid", gap: 2.5, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "repeat(3, minmax(0,1fr))" } }}>
+          <Box sx={{ mt: { xs: 4, md: 5 }, display: "grid", gap: { xs: 3, md: 4 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "repeat(3, minmax(0,1fr))" } }}>
             {L.capMore.map((c, i) => {
               const Icon = moreIcons[i];
               return (
-                <Box key={c.t} sx={{ ...card, p: 3, boxShadow: "none", bgcolor: "color-mix(in srgb, var(--mui-palette-background-paper) 70%, transparent)" }}>
-                  <Icon aria-hidden sx={{ fontSize: 22, color: "primary.main" }} />
-                  <Typography component="h3" sx={{ m: 0, mt: 1.5, fontSize: "1.0625rem", fontWeight: 700, lineHeight: 1.5 }}>{c.t}</Typography>
+                <Box key={c.t} sx={{ pt: 2.5, borderTop: 1, borderColor: "divider" }}>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Icon aria-hidden sx={{ fontSize: 20, color: "primary.main" }} />
+                    <Typography component="h3" sx={{ m: 0, fontSize: "1.0625rem", fontWeight: 700, lineHeight: 1.5 }}>{c.t}</Typography>
+                  </Box>
                   <Typography sx={{ ...body, mt: 0.75, fontSize: "0.875rem" }}>{c.d}</Typography>
                 </Box>
               );
@@ -284,7 +285,7 @@ export default function Home() {
 
         <Box id="faq" component="section" aria-labelledby="faq-h" sx={{ ...section, pb: { xs: 9, md: 14 } }}>
           <SectionLabel n={5}>{L.faqLabel}</SectionLabel>
-          <Typography id="faq-h" component="h2" sx={{ ...h2, mb: { xs: 3, md: 5 } }}>{L.faqTitle}</Typography>
+          <Typography id="faq-h" component="h2" sx={{ ...h2, mb: { xs: 4, md: 6 } }}>{L.faqTitle}</Typography>
           <Box sx={{ display: "grid", gap: { xs: 3, md: 6 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "repeat(2, minmax(0,1fr))" } }}>
             {[[L.checkTitle, L.checkBody], [L.scopeQ, L.scope]].map(([q, a]) => (
               <Box key={q} sx={{ pt: 2.5, borderTop: 1, borderColor: "divider" }}>
@@ -293,12 +294,12 @@ export default function Home() {
               </Box>
             ))}
           </Box>
+          <Box component={Link} href="/faq" sx={{ mt: 4, display: "inline-flex", alignItems: "center", gap: 0.5, fontWeight: 600, color: "primary.main", textDecoration: "none", minHeight: 44, ...ring, "&:hover": { textDecoration: "underline" } }}>{L.faqMore}<ArrowForwardRoundedIcon sx={{ fontSize: 18 }} /></Box>
         </Box>
       </Box>
 
       <Box component="footer" sx={{ position: "relative", px: { xs: 2, sm: 4 }, pb: { xs: 4, md: 6 } }}>
-        <Box sx={{ ...card, maxWidth: 1180, mx: "auto", px: { xs: 3, md: 6 }, py: { xs: 5, md: 7 }, display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, alignItems: { md: "center" }, justifyContent: "space-between", position: "relative", overflow: "hidden",
-          background: "radial-gradient(60% 120% at 100% 0%, rgb(var(--mui-palette-primary-mainChannel) / 0.12), transparent 70%), var(--mui-palette-background-paper)" }}>
+        <Box sx={{ ...card, maxWidth: 1180, mx: "auto", px: { xs: 3, md: 6 }, py: { xs: 5, md: 7 }, display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, alignItems: { md: "center" }, justifyContent: "space-between", position: "relative", overflow: "hidden", }}>
           <Box>
             <Typography sx={{ fontSize: { xs: "1.5rem", md: "2rem" }, fontWeight: 700, lineHeight: 1.4, textWrap: "balance" }}>{L.footer}</Typography>
             <Typography sx={{ ...body, mt: 0.75 }}>{L.footerSub}</Typography>

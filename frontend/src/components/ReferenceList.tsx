@@ -13,7 +13,7 @@ import type { Strings } from "@/lib/strings";
 export const anchorId = (turnId: string | undefined, refId: string) => (turnId ? `ref-${turnId}-${refId}` : `ref-${refId}`);
 
 export const monoFont = 'ui-monospace, "SF Mono", Menlo, monospace';
-const idChipSx = { fontFamily: monoFont, fontSize: "0.6875rem" };
+const idChipSx = { fontFamily: monoFont, fontSize: "0.75rem" };
 const tint = (token: string, pct = 14) => `color-mix(in srgb, var(--mui-palette-${token}) ${pct}%, transparent)`;
 const chipSx = (token: string) => ({
   bgcolor: tint(token), borderColor: tint(token, 40), color: `${token.replace("-", ".")}`,

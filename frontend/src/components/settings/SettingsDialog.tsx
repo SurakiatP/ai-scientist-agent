@@ -42,7 +42,7 @@ const EASE = "cubic-bezier(.22,1,.36,1)";
 // Settings row: icon + title/description left, compact radio group (or control) right; stacks under 600px.
 function Section({ labelId, title, note, icon, below, i = 0, children }: { labelId: string; title: string; note?: string; icon?: React.ReactNode; below?: boolean; i?: number; children: React.ReactNode }) {
   return (
-    <Box component="section" sx={{ display: "flex", flexDirection: below ? "column" : { xs: "column", sm: "row" }, alignItems: below ? "stretch" : { sm: "center" }, justifyContent: "space-between", gap: { xs: 1.25, sm: 2 }, px: 2, py: 1.5, border: 1, borderColor: "divider", borderRadius: 3, bgcolor: "surface.raised", animation: `${rise} 380ms ${EASE} both`, animationDelay: `${60 + i * 55}ms`, transition: "border-color 200ms ease-out, box-shadow 200ms ease-out", "&:hover": { borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 45%, transparent)" } }}>
+    <Box component="section" sx={{ display: "flex", flexDirection: below ? "column" : { xs: "column", sm: "row" }, alignItems: below ? "stretch" : { sm: "center" }, justifyContent: "space-between", gap: { xs: 1.25, sm: 2 }, px: 2, py: 1.5, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "surface.raised", animation: `${rise} 380ms ${EASE} both`, animationDelay: `${60 + i * 55}ms`, transition: "border-color 200ms ease-out, box-shadow 200ms ease-out", "&:hover": { borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 45%, transparent)" } }}>
       <Box sx={{ display: "flex", gap: 1.5, minWidth: 0, flex: 1 }}>
         {icon && <Box aria-hidden sx={{ color: "primary.main", display: "grid", placeItems: "center", width: 36, height: 36, mt: -0.25, borderRadius: 2, flexShrink: 0, bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 12%, transparent)" }}>{icon}</Box>}
         <Box sx={{ minWidth: 0 }}>
@@ -73,7 +73,7 @@ export function SettingsDialog() {
   const curLang = hydrated ? lang : "th";
   const curMode = mode ?? "system";
   return (
-    <Dialog open={open} onClose={close} fullWidth maxWidth={false} aria-labelledby="settings-title" slotProps={{ paper: { sx: { maxWidth: 640, borderRadius: 3, backgroundImage: "none", bgcolor: "background.default" } } }}>
+    <Dialog open={open} onClose={close} fullWidth maxWidth={false} aria-labelledby="settings-title" slotProps={{ paper: { sx: { maxWidth: 640, borderRadius: "24px", backgroundImage: "none", bgcolor: "background.default" } } }}>
       <DialogTitle id="settings-title" sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", pb: 0.5 }}>
         <Box component="span">
           <Typography component="span" sx={{ display: "block", fontSize: "1.375rem", fontWeight: 700, lineHeight: 1.3 }}>{t.settingsTitle}</Typography>

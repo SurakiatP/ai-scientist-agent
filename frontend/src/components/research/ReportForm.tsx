@@ -231,7 +231,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
         )}
       />
       {wide ? (
-        <Stack direction="row" useFlexGap sx={{ alignItems: "center", gap: 2, px: 2, py: 0.75, flexWrap: "wrap", borderBottom: 1, borderColor: "divider" }}>{fields}</Stack>
+        <Stack direction="row" useFlexGap sx={{ alignItems: "center", gap: 2, px: 2, pt: 1.5, pb: 1.25, flexWrap: "wrap", borderBottom: 1, borderColor: "divider" }}>{fields}</Stack>
       ) : (
         <Popover open={!!anchor} anchorEl={anchor} onClose={() => setAnchor(null)} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
           <Stack aria-label={t.fSettings} role="group" sx={{ p: 2, gap: 2, width: 260 }}>{fields}</Stack>

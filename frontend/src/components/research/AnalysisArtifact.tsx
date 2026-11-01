@@ -132,7 +132,7 @@ function Quality({ a, t }: { a: TurnAnalysis; t: Strings }) {
           <Box sx={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 1 }}>
             {[{ label: t.analysisRows, value: q.rows.toLocaleString() }, { label: t.analysisColumns, value: q.columns.toLocaleString() }, { label: t.analysisMissing, value: missing === null ? "—" : formatPercent(missing) }].map((m) => (
               <Box key={m.label}>
-                <Typography sx={{ fontSize: "0.6875rem", color: "text.secondary", lineHeight: 1.4 }}>{m.label}</Typography>
+                <Typography sx={{ fontSize: "0.75rem", color: "text.secondary", lineHeight: 1.4 }}>{m.label}</Typography>
                 <Typography sx={{ fontSize: "1.125rem", fontWeight: 700, lineHeight: 1.4, fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{m.value}</Typography>
               </Box>
             ))}
@@ -140,12 +140,12 @@ function Quality({ a, t }: { a: TurnAnalysis; t: Strings }) {
           {q.truncated && <Typography sx={{ fontSize: "0.75rem", color: "evidence.unverified", lineHeight: 1.5 }}>{t.analysisTruncated}</Typography>}
           {!!q.columns_info?.length && (
             <Box>
-              <Typography sx={{ fontSize: "0.6875rem", fontWeight: 700, color: "text.secondary", mb: 0.5 }}>{t.analysisColumnsTitle}</Typography>
+              <Typography sx={{ fontSize: "0.75rem", fontWeight: 700, color: "text.secondary", mb: 0.5 }}>{t.analysisColumnsTitle}</Typography>
               <Box component="ul" aria-label={t.analysisColumnsTitle} sx={{ m: 0, p: 0, listStyle: "none", maxHeight: 168, overflowY: "auto", scrollbarWidth: "thin" }}>
                 {q.columns_info.map((c, i) => (
                   <Stack component="li" key={`${c.name}#${i}`} direction="row" sx={{ alignItems: "baseline", gap: 1, py: 0.5, borderTop: i === 0 ? 0 : 1, borderColor: "divider" }}>
                     <Typography sx={{ flex: 1, minWidth: 0, fontSize: "0.75rem", lineHeight: 1.5, overflowWrap: "anywhere" }}>{c.name}</Typography>
-                    <Typography sx={{ fontSize: "0.6875rem", color: "text.secondary", fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', flexShrink: 0 }}>{c.dtype}</Typography>
+                    <Typography sx={{ fontSize: "0.75rem", color: "text.secondary", fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', flexShrink: 0 }}>{c.dtype}</Typography>
                     <Typography sx={{ fontSize: "0.75rem", color: c.null_pct > 0 ? "evidence.unverified" : "text.secondary", fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>{formatPercent(c.null_pct)}</Typography>
                   </Stack>
                 ))}
@@ -186,7 +186,7 @@ function Tables({ a, t }: { a: TurnAnalysis; t: Strings }) {
             <Typography component="h4" sx={{ m: 0, fontSize: "0.875rem", fontWeight: 700, overflowWrap: "anywhere" }}>{table.name || t.analysisTable}</Typography>
             {table.truncated && <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{t.analysisTableTruncated}</Typography>}
           </Stack>
-          <Box sx={{ display: { xs: "flex", sm: "none" }, alignItems: "center", mb: 0.5, color: "text.secondary", fontSize: "0.6875rem" }}>{t.tableScroll}</Box>
+          <Box sx={{ display: { xs: "flex", sm: "none" }, alignItems: "center", mb: 0.5, color: "text.secondary", fontSize: "0.75rem" }}>{t.tableScroll}</Box>
           <Box sx={{ maxWidth: "100%", overflowX: "auto", border: 1, borderColor: "divider", borderRadius: 1.5, scrollbarWidth: "thin" }}>
             <Box component="table" sx={{ borderCollapse: "collapse", width: "100%", fontSize: "0.8125rem" }}>
               <Box component="thead">
@@ -332,14 +332,14 @@ export function AnalysisArtifact({ turn }: { turn: Turn }) {
   const firstCsv = (a.artifacts ?? []).find((x) => x.kind === "csv" && artifactHref(x.url));
   const panelId = `analysis-${uid}-${tab}-panel`;
   return (
-    <Box sx={{ border: 1, borderColor: "divider", borderRadius: 3, bgcolor: "surface.raised", overflow: "hidden", boxShadow: "0 0 0 1px color-mix(in srgb, var(--mui-palette-primary-main) 18%, transparent), 0 8px 28px color-mix(in srgb, var(--mui-palette-primary-main) 8%, transparent)" }}>
+    <Box sx={{ border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "surface.raised", overflow: "hidden", boxShadow: "0 0 0 1px color-mix(in srgb, var(--mui-palette-primary-main) 18%, transparent), 0 8px 28px color-mix(in srgb, var(--mui-palette-primary-main) 8%, transparent)" }}>
       <Box component="header" sx={{ p: { xs: 1.5, sm: 2 }, borderBottom: 1, borderColor: "divider", bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 5%, transparent)" }}>
         <Stack direction="row" useFlexGap sx={{ alignItems: "flex-start", gap: 1.25, flexWrap: "wrap" }}>
           <Box sx={{ width: 40, height: 40, flexShrink: 0, borderRadius: 1.5, border: 1, borderColor: "divider", bgcolor: "background.paper", display: "grid", placeItems: "center", color: "primary.main" }}>
             <InsertDriveFileOutlinedIcon fontSize="small" />
           </Box>
           <Box sx={{ flex: "1 1 200px", minWidth: 0 }}>
-            <Typography sx={{ fontSize: "0.6875rem", fontWeight: 700, color: "text.secondary", letterSpacing: "0.03em" }}>{t.analysisResultTitle}</Typography>
+            <Typography sx={{ fontSize: "0.75rem", fontWeight: 700, color: "text.secondary", letterSpacing: "0.03em" }}>{t.analysisResultTitle}</Typography>
             <Typography component="h3" sx={{ fontSize: "0.9375rem", fontWeight: 700, lineHeight: 1.5, overflowWrap: "anywhere" }}>{name}</Typography>
             <Stack direction="row" useFlexGap sx={{ mt: 0.5, alignItems: "center", flexWrap: "wrap", gap: 1 }}>
               <StatusChip turn={turn} t={t} />

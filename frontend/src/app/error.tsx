@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { Box, Button, Stack, Typography } from "@mui/material";
+import { LogoMark } from "@/components/landing/Dropdown";
 import { useT } from "@/lib/prefs";
 
 export default function ErrorPage({ retry }: { error: unknown; retry: () => void }) {
@@ -8,11 +9,13 @@ export default function ErrorPage({ retry }: { error: unknown; retry: () => void
   return (
     <Box component="main" id="content" tabIndex={-1} sx={{ minHeight: "100dvh", display: "grid", placeItems: "center", p: 3, outline: "none" }}>
       <Stack spacing={2} sx={{ maxWidth: 420, alignItems: "flex-start" }}>
+        <Box aria-hidden sx={{ width: 40, height: 40, borderRadius: "10px", display: "grid", placeItems: "center", bgcolor: "primary.main", color: "primary.contrastText" }}><LogoMark size={26} /></Box>
         <Typography component="h1" sx={{ fontSize: "1.5rem", fontWeight: 700 }}>{t.errorTitle}</Typography>
         <Typography sx={{ color: "text.secondary" }}>{t.errorBody}</Typography>
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" useFlexGap sx={{ gap: 1, flexWrap: "wrap" }}>
           <Button variant="contained" onClick={() => retry()}>{t.retry}</Button>
           <Button component={Link} href="/chat" color="inherit" variant="outlined">{t.goChat}</Button>
+          <Button component={Link} href="/" color="inherit">{t.goHome}</Button>
         </Stack>
       </Stack>
     </Box>

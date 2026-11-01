@@ -134,7 +134,7 @@ function SearchRows({ p, from, rows0 }: { p: Progress; from: number; rows0: numb
           <Box component="li" key={`${s.term}#${i}`} sx={{ listStyle: "none" }}>
             {ri >= 0 && <Typography role="note" sx={{ py: 1, borderTop: i === from ? 0 : 1, borderColor: "divider", fontSize: "0.8125rem", color: "text.secondary", overflowWrap: "anywhere" }}>{replanText(p.replans![ri], t)}</Typography>}
             <Stack direction="row" useFlexGap sx={{ flexWrap: "wrap", alignItems: "center", gap: 1, py: 1, borderTop: i === from || ri >= 0 ? 0 : 1, borderColor: "divider", ...(i >= rows0 ? enterRise : {}) }}>
-              <Typography sx={{ width: 20, flexShrink: 0, fontSize: "0.6875rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{String(i + 1).padStart(2, "0")}</Typography>
+              <Typography sx={{ width: 20, flexShrink: 0, fontSize: "0.75rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{String(i + 1).padStart(2, "0")}</Typography>
               <Typography sx={{ flex: "1 1 160px", minWidth: 0, fontSize: "0.875rem", lineHeight: 1.5, overflowWrap: "anywhere" }}>{s.term}</Typography>
               {added && <Chip size="small" variant="outlined" label={t.replanAdded} />}
               {noPapers(p, s.term, t) && <Chip size="small" variant="outlined" label={noPapers(p, s.term, t)} />}

@@ -92,7 +92,7 @@ export function UserMessage({ sessionId, turn }: { sessionId: string; turn: Turn
     <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 0.5, px: 0.5, [fine]: { "&:hover .um-actions, &:focus-within .um-actions": { opacity: 1 } } }}>
       <Box component="span" sx={srOnly}>{t.you}</Box>
       {editing ? (
-        <Box sx={{ width: { xs: "100%", sm: "75%" }, minWidth: 0, bgcolor: "surface.raised", border: 1, borderColor: "primary.main", borderRadius: 3, p: 1.5 }}>
+        <Box sx={{ width: { xs: "100%", sm: "75%" }, minWidth: 0, bgcolor: "surface.raised", border: 1, borderColor: "primary.main", borderRadius: "16px", p: 1.5 }}>
           <TextField inputRef={field} autoFocus multiline fullWidth minRows={2} maxRows={10} value={draft}
             onChange={(e) => { setDraft(e.target.value); setConfirm(false); setErr(false); }} onKeyDown={onKeyDown}
             onCompositionStart={() => setComposing(true)} onCompositionEnd={() => setComposing(false)}

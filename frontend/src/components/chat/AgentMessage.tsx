@@ -5,7 +5,6 @@ import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
-import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
 import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import LayersOutlinedIcon from "@mui/icons-material/LayersOutlined";
@@ -174,13 +173,13 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
             </Box>
           )}
           <Stack direction="row" spacing={1} useFlexGap sx={{ mt: sourceIds || cost || field || replans.length ? 1 : 2, flexWrap: "wrap" }}>
-            <Button variant="contained" startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={() => {
+            <Button variant="contained" sx={{ "& .MuiButton-startIcon": { display: { xs: "none", sm: "inherit" } }, px: { xs: 1.5, sm: 2 } }} startIcon={<ChatBubbleOutlineRoundedIcon />} onClick={() => {
               if (docList.length) { const [first, ...rest] = docList; useAttach.setState({ file: { id: first.id, name: first.name, size: sizeOf(first.id) }, rest: rest.map((d) => ({ id: d.id, name: d.name, size: sizeOf(d.id) })) }); } // same PDFs, a new docs question
               else { useMode.getState().set("chat"); focusComposer(); }
             }}>{t.askFollowUp}</Button>
-            <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={!firstSource} sx={{ borderColor: "divider" }}
+            <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={!firstSource} sx={{ borderColor: "divider", "& .MuiButton-startIcon": { display: { xs: "none", sm: "inherit" } }, px: { xs: 1.5, sm: 2 } }}
               onClick={(e) => firstSource && openInspector({ ...scope, refId: firstSource }, e.currentTarget)}>{t.openEvidence}</Button>
-            {!bare && <Button variant="outlined" color="inherit" startIcon={<BarChartRoundedIcon />} sx={{ borderColor: "divider" }} aria-controls={reportId(turn.id)} onClick={() => openReport(sessionId, turn.id)}>{t.makeReport}</Button>}
+            {!bare && <Button variant="outlined" color="inherit" startIcon={<DescriptionOutlinedIcon />} sx={{ borderColor: "divider", "& .MuiButton-startIcon": { display: { xs: "none", sm: "inherit" } }, px: { xs: 1.5, sm: 2 } }} aria-controls={reportId(turn.id)} onClick={() => openReport(sessionId, turn.id)}>{t.makeReport}</Button>}
             <Stack role="group" aria-label={t.answerTools} direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: "nowrap" }}>
             <Tooltip title={copied === "fail" ? t.copyFailed : copied === "ok" ? t.copied : t.copyAnswer}>
               <IconButton aria-label={t.copyAnswer} onClick={copy} sx={{ width: 44, height: 44, color: copied === "ok" ? "primary.main" : "text.secondary" }}>

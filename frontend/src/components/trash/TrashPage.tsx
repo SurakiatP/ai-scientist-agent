@@ -85,15 +85,15 @@ export function TrashPage() {
         {!off && <Button variant="outlined" disabled={busy || state !== "ok"} onClick={() => void purge()} sx={{ minHeight: 44, borderRadius: 2 }}>{t.trashPurge}</Button>}
       </Box>
       <Box role="status" aria-live="polite" sx={msg ? { mb: 2 } : srOnly}>{msg && <Alert severity={msg.ok ? "success" : "error"} variant="outlined">{msg.text}</Alert>}</Box>
-      {off ? <Typography role="status" sx={{ py: 4, textAlign: "center", color: "text.secondary", border: 1, borderColor: "divider", borderStyle: "dashed", borderRadius: 3 }}>{t.trashOff}</Typography>
+      {off ? <Typography role="status" sx={{ py: 4, textAlign: "center", color: "text.secondary", border: 1, borderColor: "divider", borderStyle: "dashed", borderRadius: "16px" }}>{t.trashOff}</Typography>
         : state === "error" ? (
           <Alert severity="error" variant="outlined" action={<Button color="inherit" onClick={() => { setState("loading"); void load(); }} sx={{ minHeight: 44 }}>{t.retry}</Button>}>{t.trashError}</Alert>
         ) : state === "loading" || !hydrated ? (
           <Box role="status" aria-label={t.trashLoading} sx={{ display: "grid", gap: 1.5 }}>
-            {[0, 1, 2, 3].map((i) => <Box key={i} sx={{ border: 1, borderColor: "divider", borderRadius: 3, p: 2, display: "grid", gap: 1 }}><Box sx={{ ...skeletonBar(i), width: `${60 - i * 8}%` }} /><Box sx={{ ...skeletonBar(i + 1), width: "30%", height: 10 }} /></Box>)}
+            {[0, 1, 2, 3].map((i) => <Box key={i} sx={{ border: 1, borderColor: "divider", borderRadius: "16px", p: 2, display: "grid", gap: 1 }}><Box sx={{ ...skeletonBar(i), width: `${60 - i * 8}%` }} /><Box sx={{ ...skeletonBar(i + 1), width: "30%", height: 10 }} /></Box>)}
           </Box>
         ) : !items?.length ? (
-          <Box sx={{ py: 6, textAlign: "center", border: 1, borderColor: "divider", borderStyle: "dashed", borderRadius: 3, color: "text.secondary" }}>
+          <Box sx={{ py: 6, textAlign: "center", border: 1, borderColor: "divider", borderStyle: "dashed", borderRadius: "16px", color: "text.secondary" }}>
             <DeleteOutlineRoundedIcon aria-hidden sx={{ fontSize: 40, opacity: 0.7 }} />
             <Typography role="status" sx={{ mt: 1, fontWeight: 600, color: "text.primary" }}>{t.trashEmpty}</Typography>
             <Typography sx={{ fontSize: "0.9375rem" }}>{t.trashEmptyNote}</Typography>
@@ -101,7 +101,7 @@ export function TrashPage() {
         ) : cards ? (
           <Box component="ul" aria-label={t.trashTitle} sx={{ listStyle: "none", m: 0, p: 0, display: "grid", gap: 1 }}>
             {items.map((i, n) => (
-              <Box component="li" key={i.kind + i.id} sx={{ ...enterRow(n), p: 2, border: 1, borderColor: "divider", borderRadius: 3, bgcolor: "background.paper", display: "grid", gap: 1 }}>
+              <Box component="li" key={i.kind + i.id} sx={{ ...enterRow(n), p: 2, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "background.paper", display: "grid", gap: 1 }}>
                 <Typography title={i.name} sx={{ fontWeight: 600, overflowWrap: "anywhere" }}>{i.name}</Typography>
                 <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>{`${typeLabel(i.kind)} · ${when(i.deletedAt)} · ${left(i)}`}</Typography>
                 {actions(i)}
@@ -109,7 +109,7 @@ export function TrashPage() {
             ))}
           </Box>
         ) : (
-          <TableContainer sx={{ border: 1, borderColor: "divider", borderRadius: 3, bgcolor: "background.paper" }}>
+          <TableContainer sx={{ border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "background.paper" }}>
             <Table aria-label={t.trashTitle}>
               <TableHead><TableRow>
                 <TableCell sx={th}>{t.trashColName}</TableCell><TableCell sx={th}>{t.trashColType}</TableCell><TableCell sx={th}>{t.trashColDeleted}</TableCell><TableCell sx={th}>{t.trashColLeft}</TableCell>

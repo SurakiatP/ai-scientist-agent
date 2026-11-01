@@ -11,7 +11,7 @@ import { featureSlugs, landing, sitePages, type FeatureSlug } from "@/lib/string
 import { LandingHeader, ring, wrap, type NavKey } from "./LandingHeader";
 
 const rise = { "@media (prefers-reduced-motion: no-preference)": { "& .rise": { animation: "site-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both", animationDelay: "calc(var(--i, 0) * 70ms)" }, "@keyframes site-rise": { from: { transform: "translateY(10px)" }, to: { transform: "none" } } } } as const;
-const card = { display: "grid", alignContent: "start", gap: 0.75, p: 2.5, border: 1, borderColor: "divider", borderRadius: 4, bgcolor: "background.paper" } as const;
+const card = { display: "grid", alignContent: "start", gap: 0.75, p: 2.5, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "background.paper" } as const;
 
 export function useCopy() {
   const lang = usePrefs((s) => s.lang), hydrated = useHydrated();
@@ -33,7 +33,7 @@ function Shell({ active, trail, wide, children }: { active: NavKey; trail: strin
         {children}
       </Box>
       <Box component="footer" sx={{ ...wrap, pb: { xs: 5, md: 7 } }}>
-        <Box sx={{ p: { xs: 3, md: 4 }, borderRadius: 4, bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.1)", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 2.5 }}>
+        <Box sx={{ p: { xs: 3, md: 4 }, borderRadius: "24px", bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.1)", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 2.5 }}>
           <Typography component="p" sx={{ m: 0, fontSize: { xs: "1.25rem", md: "1.5rem" }, fontWeight: 600, lineHeight: 1.5, textWrap: "balance" }}>{L.footer}</Typography>
           <Button component={Link} href="/chat" variant="contained" size="large" endIcon={<ArrowForwardRoundedIcon />} sx={{ minHeight: 48, px: 3, borderRadius: 999, ...ring }}>{L.cta}</Button>
         </Box>
@@ -94,7 +94,7 @@ export function FeatureView({ slug }: { slug: FeatureSlug }) {
         <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 1.5, gridTemplateColumns: { xs: "minmax(0,1fr)", sm: "repeat(3, minmax(0,1fr))" } }}>
           {featureSlugs.map((s) => (
             <li key={s}>
-              <Box component={Link} href={`/features/${s}`} aria-current={s === slug ? "page" : undefined} sx={{ display: "grid", gap: 0.25, minHeight: 44, p: 1.75, border: 1, borderColor: s === slug ? "primary.main" : "divider", borderRadius: 3, bgcolor: s === slug ? "rgb(var(--mui-palette-primary-mainChannel) / 0.08)" : "background.paper", color: "text.primary", textDecoration: "none", transition: "border-color 160ms ease-out, background-color 160ms ease-out", "&:hover": { borderColor: "primary.main" }, ...ring }}>
+              <Box component={Link} href={`/features/${s}`} aria-current={s === slug ? "page" : undefined} sx={{ display: "grid", gap: 0.25, minHeight: 44, p: 1.75, border: 1, borderColor: s === slug ? "primary.main" : "divider", borderRadius: "16px", bgcolor: s === slug ? "rgb(var(--mui-palette-primary-mainChannel) / 0.08)" : "background.paper", color: "text.primary", textDecoration: "none", transition: "border-color 160ms ease-out, background-color 160ms ease-out", "&:hover": { borderColor: "primary.main" }, ...ring }}>
                 <Typography component="span" sx={{ fontSize: "0.9375rem", fontWeight: 600 }}>{P.features[s].tab}</Typography>
                 <Typography component="span" sx={{ fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.5 }}>{P.features[s].blurb}</Typography>
               </Box>
@@ -125,7 +125,7 @@ export function InfoView({ kind }: { kind: "how" | "faq" }) {
           <Typography id={`sec-${si}`} component="h2" sx={h2}>{sec.head}</Typography>
           <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0,1fr)", sm: kind === "faq" ? "minmax(0,1fr)" : "repeat(2, minmax(0,1fr))" } }}>
             {sec.items.map((it, k) => (
-              <Box component="li" key={it.t} className="rise" style={{ "--i": k } as React.CSSProperties} sx={card}>
+              <Box component="li" key={it.t} className="rise" style={{ "--i": k } as React.CSSProperties} sx={kind === "faq" ? { display: "grid", gap: 0.75, pt: 2.5, borderTop: 1, borderColor: "divider" } : card}>
                 <Typography component="h3" sx={{ m: 0, fontSize: "1.0625rem", fontWeight: 600, lineHeight: 1.5 }}>{it.t}</Typography>
                 <Typography sx={{ fontSize: "0.9375rem", lineHeight: 1.75, color: "text.secondary", textWrap: "pretty" }}>{it.d}</Typography>
               </Box>
@@ -155,7 +155,7 @@ export function DocsView() {
         <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 1.5, gridTemplateColumns: { xs: "minmax(0,1fr)", sm: "repeat(2, minmax(0,1fr))" } }}>
           {([["/how-it-works", L.navHow, P.how.lead], ["/faq", L.navCheck, P.faq.lead]] as const).map(([href, t, n]) => (
             <li key={href}>
-              <Box component={Link} href={href} sx={{ display: "grid", gap: 0.25, minHeight: 44, p: 2, border: 1, borderColor: "divider", borderRadius: 3, bgcolor: "background.paper", color: "text.primary", textDecoration: "none", transition: "border-color 160ms ease-out", "&:hover": { borderColor: "primary.main" }, ...ring }}>
+              <Box component={Link} href={href} sx={{ display: "grid", gap: 0.25, minHeight: 44, p: 2, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "background.paper", color: "text.primary", textDecoration: "none", transition: "border-color 160ms ease-out", "&:hover": { borderColor: "primary.main" }, ...ring }}>
                 <Typography component="span" sx={{ fontWeight: 600 }}>{t}</Typography>
                 <Typography component="span" sx={{ fontSize: "0.875rem", color: "text.secondary", lineHeight: 1.6 }}>{n}</Typography>
               </Box>

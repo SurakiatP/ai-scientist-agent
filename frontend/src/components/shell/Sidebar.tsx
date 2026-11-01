@@ -85,7 +85,7 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
           <Box sx={{ width: 32, height: 32, borderRadius: "9px", display: "grid", placeItems: "center", bgcolor: "primary.main", color: "primary.contrastText", "& svg": { color: "inherit", width: 22, height: 22 } }}><Mark /></Box>
           <Box sx={{ minWidth: 0 }}>
             <Typography component="span" sx={{ display: "block", fontWeight: 700, fontSize: "1rem", lineHeight: 1.3, letterSpacing: "-0.01em" }}>{t.brand}</Typography>
-            <Typography component="span" sx={{ display: "block", fontSize: "0.6875rem", lineHeight: 1.3, color: "text.secondary" }}>{t.brandSub}</Typography>
+            <Typography component="span" sx={{ display: "block", fontSize: "0.75rem", lineHeight: 1.3, color: "text.secondary" }}>{t.brandSub}</Typography>
           </Box>
         </Stack>
         <Stack direction="row" sx={{ alignItems: "center" }}>
@@ -104,7 +104,7 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
       <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
       <ProjectTree query={query} onPick={onPick} />
       <Box>
-        <Typography component="h2" sx={{ px: 1.25, pb: 0.5, fontSize: "0.6875rem", fontWeight: 500, color: "text.secondary" }}>{t.recentShort}</Typography>
+        <Typography component="h2" sx={{ px: 1.25, pb: 0.5, fontSize: "0.75rem", fontWeight: 500, color: "text.secondary" }}>{t.recentShort}</Typography>
         <TextField size="small" type="search" placeholder={t.searchChats} value={query} onChange={(e) => setQuery(e.target.value)} fullWidth
           sx={{ mb: 0.5, "& .MuiOutlinedInput-root": { ...UI.row, borderRadius: 1.5, fontSize: "0.875rem" }, "& fieldset": { borderColor: "transparent" }, "& .MuiOutlinedInput-root:hover fieldset": { borderColor: "divider" } }}
           slotProps={{ htmlInput: { "aria-label": t.searchChats }, input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small" /></InputAdornment> } }} />

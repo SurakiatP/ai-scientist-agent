@@ -66,9 +66,9 @@ function ProductMenu({ L, on }: { L: (typeof landing)["th"] | (typeof landing)["
         {L.navProduct}<KeyboardArrowDownRoundedIcon sx={{ fontSize: 18, transition: "transform 200ms ease-out", transform: el ? "rotate(180deg)" : "none" }} />
       </Box>
       <Menu anchorEl={el} open={!!el} onClose={() => setEl(null)} anchorOrigin={{ vertical: "bottom", horizontal: "left" }} transformOrigin={{ vertical: "top", horizontal: "left" }} transitionDuration={{ enter: 200, exit: 120 }}
-        slotProps={{ list: { "aria-label": L.navProduct, sx: { p: 0.75, display: "grid", gap: 0.25 } }, paper: { sx: { mt: 1, width: 320, maxWidth: "calc(100vw - 32px)", borderRadius: 3.5, border: 1, borderColor: "divider", bgcolor: "background.paper", backgroundImage: "none", boxShadow: "0 16px 40px -12px rgb(14 26 44 / 0.3), 0 2px 6px rgb(14 26 44 / 0.06)" } } }}>
+        slotProps={{ list: { "aria-label": L.navProduct, sx: { p: 0.75, display: "grid", gap: 0.25 } }, paper: { sx: { mt: 1, width: 320, maxWidth: "calc(100vw - 32px)", borderRadius: "16px", border: 1, borderColor: "divider", bgcolor: "background.paper", backgroundImage: "none", boxShadow: "0 16px 40px -12px rgb(14 26 44 / 0.3), 0 2px 6px rgb(14 26 44 / 0.06)" } } }}>
         {featureSlugs.map((slug) => (
-          <MenuItem key={slug} component={Link} href={`/features/${slug}`} onClick={() => setEl(null)} sx={{ display: "grid", gap: 0.25, py: 1.25, px: 1.5, borderRadius: 2.5, whiteSpace: "normal", "&:hover": { bgcolor: "action.hover" } }}>
+          <MenuItem key={slug} component={Link} href={`/features/${slug}`} onClick={() => setEl(null)} sx={{ display: "grid", gap: 0.25, py: 1.25, px: 1.5, borderRadius: "10px", whiteSpace: "normal", "&:hover": { bgcolor: "action.hover" } }}>
             <Typography component="span" sx={{ fontSize: "0.9375rem", fontWeight: 600 }}>{f[slug].tab}</Typography>
             <Typography component="span" sx={{ fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.5 }}>{f[slug].blurb}</Typography>
           </MenuItem>

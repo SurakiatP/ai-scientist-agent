@@ -234,7 +234,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               <DescriptionOutlinedIcon fontSize="small" sx={{ color: f.status === "error" ? "error.main" : "primary.main", flexShrink: 0 }} />
               <Box sx={{ flex: 1, minWidth: 0 }}>
                 <Typography sx={{ fontSize: "0.8125rem", fontWeight: 600, lineHeight: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.name}>{f.name}</Typography>
-                <Typography component="span" aria-live="polite" sx={{ display: "block", fontSize: "0.6875rem", lineHeight: 1.5, color: f.status === "error" ? "error.main" : "text.secondary" }}>
+                <Typography component="span" aria-live="polite" sx={{ display: "block", fontSize: "0.75rem", lineHeight: 1.5, color: f.status === "error" ? "error.main" : "text.secondary" }}>
                   {f.status === "uploading" ? t.uploadingFile : f.status === "error" ? t.uploadFailed : formatSize(f.size)}
                 </Typography>
               </Box>
@@ -244,7 +244,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               </IconButton>
             </Box>
           ))}
-          <Box sx={{ display: "flex", flexWrap: large ? "wrap" : { xs: "wrap", sm: "nowrap" }, alignItems: "center", columnGap: 1, rowGap: large ? 1.5 : 0.5 }}>
+          <Box sx={{ display: "flex", flexWrap: large ? "wrap" : { xs: "wrap", sm: "nowrap" }, alignItems: "center", columnGap: { xs: 0.75, sm: 1 }, rowGap: large ? 1.5 : 0.5 }}>
             <InputBase
               id="composer" multiline fullWidth minRows={large ? 2 : 1} maxRows={10} value={text}
               placeholder={docs ? t.docsPlaceholder : file ? t.analysisPlaceholder : example ? t.examplePrefix + example : t.askPlaceholder} onChange={(e) => { setText(e.target.value); setErr(""); }} onKeyDown={onKeyDown}
@@ -272,7 +272,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               aria-label={`${t.modeLabel}: ${modeName(mode)}`} onClick={(e) => setModeAnchor(e.currentTarget)}
               startIcon={mode === "chat" ? <ChatBubbleOutlineRoundedIcon sx={{ color: "primary.main" }} /> : <LayersOutlinedIcon sx={{ color: mode === "deep" ? "inherit" : "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
               sx={{
-                borderRadius: 99, fontSize: "0.875rem", px: 1.5, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap",
+                borderRadius: 99, fontSize: "0.875rem", px: { xs: 1.25, sm: 1.5 }, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap",
                 ...(mode === "deep"
                   ? { bgcolor: "primary.main", color: "primary.contrastText", fontWeight: 600, boxShadow: "none", border: 1, borderColor: "primary.main",
                       "&:hover": { bgcolor: "primary.dark", boxShadow: "none" },
@@ -303,7 +303,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
                 startIcon={<ScienceOutlinedIcon sx={{ color: packOff ? "inherit" : "primary.main" }} />} endIcon={<ExpandMoreRoundedIcon />}
                 sx={{
                   borderRadius: 99, fontSize: "0.875rem", px: 1.5, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap", maxWidth: { xs: 190, sm: 240 },
-                  "& .MuiButton-startIcon": { mr: large ? { xs: 0, sm: 0.5 } : 0.5 }, "& .MuiButton-endIcon": { ml: 0.5 }, ...(large && { minWidth: { xs: 0 } }),
+                  "& .MuiButton-startIcon": { mr: { xs: 0, sm: 0.5 } }, "& .MuiButton-endIcon": { ml: 0.5, display: { xs: "none", sm: "inherit" } }, minWidth: { xs: 0 },
                   ...(packOff
                     ? { bgcolor: "action.disabledBackground", color: "text.disabled", borderColor: "transparent", fontWeight: 400, cursor: "default", "&:hover": { bgcolor: "action.disabledBackground", borderColor: "transparent" } }
                     : pack
@@ -311,8 +311,8 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
                           "&:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 22%, transparent)", borderColor: "primary.main" } }
                       : { borderColor: "divider", fontWeight: 400 }),
                 }}>
-                {/* on a phone the home composer keeps one row of controls: the field chip shows its icon only (its name stays in aria-label) */}
-                <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", display: large ? { xs: "none", sm: "inline" } : "inline" }}>{packText(pack)}</Box>
+                {/* on a phone the composer keeps one row of controls: the field chip shows its icon only (its name stays in aria-label) */}
+                <Box component="span" sx={{ overflow: "hidden", textOverflow: "ellipsis", display: { xs: "none", sm: "inline" } }}>{packText(pack)}</Box>
               </Button>
             </Tooltip>
             {packOff && <Box id={packOffId} component="span" hidden>{packOffText}</Box>}

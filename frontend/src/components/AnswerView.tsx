@@ -97,7 +97,7 @@ export function AnswerView({ content, references = [], scope, reveal, plainLinks
           // tables scroll inside their own box on narrow screens; the page itself never scrolls sideways
           table: ({ children }) => (
             <Box sx={{ my: 2.5 }}>
-              <Box sx={{ display: { xs: "flex", sm: "none" }, alignItems: "center", mb: 0.75, color: "text.secondary", fontSize: "0.6875rem" }}>
+              <Box sx={{ display: { xs: "flex", sm: "none" }, alignItems: "center", mb: 0.75, color: "text.secondary", fontSize: "0.75rem" }}>
                 {t.tableScroll}
               </Box>
               <Box sx={{ maxWidth: "100%", overflowX: "auto", scrollbarWidth: "thin", border: 1, borderColor: "divider", borderRadius: 2, "& table": { border: 0 }, "& th, & td": { borderTop: 0, borderLeft: 0 }, "& tr > :last-child": { borderRight: 0 }, "& tbody tr:last-child td": { borderBottom: 0 } }}>

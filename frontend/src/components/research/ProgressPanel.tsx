@@ -34,7 +34,7 @@ function SourcesCompact({ turn, sessionId }: { turn: Turn; sessionId: string }) 
       </ButtonBase>
       {!openList && hosts.length > 0 && (
         <Stack aria-hidden direction="row" useFlexGap sx={{ gap: 0.75, flexWrap: "wrap", px: 2, pb: 1.5 }}>
-          {hosts.slice(0, 6).map((h) => <Chip key={h} size="small" variant="outlined" label={h} sx={{ maxWidth: "100%", fontSize: "0.6875rem", "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" } }} />)}
+          {hosts.slice(0, 6).map((h) => <Chip key={h} size="small" variant="outlined" label={h} sx={{ maxWidth: "100%", fontSize: "0.75rem", "& .MuiChip-label": { overflow: "hidden", textOverflow: "ellipsis" } }} />)}
         </Stack>
       )}
       <Box id={`srcs-${turn.id}`} hidden={!openList} sx={{ px: 2, pb: 2 }}>{openList && <SourcesPanel turn={turn} sessionId={sessionId} bare />}</Box>

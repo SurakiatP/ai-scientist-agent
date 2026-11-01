@@ -38,7 +38,7 @@ typography:
   body: { fontSize: "1rem", lineHeight: 1.8 }
   small: { fontSize: "0.8125rem", lineHeight: 1.6 }
   caption: { fontSize: "0.75rem" }
-rounded: { base: 10px, row: 12px, card: 24px, home-composer: 28px, header: 18px, sheet-top: 16px }
+rounded: { base: 10px, row: 12px, card: 24px, home-composer: 28px, header: 18px, sheet-top: 16px, surface: 16px }
 ---
 
 # Design System: AI Scientist Research Workspace
@@ -71,11 +71,11 @@ One family, Noto Sans Thai Looped (the formal, document-like Thai voice) with La
 
 ## Elevation and shape
 
-Paper elevation 0 and 1px hairlines inside the app; floating surfaces (landing header, cards, the home composer) use the shared `lift` shadow (a long navy-tinted blur plus a tight contact shadow). Radius 10px base, sidebar rows 12px, cards 24px, home composer 28px, landing header 18px. Radii on custom surfaces are written in px (MUI multiplies bare numbers by the base radius).
+Paper elevation 0 and 1px hairlines inside the app; floating surfaces (landing header, cards, the home composer) use the shared `lift` shadow (a long navy-tinted blur plus a tight contact shadow). Radius 10px base, sidebar rows 12px, page cards and dialogs 24px, data surfaces, list rows, menus and site cards 16px, home composer 28px, landing header 18px. Items inside a 16px menu with 6px padding use 10px (outer radius minus padding). Radii on custom surfaces are written in px (MUI multiplies bare numbers by the base radius).
 
 ## Landing
 
-A floating header bar; hero with a three-line heading (last line navy) beside an answer sheet figure built from markup; a strip of numbers read from the code (sources, fields, languages, export formats); then numbered sections ("01 //" with a hairline) for the statement, capabilities (one lead card plus evidence cards), how it works, where data goes (a 2x2 ledger, the external hop tinted violet), and FAQ; a closing card with the call to action. Section numbers and labels are the user's explicit reference, not a default.
+A floating header bar; hero with a three-line heading (last line navy) beside an answer sheet figure built from markup; a strip of numbers read from the code (sources, fields, languages, export formats); then numbered sections ("01 //" with a hairline) for the statement, capabilities (one lead card plus a ruled list of the other tools), how it works, where data goes (a 2x2 ledger, the external hop tinted violet), and FAQ; a closing card with the call to action. Section numbers and labels are the user's explicit reference, not a default.
 
 ## Components
 

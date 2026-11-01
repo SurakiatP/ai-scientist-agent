@@ -43,17 +43,17 @@ export function PaperDetails({ editor, d, set, onClose }: { editor: Editor | nul
           </Stack>
           <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", mt: -1 }}>{t.fOutlineHelp}</Typography>
           <Box role="status" sx={{ fontSize: "0.8125rem" }}>{msg}</Box>
-          <TextField multiline minRows={2} fullWidth size="small" label={t.fAuthors} value={d.authors} onChange={(e) => set({ authors: e.target.value })} helperText={`${t.fAuthorsHelp} (${d.authors.split("\n").filter((l) => l.trim()).length}/${LIM.authors})`} />
+          <TextField multiline minRows={2} fullWidth size="small" sx={{ mt: 1 }} label={t.fAuthors} value={d.authors} onChange={(e) => set({ authors: e.target.value })} helperText={`${t.fAuthorsHelp} (${d.authors.split("\n").filter((l) => l.trim()).length}/${LIM.authors})`} />
           <TextField fullWidth size="small" label={t.fKeywords} value={d.keywords} onChange={(e) => set({ keywords: e.target.value })} helperText={`${t.fKeywordsHelp} (${d.keywords.split(/[,;，；\n]/).filter((k) => k.trim()).length}/${LIM.keywords})`} />
           <TextField multiline minRows={3} fullWidth size="small" label={t.fAbstract} value={d.abstract} onChange={(e) => set({ abstract: e.target.value })} helperText={t.fAbstractHelp} slotProps={{ htmlInput: { maxLength: LIM.abstract } }} />
-          <Box component="fieldset" sx={{ border: 0, p: 0, m: 0, minWidth: 0 }}>
+          <Box component="fieldset" sx={{ border: 0, p: 0, m: 0, mt: 1, minWidth: 0 }}>
             <Typography component="legend" sx={{ fontWeight: 600, fontSize: "0.9375rem" }}>{t.fStatements}</Typography>
             <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", mb: 0.5 }}>{t.fStatementsHelp}</Typography>
             {STATEMENT_KINDS.map(stmt)}
           </Box>
         </Stack>
       </DialogContent>
-      <DialogActions><Button autoFocus onClick={x.close} sx={{ minHeight: 44 }}>{t.fDetailsClose}</Button></DialogActions>
+      <DialogActions sx={{ px: 3, pb: 2 }}><Button autoFocus onClick={x.close} sx={{ minHeight: 44 }}>{t.fDetailsClose}</Button></DialogActions>
     </Dialog>
   );
 }

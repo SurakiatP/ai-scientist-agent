@@ -151,3 +151,20 @@ describe("link previews", () => {
     expect(src).toMatch(/SITE_URL && \{[^}]*url: "\.\/"/);
   });
 });
+
+describe("landing and error pages links", () => {
+  it("links to the full FAQ", () => {
+    render(<Home />);
+    expect(screen.getByRole("link", { name: new RegExp(landing.th.faqMore) })).toHaveAttribute("href", "/faq");
+  });
+  it("404 and error pages link home", async () => {
+    const NotFound = (await import("./not-found")).default;
+    const ErrorPage = (await import("./error")).default;
+    const { strings } = await import("@/lib/strings");
+    for (const el of [<NotFound key="n" />, <ErrorPage key="e" error={null} retry={() => {}} />]) {
+      const { unmount } = render(el);
+      expect(screen.getByRole("link", { name: strings.th.goHome })).toHaveAttribute("href", "/");
+      unmount();
+    }
+  });
+});
