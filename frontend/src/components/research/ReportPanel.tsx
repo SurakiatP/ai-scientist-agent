@@ -1,7 +1,7 @@
 "use client";
 import { srOnly } from "@/lib/config";
 import { useEffect, useRef, useState } from "react";
-import { Box, Button, Divider, Drawer, IconButton, ListItemText, Menu, MenuItem, Stack, Tab, Tabs, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, Divider, Drawer, IconButton, ListItemText, Menu, MenuItem, Stack, Tab, Tabs, Typography } from "@mui/material";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import EditNoteRoundedIcon from "@mui/icons-material/EditNoteRounded";
 import ExpandMoreRoundedIcon from "@mui/icons-material/ExpandMoreRounded";
@@ -54,7 +54,7 @@ function Panel({ session, turn }: { session: Session; turn: Turn }) {
         <>
           <Stack direction="row" useFlexGap sx={{ gap: 1, flexWrap: "wrap", my: 1.5 }}>
             <Button variant="outlined" color="inherit" disabled={heads.length === 0} aria-haspopup="menu" aria-expanded={menu?.kind === "toc"} onClick={(e) => setMenu({ kind: "toc", el: e.currentTarget })} endIcon={<ExpandMoreRoundedIcon />} sx={{ borderColor: "divider", minHeight: 44 }}>{t.rpContents}</Button>
-            <Button variant="outlined" color="inherit" aria-haspopup="menu" aria-expanded={menu?.kind === "share"} onClick={(e) => setMenu({ kind: "share", el: e.currentTarget })} startIcon={<IosShareRoundedIcon />} endIcon={<ExpandMoreRoundedIcon />} sx={{ borderColor: "divider", minHeight: 44 }}>{t.rpShare}</Button>
+            <Button variant="outlined" color="inherit" aria-haspopup="menu" aria-expanded={menu?.kind === "share"} aria-busy={!!busy || undefined} onClick={(e) => setMenu({ kind: "share", el: e.currentTarget })} startIcon={busy ? <CircularProgress size={16} color="inherit" aria-hidden /> : <IosShareRoundedIcon />} endIcon={<ExpandMoreRoundedIcon />} sx={{ borderColor: "divider", minHeight: 44 }}>{t.rpShare}</Button>
             <Button variant="contained" startIcon={<EditNoteRoundedIcon />} onClick={() => setForm(true)} sx={{ minHeight: 44 }}>{t.rpEdit}</Button>
           </Stack>
           <Menu anchorEl={menu?.el} open={menu?.kind === "toc"} onClose={() => setMenu(null)}>

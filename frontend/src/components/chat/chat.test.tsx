@@ -369,6 +369,15 @@ describe("Thread", () => {
     expect(screen.getByText(t.retryBusy)).toBeInTheDocument();
   });
 
+  it("copy success swaps the icon for a check", async () => {
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.resolve() }, configurable: true });
+    render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "x", references: [] } })} />);
+    const btn = await screen.findByRole("button", { name: t.copyAnswer });
+    fireEvent.click(btn);
+    expect(await screen.findByText(t.copied)).toBeInTheDocument();
+    expect(btn.querySelector('[data-testid="CheckRoundedIcon"]')).not.toBeNull();
+  });
+
   it("copy failure shows feedback", async () => {
     Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("no")) }, configurable: true });
     render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "x", references: [] } })} />);

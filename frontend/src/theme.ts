@@ -52,6 +52,9 @@ export const theme = createTheme({
     MuiButtonBase: { styleOverrides: { root: { "&.Mui-focusVisible": { outline: "2px solid var(--mui-palette-primary-main)", outlineOffset: 2 } } } }, // MUI sets outline:0, which beats the global :focus-visible rule
     MuiMenuItem: { styleOverrides: { root: { "&.Mui-focusVisible": { outlineOffset: -2 } } } }, // menu paper clips an outside ring
     MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } },
+    MuiTooltip: { styleOverrides: { tooltip: { backgroundColor: "var(--mui-palette-text-primary)", color: "var(--mui-palette-background-paper)", fontSize: "0.75rem", lineHeight: 1.5, padding: "6px 10px", borderRadius: 8 } } }, // navy ink instead of MUI's stock grey
+    MuiMenu: { styleOverrides: { paper: { marginTop: 4, borderRadius: 12, border: "1px solid var(--mui-palette-divider)", boxShadow: "0 16px 40px -12px rgb(14 26 44 / 0.3), 0 2px 6px rgb(14 26 44 / 0.06)" } } }, // same paper as landing/Dropdown
+    MuiBackdrop: { styleOverrides: { root: { "&:not(.MuiBackdrop-invisible)": { backgroundColor: "rgb(14 26 44 / 0.45)" } } } }, // navy scrim; menus and popovers use the invisible one
     MuiCssBaseline: { styleOverrides: {
       "@property --aurora": { syntax: "'<angle>'", inherits: "false", initialValue: "0deg" }, // the home composer's light (Composer.tsx)
       html: { scrollbarColor: "var(--mui-palette-text-secondary) transparent" },

@@ -28,6 +28,7 @@ import { packName, usablePack } from "@/lib/packs";
 import { downloadProvenance, downloadText, provenanceOf, referencesFilename } from "@/lib/provenance";
 import { toBibtex, toRis } from "@/lib/bibliography";
 import { useReportPanel } from "@/lib/exportReport";
+import { enterPop } from "@/lib/motion";
 import { useInspector } from "@/lib/inspector";
 import { usePrefs, useT } from "@/lib/prefs";
 import { strings, type Strings } from "@/lib/strings";
@@ -181,7 +182,9 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
               onClick={(e) => firstSource && openInspector({ ...scope, refId: firstSource }, e.currentTarget)}>{t.openEvidence}</Button>
             {!bare && <Button variant="outlined" color="inherit" startIcon={<BarChartRoundedIcon />} sx={{ borderColor: "divider" }} aria-controls={reportId(turn.id)} onClick={() => openReport(sessionId, turn.id)}>{t.makeReport}</Button>}
             <Tooltip title={copied === "fail" ? t.copyFailed : copied === "ok" ? t.copied : t.copyAnswer}>
-              <IconButton aria-label={t.copyAnswer} onClick={copy} sx={{ width: 44, height: 44, color: "text.secondary" }}><ContentCopyRoundedIcon fontSize="small" /></IconButton>
+              <IconButton aria-label={t.copyAnswer} onClick={copy} sx={{ width: 44, height: 44, color: copied === "ok" ? "primary.main" : "text.secondary" }}>
+                <Box key={copied ?? "idle"} component="span" sx={{ display: "inline-flex", ...(copied === "ok" ? enterPop : {}) }}>{copied === "ok" ? <CheckRoundedIcon fontSize="small" /> : <ContentCopyRoundedIcon fontSize="small" />}</Box>
+              </IconButton>
             </Tooltip>
             {provenanceOf(turn) && (
               <Tooltip title={t.downloadProvenance}>
