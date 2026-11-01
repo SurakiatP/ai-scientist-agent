@@ -56,6 +56,7 @@ NOTES = {
                         "(the reviewer checks abstracts only). Check the full paper before relying on those claims."),
         "no_summary": ("Found {n} paper(s), but the search did not finish summarising them. "
                        "The references below were found and checked; try again or narrow the question."),
+        "unbacked": "Note: the summaries of {terms} were not used, because those searches reported no papers that could be checked.",
         "script": ("Note: this answer contains words in an unexpected script ({words}), which may be a model error. "
                    "Check the text around them."),
     },
@@ -75,18 +76,22 @@ NOTES = {
                         "(ผู้ตรวจดูเฉพาะบทคัดย่อ) โปรดตรวจเอกสารฉบับเต็มก่อนใช้ข้อความเหล่านั้น"),
         "no_summary": ("พบเอกสาร {n} รายการ แต่การค้นหายังสรุปไม่เสร็จ "
                        "อ้างอิงด้านล่างได้รับการค้นพบและตรวจสอบแล้ว ลองอีกครั้งหรือจำกัดคำถามให้แคบลง"),
+        "unbacked": "หมายเหตุ: ไม่ได้ใช้ผลสรุปของการค้นหา {terms} เพราะการค้นหาเหล่านั้นไม่ได้รายงานเอกสารที่ตรวจสอบได้",
         "script": ("หมายเหตุ: คำตอบนี้มีคำในอักษรที่ไม่คาดคิด ({words}) ซึ่งอาจเป็นข้อผิดพลาดของโมเดล "
                    "โปรดตรวจข้อความรอบคำเหล่านั้น"),
     },
 }
 
 
-def _lang(question: str) -> str:
-    return "th" if THAI.search(question) else "en"  # the synthesis prompt answers in the question's language
+def _lang(question: str, answer: str = "") -> str:
+    th, la = len(THAI.findall(answer)), len(re.findall("[A-Za-z]", answer))
+    if th + la >= 20:  # ponytail: thresholds from the stored answers (Thai answers 0.58-1.0 Thai share, English 0.0); retune if mixed answers mislabel
+        return "th" if th >= 0.3 * (th + la) else "en"
+    return "th" if THAI.search(question) else "en"  # short or empty answer: the question decides, as before
 
 
 async def _script_checked(text: str, question: str, source: str, system: str, user: str, max_tokens: int,
-                          settings: Settings, cite: str) -> tuple[str, str]:
+                          settings: Settings, cite: str, json_mode: bool = False, parse=lambda s: s) -> tuple[str, str]:
     """(text, note). Letters in an unexpected script: one re-ask; if still stray (or the citations changed) keep the
     original and return a visible note. Characters are never removed."""
     if not (words := stray(text, question, source)):
@@ -95,13 +100,18 @@ async def _script_checked(text: str, question: str, source: str, system: str, us
         r = await llm.complete(system, f"{user}\n\n<previous_answer>\n{text.replace('<', chr(92) + 'u003c')}\n</previous_answer>\n\n"
                                f"The previous answer contained words in an unexpected script: {', '.join(words)}. Rewrite only those words "
                                "in the question's language; keep everything else, including every citation marker, unchanged.",
-                               max_tokens=max_tokens, settings=settings)
-        again = r.text.strip().replace("\\u003c", "<")  # the model may echo the escaped "<" of the previous_answer block
-        if not stray(again, question, source) and set(re.findall(cite, again)) == set(re.findall(cite, text)):
+                               max_tokens=max_tokens, json_mode=json_mode, settings=settings)
+        again = parse(r.text).strip().replace("\\u003c", "<")  # the model may echo the escaped "<" of the previous_answer block
+        kept = len(text) - sum(text.count(w) * len(w) for w in words)  # the rewrite replaces the stray words, so they do not count
+        # ponytail: a dropped uncited tail under 20% of the answer, or a short preamble, still passes
+        ok = (not stray(again, question, source) and set(re.findall(cite, again)) == set(re.findall(cite, text))
+              and len(again) >= 0.8 * kept)
+        log.info("script guard: %d stray word(s), rewrite %s", len(words), "accepted" if ok else "rejected")
+        if ok:
             return again, ""
     except Exception:  # the re-ask is best effort
         log.warning("script re-ask failed", exc_info=True)
-    return text, "\n\n" + NOTES[_lang(question)]["script"].format(words=", ".join(words[:5]) + (", …" if len(words) > 5 else ""))
+    return text, "\n\n" + NOTES[_lang(question, text)]["script"].format(words=", ".join(words[:5]) + (", …" if len(words) > 5 else ""))
 
 
 def _history_block(history: list) -> str:
@@ -330,6 +340,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     records: dict[tuple[str, str], DataRecord] = {}
     rec_per_branch: dict[str, int] = {}
     rec_capped = 0
+    backed: set[str] = set()  # terms whose search reported at least one paper or record
     gated: set[str] = set()  # names of key-gated databases the model tried to use
     rec_invalid: set = set()  # database:id of rejected records, or a unique marker when unidentified
     replans: list[Replan] = []
@@ -362,6 +373,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
                     else:
                         rec_invalid.add(item.key or object())
                 elif isinstance(item, DataRecord):
+                    backed.add(term)  # reported, even if deduplicated or over the cap below
                     if (item.database, item.id) in records:  # the same entry again is one record and takes no slot
                         continue
                     if (n := rec_per_branch.get(term, 0)) >= settings.max_records_per_branch:
@@ -370,7 +382,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
                         rec_per_branch[term] = n + 1
                         records[item.database, item.id] = item
                         yield Records(term=term, records=[item])
-                elif (n := per_branch.get(term, 0)) >= settings.max_papers_per_branch:
+                elif backed.add(term) or (n := per_branch.get(term, 0)) >= settings.max_papers_per_branch:
                     capped += 1
                 else:
                     per_branch[term] = n + 1
@@ -406,32 +418,36 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
         return
     for a in answers:
         yield a
+    used = [a for a in answers if a.term in backed]  # a summary can only be backed by what its search reported
+    unbacked = list(dict.fromkeys(a.term for a in answers if a not in used))
 
     # same keys, same order
     refs = await verify_references([r.paper for r in references.values()], client=client,
                                    contact_email=settings.contact_email)
     final_records = list(records.values())[:100]  # the store rejects an answer with more than 100 records (store.Answer)
-    N = NOTES[_lang(question)]
-    note = "".join("\n\n" + N["failed"].format(term=t) for t in failed)
+    parts: list[tuple[str, dict]] = [("failed", {"term": t}) for t in failed]
     if dropped:
-        note += "\n\n" + N["dropped"].format(n=dropped)
+        parts.append(("dropped", {"n": dropped}))
     rec_dropped = sum(1 for k in rec_invalid if not isinstance(k, str) or tuple(k.split(":", 1)) not in records)  # a corrected retry is not a drop
     if rec_dropped:
-        note += "\n\n" + N["rec_dropped"].format(n=rec_dropped)
+        parts.append(("rec_dropped", {"n": rec_dropped}))
     if gated:
         one = len(gated) == 1
-        note += "\n\n" + N["gated"].format(names=", ".join(sorted(gated)), was="was" if one else "were", needs="it needs" if one else "they need")
+        parts.append(("gated", {"names": ", ".join(sorted(gated)), "was": "was" if one else "were", "needs": "it needs" if one else "they need"}))
     if rec_capped:
-        note += "\n\n" + N["rec_capped"].format(n=rec_capped, max=settings.max_records_per_branch)
+        parts.append(("rec_capped", {"n": rec_capped, "max": settings.max_records_per_branch}))
     if capped:
-        note += "\n\n" + N["capped"].format(n=capped, max=settings.max_papers_per_branch)
+        parts.append(("capped", {"n": capped, "max": settings.max_papers_per_branch}))
     unverified = [r for r in refs if r.status == "unverified"]
     if ids := _ids([r for r in unverified if _has_id(r)], "unverified"):
-        note += "\n\n" + N["unverified_id"].format(ids=ids)
+        parts.append(("unverified_id", {"ids": ids}))
     if ids := _ids([r for r in unverified if not _has_id(r)], "unverified"):
-        note += "\n\n" + N["unverified_noid"].format(ids=ids)
+        parts.append(("unverified_noid", {"ids": ids}))
     if ids := _ids(refs, "unknown"):
-        note += "\n\n" + N["unknown"].format(ids=ids)
+        parts.append(("unknown", {"ids": ids}))
+    if unbacked:
+        parts.insert(len(failed), ("unbacked", {"terms": ", ".join(f'"{t}"' for t in unbacked)}))
+    notes = lambda lang: "".join("\n\n" + NOTES[lang][k].format(**kw) for k, kw in parts)  # noqa: E731
 
     def prov(used: set[str]):
         """Hashes of the prompts the run configured and attempted: strategy when the model planned, replan when a re-plan call
@@ -443,13 +459,15 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
                                    provenance.rounds_of(plan, replans), given=bool(given),
                                    history_turns=len(history), pack=pack)
 
-    if not answers:  # papers but no branch summary: say so plainly; never synthesise a comparison from titles alone
-        yield FinalAnswer(content=N["no_summary"].format(n=len(refs)) + note, references=_trim("", refs), records=final_records,
+    if not used:  # papers but no branch summary: say so plainly; never synthesise a comparison from titles alone
+        lang = _lang(question)
+        yield FinalAnswer(content=NOTES[lang]["no_summary"].format(n=len(refs)) + notes(lang), references=_trim("", refs), records=final_records,
                           usage=usage.snapshot(), provenance=prov(set()))
         yield Complete()
         return
-    user = (_history_block(history) + _data_block(refs, answers, final_records)
+    user = (_history_block(history) + _data_block(refs, used, final_records)
             + "".join(f'\nThe search for "{t}" failed and returned no findings.' for t in failed)
+            + "".join(f'\nThe search for "{t}" reported no papers; its summary was not used.' for t in unbacked)
             + f"\n\nQuestion:\n{question}")
     try:
         r = await llm.complete(SYNTHESIS, user, max_tokens=settings.synthesis_max_tokens, settings=settings)
@@ -458,13 +476,14 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
         return
     text, script_note = await _script_checked(r.text.strip(), question, user, SYNTHESIS, user, settings.synthesis_max_tokens,
                                               settings, r"\[\d+\]")
-    note += script_note
+    lang = _lang(question, text)
+    unsupported = ""
     reviewing = settings.review_enabled and mode in ("deep", "quick") and bool(_pool(text, refs))  # a call is sent only with a pool
     if reviewing and (reviewed := await _review(text, refs, settings)):
         refs = reviewed
         if ids := "".join(f"[{x.id}]" for x in refs if any(c.support == "unsupported" for c in x.checks)):
-            note += "\n\n" + N["unsupported"].format(ids=ids)
-    yield FinalAnswer(content=text + note, references=_trim(text, refs), records=final_records, usage=usage.snapshot(),
+            unsupported = "\n\n" + NOTES[lang]["unsupported"].format(ids=ids)
+    yield FinalAnswer(content=text + notes(lang) + script_note + unsupported, references=_trim(text, refs), records=final_records, usage=usage.snapshot(),
                       provenance=prov({"synthesis"} | ({"review"} if reviewing else set())))
     yield Complete()
 

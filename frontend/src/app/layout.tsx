@@ -4,7 +4,7 @@ import InitColorSchemeScript from "@mui/material/InitColorSchemeScript";
 import { Box } from "@mui/material";
 import { Providers } from "@/components/Providers";
 import { SkipLink } from "@/components/SkipLink";
-import { BG } from "@/lib/config";
+import { BG, SITE_URL } from "@/lib/config";
 
 const notoSansThai = Noto_Sans_Thai_Looped({ subsets: ["thai", "latin"], display: "swap" }); // looped Thai: the formal, document-like voice of the reference
 
@@ -13,7 +13,11 @@ const DESC = "ตั้งคำถามวิจัยเป็นภาษา
 export const metadata: Metadata = {
   title: "AI Scientist · ผู้ช่วยค้นคว้างานวิชาการ",
   description: DESC,
-  openGraph: { title: "AI Scientist", description: DESC, siteName: "AI Scientist", locale: "th_TH", alternateLocale: "en_US", type: "website" },
+  metadataBase: SITE_URL,
+  openGraph: {
+    title: "AI Scientist", description: DESC, siteName: "AI Scientist", locale: "th_TH", alternateLocale: "en_US", type: "website",
+    ...(SITE_URL && { url: "./", images: [{ url: "/og", width: 1200, height: 630, alt: "AI Scientist" }] }), // only with a known origin: no localhost URL in production HTML
+  },
 };
 
 export const viewport: Viewport = {

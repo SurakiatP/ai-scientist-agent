@@ -16,7 +16,7 @@ from scientist.config import Settings
 from scientist.events import Complete, DocRef, DocsIndexing, EmptyFile, Error, Event, FinalAnswer, ProvDocFile, Refused, Waiting
 from scientist.gate import RunGate
 from scientist.guardrail import guard
-from scientist.pipeline import _exact, _history_block, _squash
+from scientist.pipeline import _exact, _history_block, _script_checked, _squash
 
 DOCS = (Path(__file__).parent / "prompts/docs.md").read_text()
 REPRODUCE = (Path(__file__).parent / "prompts/reproduce.md").read_text()
@@ -172,8 +172,11 @@ async def answer_docs(question: str, doc_ids: list[str], *, db, store, settings:
             yield Error(message=FAIL, code="failed")
             return
         text, quotes = _parse(r.text)
+        # guard the raw answer before verifying: its [n] still has the model's numbering, and the original quotes stay
+        text, script_note = await _script_checked(text, question, user, prompt, user, settings.synthesis_max_tokens, settings,
+                                                  MARK.pattern, json_mode=True, parse=lambda s: str(json.loads(s)["answer"]))
         content, refs = _safe_verify(text, quotes, passages, files)
-        yield FinalAnswer(content=content, references=[], doc_refs=refs, empty_files=empty, usage=usage.snapshot(),
+        yield FinalAnswer(content=content + script_note, references=[], doc_refs=refs, empty_files=empty, usage=usage.snapshot(),
                           provenance=provenance.docs(settings, prompt, pf, passages=len(passages), cited=len(refs), history_turns=len(history)))
         yield Complete()
     finally:

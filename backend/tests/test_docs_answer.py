@@ -46,7 +46,8 @@ def fx(monkeypatch):
     async def complete(system, user, *, model=None, max_tokens, json_mode=False, settings=None):
         st["calls"].append({"system": system, "user": user, "json_mode": json_mode})
         usage.note(3, 4, None)  # as the real llm.complete does
-        return llm.LlmResult(text=st["reply"], prompt_tokens=3, completion_tokens=4, cached_tokens=0)
+        text = st["reply"].pop(0) if isinstance(st["reply"], list) else st["reply"]
+        return llm.LlmResult(text=text, prompt_tokens=3, completion_tokens=4, cached_tokens=0)
 
     async def guard(mode, question, *, settings, **kw):
         st["mode"] = mode
@@ -529,3 +530,39 @@ def test_docs_task_only_means_something_in_docs_mode(settings, monkeypatch):
     ids = ["a" * 32]
     assert AskRequest(question="q", mode="docs", doc_ids=ids, docs_task="reproduce").docs_task == "reproduce"
     assert AskRequest(question="q", mode="quick", docs_task="reproduce").docs_task == "answer"
+
+
+BAD = "ATP comes from oxidative phosphorylation [1] במחקר."
+CLEAN = "ATP comes from oxidative phosphorylation [1] in research."
+QUOTE = "oxidative phosphorylation in the inner membrane"
+
+
+async def test_docs_stray_script_reasked_keeps_original_quotes(d, settings, fx):  # noqa: F811
+    f = mkfile(d, "bio.pdf")
+    fx["reply"] = [reply(BAD, {"1": QUOTE}), reply(CLEAN, {"1": "x" * 30})]
+    a = final(await run(d, settings, [f], Store(**{f: b"%PDF"})))
+    assert a.content == CLEAN and a.doc_refs[0].quote == QUOTE
+    assert len(fx["calls"]) == 2 and "<previous_answer>" in fx["calls"][1]["user"] and fx["calls"][1]["json_mode"]
+
+
+async def test_docs_stray_script_persisting_adds_note_and_keeps_quote(d, settings, fx):  # noqa: F811
+    f = mkfile(d, "bio.pdf")
+    fx["reply"] = [reply(BAD, {"1": QUOTE}), reply(BAD, {"1": "x" * 30})]
+    a = final(await run(d, settings, [f], Store(**{f: b"%PDF"})))
+    assert a.content.startswith(BAD) and "unexpected script" in a.content and a.doc_refs[0].quote == QUOTE
+    assert a.content.count("[1]") == 1
+
+
+async def test_docs_reask_truncated_json_keeps_original_with_note(d, settings, fx):  # noqa: F811
+    f = mkfile(d, "bio.pdf")
+    cut = '{"answer": "ATP comes from oxidative phosphorylation [1] in research.", "quotes": {"1": "oxidative phos'
+    fx["reply"] = [reply(BAD, {"1": QUOTE}), cut]
+    a = final(await run(d, settings, [f], Store(**{f: b"%PDF"})))
+    assert a.content.startswith(BAD) and "unexpected script" in a.content and '{"answer"' not in a.content
+
+
+async def test_docs_reask_changing_citations_keeps_original(d, settings, fx):  # noqa: F811
+    f = mkfile(d, "bio.pdf")
+    fx["reply"] = [reply(BAD, {"1": QUOTE}), reply(CLEAN.replace("[1]", "[2]"), {})]
+    a = final(await run(d, settings, [f], Store(**{f: b"%PDF"})))
+    assert a.content.startswith(BAD) and "unexpected script" in a.content

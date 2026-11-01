@@ -9,7 +9,9 @@ FROM node:24.18.0-slim AS build
 WORKDIR /app
 # Inlined at build time. Empty = same-origin requests (Caddy routes /v1 to the backend).
 ARG NEXT_PUBLIC_API_BASE=""
-ENV NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE NEXT_TELEMETRY_DISABLED=1
+# Public origin of the deployed site (e.g. https://example.org), used for og:url and the link-preview image. Empty = those tags are left out.
+ARG NEXT_PUBLIC_SITE_URL=""
+ENV NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY frontend/ ./
 RUN npm run build

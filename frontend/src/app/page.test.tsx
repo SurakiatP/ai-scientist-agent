@@ -135,3 +135,19 @@ it("layout skip link has its #content target on every page", () => {
     expect(s.match(/component="main"/g)).toHaveLength(1);
   }
 });
+
+describe("link previews", () => {
+  it("og image route uses English landing strings only", () => {
+    const src = readFileSync("src/app/og/route.tsx", "utf8");
+    expect(src).toMatch(/landing\.en/);
+    expect(src).not.toMatch(/landing\.th|[\u0E00-\u0E7F]/);
+    const { brand, badge, titleA, titleB } = landing.en;
+    expect(`${brand}${badge}${titleA}${titleB}`).not.toMatch(/[\u0E00-\u0E7F]/);
+  });
+
+  it("layout sets og url and image only when the site URL is known", () => {
+    const src = readFileSync("src/app/layout.tsx", "utf8");
+    expect(src).toContain("metadataBase: SITE_URL");
+    expect(src).toMatch(/SITE_URL && \{[^}]*url: "\.\/"/);
+  });
+});

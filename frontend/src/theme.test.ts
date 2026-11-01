@@ -25,6 +25,8 @@ describe("theme", () => {
     const c = theme.components as Record<string, { defaultProps?: Record<string, unknown> }>;
     expect(c.MuiButton.defaultProps?.disableFocusRipple).toBe(true);
     expect(c.MuiIconButton.defaultProps?.disableFocusRipple).toBe(true);
+    expect(c.MuiToggleButton.defaultProps?.disableFocusRipple).toBe(true);
+    expect(c.MuiTab.defaultProps?.disableFocusRipple).toBe(true);
   });
 
   it("loads Noto_Sans_Thai with thai + latin subsets", () => {

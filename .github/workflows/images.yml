@@ -42,6 +42,8 @@ jobs:
           context: ${{ matrix.context }}
           file: ${{ matrix.image == 'sandbox' && 'backend/sandbox/Dockerfile' || matrix.image == 'sandbox-science' && 'backend/sandbox/Dockerfile.science' || format('{0}/Dockerfile', matrix.image) }}
           push: true
+          # frontend only: the public site origin (repository variable SITE_URL; unset = no og:url/og:image tags)
+          build-args: ${{ matrix.image == 'frontend' && format('NEXT_PUBLIC_SITE_URL={0}', vars.SITE_URL) || '' }}
           tags: |
             ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.ref_tag }}
             ${{ steps.meta.outputs.repo }}:sha-${{ steps.meta.outputs.short }}

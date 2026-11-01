@@ -5,6 +5,10 @@ export const gate = { writes: !DEFER_HYDRATION }; // false = the shared database
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
+// Public origin for link previews (og:url, og:image). Inlined at build. Unset or not http(s) = no preview URLs, never a guessed one.
+export const siteUrl = (v?: string) => { try { return v && /^https?:\/\//.test(v) ? new URL(v) : undefined; } catch { return undefined; } };
+export const SITE_URL = siteUrl(process.env.NEXT_PUBLIC_SITE_URL);
+
 // Page background per scheme. Plain module (theme.ts is "use client", so a server layout cannot read its values).
 export const BG = { light: "#E8EDF4", dark: "#0B1322" };
 

@@ -1130,3 +1130,100 @@ def test_create_app_makes_scientist_info_logs_visible(settings, monkeypatch):
     logging.getLogger("scientist").setLevel(logging.WARNING)
     create_app()
     assert logging.getLogger("scientist").isEnabledFor(logging.INFO)
+
+
+THAI_LONG = "ผลลัพธ์ [1] ในงานวิจัยนี้แสดงให้เห็นว่าวิธีนี้ได้ผลดี"
+EN_LONG = "The results [1] in this study show that the method works well"
+
+
+async def test_notes_follow_answer_language_english_question(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    fake_complete["synthesis"] = THAI_LONG + " במחקר"
+    rt = runner(settings, tmp_path, {"a": [paper("P", "10.1000/p"), answer("s")]})
+    final = next(e for e in await run(Q, rt, settings, crossref(503)) if isinstance(e, FinalAnswer))
+    assert "อักษรที่ไม่คาดคิด" in final.content and "ตรวจสอบไม่ได้" in final.content
+    assert "unexpected script" not in final.content and "could not be checked" not in final.content
+
+
+async def test_notes_follow_answer_language_thai_question(settings, tmp_path, fake_complete):
+    fake_complete["synthesis"] = EN_LONG + " במחקר"
+    final = await th_final(settings, tmp_path, fake_complete, crossref(503))
+    assert "unexpected script" in final.content and "could not be checked" in final.content
+    assert "อักษรที่ไม่คาดคิด" not in final.content
+
+
+async def test_reask_dropping_uncited_tail_keeps_original(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a")
+    rt = runner(settings, tmp_path, {"a": [paper("P", "10.1000/p"), answer("s")]})
+    original = HEB_ANSWER + "\n\n" + "ข้อสรุปเพิ่มเติมที่ไม่มีการอ้างอิงและยาวพอสมควรสำหรับการทดสอบนี้เท่านั้น"
+    orig, seq = _seq_synthesis([original, "ผลลัพธ์ [1] ในงานวิจัย และ ลำดับเบส"])
+    llm.complete = seq
+    try:
+        final = next(e for e in await run(QTH, rt, settings) if isinstance(e, FinalAnswer))
+    finally:
+        llm.complete = orig
+    assert final.content.startswith(original) and "อักษรที่ไม่คาดคิด" in final.content
+
+
+async def test_reask_logs_outcome(settings, tmp_path, fake_complete, caplog):
+    fake_complete["strategy"] = strategy("a")
+    rt = runner(settings, tmp_path, {"a": [paper("P", "10.1000/p"), answer("s")]})
+    orig, seq = _seq_synthesis([HEB_ANSWER, "ผลลัพธ์ [1] สะอาด"])
+    llm.complete = seq
+    try:
+        with caplog.at_level("INFO", logger="scientist"):
+            await run(QTH, rt, settings)
+    finally:
+        llm.complete = orig
+    assert "script guard: 2 stray word(s), rewrite accepted" in caplog.text
+
+
+def _findings(fake_complete):
+    return fake_complete["calls"][-1]["user"]
+
+
+async def test_summary_of_branch_without_papers_is_not_synthesised(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a", "b")
+    s = settings.model_copy(update={"replan_rounds": 0})
+    rt = runner(settings, tmp_path, {"a": [paper("P", "10.1000/p"), answer("backed")], "b": [answer("UNBACKED claim")]})
+    events = await run(Q, rt, s)
+    final = next(e for e in events if isinstance(e, FinalAnswer))
+    user = _findings(fake_complete)
+    assert "backed" in user and "UNBACKED claim" not in user
+    assert 'The search for "b" reported no papers' in user
+    assert 'the summaries of "b" were not used' in final.content
+    assert len([e for e in events if isinstance(e, BranchAnswer)]) == 2  # both summaries still streamed
+
+
+async def test_records_only_branch_summary_is_kept(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a", "b")
+    s = settings.model_copy(update={"replan_rounds": 0})
+    rt = runner(settings, tmp_path, {"a": [paper("P", "10.1000/p"), answer("backed")], "b": [rec(1), answer("rec summary")]})
+    await run(Q, rt, s)
+    assert "rec summary" in _findings(fake_complete)
+
+
+async def test_summary_of_duplicate_record_branch_is_kept(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a", "b")
+    s = settings.model_copy(update={"replan_rounds": 0})
+    rt = runner(settings, tmp_path, {"a": [rec(1), paper("P", "10.1000/p"), answer("first summary")], "b": [rec(1), answer("second summary")]})
+    final = next(e for e in await run(Q, rt, s) if isinstance(e, FinalAnswer))
+    user = _findings(fake_complete)  # whichever branch reported the record second only has a duplicate
+    assert "first summary" in user and "second summary" in user and "were not used" not in final.content
+
+
+async def test_summary_of_over_cap_record_branch_is_kept(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a", "b")
+    s = settings.model_copy(update={"replan_rounds": 0, "max_records_per_branch": 0})
+    rt = runner(settings, tmp_path, {"a": [paper("P", "10.1000/p"), answer("backed")], "b": [rec(1), answer("capped summary")]})
+    final = next(e for e in await run(Q, rt, s) if isinstance(e, FinalAnswer))
+    assert "capped summary" in _findings(fake_complete) and "were not used" not in final.content
+
+
+async def test_only_unbacked_summaries_give_no_summary_answer(settings, tmp_path, fake_complete):
+    fake_complete["strategy"] = strategy("a", "b")
+    s = settings.model_copy(update={"replan_rounds": 0})
+    rt = runner(settings, tmp_path, {"a": [paper("P", "10.1000/p")], "b": [answer("x")]})
+    final = next(e for e in await run(Q, rt, s) if isinstance(e, FinalAnswer))
+    assert final.content.startswith("Found 1 paper(s), but the search did not finish")
+    assert [c["system"] for c in fake_complete["calls"]].count(SYNTHESIS) == 0
