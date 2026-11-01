@@ -8,9 +8,12 @@ import { BG } from "@/lib/config";
 
 const notoSansThai = Noto_Sans_Thai_Looped({ subsets: ["thai", "latin"], display: "swap" }); // looped Thai: the formal, document-like voice of the reference
 
+const DESC = "ตั้งคำถามวิจัยเป็นภาษาไทยหรืออังกฤษ ได้คำตอบจากงานวิชาการพร้อมอ้างอิง อ้างอิงที่มี DOI, PMID หรือ arXiv ID จะถูกตรวจว่าเลขนั้นมีอยู่จริง";
+
 export const metadata: Metadata = {
-  title: "AI Scientist",
-  description: "Ask research questions and get cited answers",
+  title: "AI Scientist · ผู้ช่วยค้นคว้างานวิชาการ",
+  description: DESC,
+  openGraph: { title: "AI Scientist", description: DESC, siteName: "AI Scientist", locale: "th_TH", alternateLocale: "en_US", type: "website" },
 };
 
 export const viewport: Viewport = {

@@ -19,7 +19,7 @@ export function Segmented<T extends string>({ label, value, options, onChange, f
         const on = o.value === value;
         return (
           <Box key={o.value} component="label" sx={{
-            position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 0.75, minHeight: compact ? (square ? 36 : 32) : 40, px: compact ? 1.5 : { xs: 1.25, sm: 2 }, borderRadius: square ? 1.5 : 999, cursor: "pointer", whiteSpace: "nowrap",
+            position: "relative", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 0.75, minHeight: compact ? (square ? 36 : 32) : 40, "@media (pointer: coarse)": { minHeight: 44 }, px: compact ? 1.5 : { xs: 1.25, sm: 2 }, borderRadius: square ? 1.5 : 999, cursor: "pointer", whiteSpace: "nowrap",
             fontSize: compact ? "0.8125rem" : "0.875rem", fontWeight: on ? 700 : 500, color: on ? "primary.contrastText" : "text.secondary", transition: "color 200ms ease-out",
             "&:hover": on ? undefined : { color: "text.primary" },
             "&:has(input:focus-visible)": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 },

@@ -4,7 +4,7 @@ import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, 
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import { checkName, deleteFile, downloadUrl, fetchPresignedPreview, fetchPreview, FileApiError, presignFile, renameFile, useFilesStore, type FileEntry, type Preview } from "@/lib/files";
 import { srOnly } from "@/lib/config";
-import { skeletonBar } from "@/lib/motion";
+import { skeletonBar, useExitClose } from "@/lib/motion";
 import { useSync } from "@/lib/sync";
 import { useT } from "@/lib/prefs";
 import type { Strings } from "@/lib/strings";
@@ -15,10 +15,10 @@ export const apiMessage = (e: unknown, t: Strings) =>
 const previewMessage = (e: unknown, t: Strings) =>
   e instanceof FileApiError && e.status === 415 ? t.previewUnavailable : e instanceof FileApiError && e.status === 413 ? t.previewTooLarge : e instanceof FileApiError && e.status === 422 ? t.previewUnreadable : apiMessage(e, t);
 
-function Frame({ id, title, onClose, children, actions, maxWidth = 480 }: { id: string; title: string; onClose: () => void; children: React.ReactNode; actions?: React.ReactNode; maxWidth?: number }) {
+function Frame({ id, title, open, onClose, onExited, children, actions, maxWidth = 480 }: { id: string; title: string; open: boolean; onClose: () => void; onExited: () => void; children: React.ReactNode; actions?: React.ReactNode; maxWidth?: number }) {
   const t = useT();
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth={false} aria-labelledby={id} slotProps={{ paper: { sx: { maxWidth, m: { xs: 1.5, sm: 4 }, width: { xs: "calc(100% - 24px)", sm: "100%" }, borderRadius: 3, border: 1, borderColor: "divider", backgroundImage: "none", bgcolor: "background.default" } } }}>
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth={false} aria-labelledby={id} slotProps={{ transition: { onExited }, paper: { sx: { maxWidth, m: { xs: 1.5, sm: 4 }, width: { xs: "calc(100% - 24px)", sm: "100%" }, borderRadius: 3, border: 1, borderColor: "divider", backgroundImage: "none", bgcolor: "background.default" } } }}>
       <DialogTitle id={id} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, pb: 1, fontSize: "1.125rem", fontWeight: 700 }}>
         <Box component="span" sx={{ minWidth: 0, overflowWrap: "anywhere" }}>{title}</Box>
         <IconButton aria-label={t.close} onClick={onClose} sx={{ width: 44, height: 44, flexShrink: 0 }}><CloseRoundedIcon /></IconButton>
@@ -83,6 +83,7 @@ export function PreviewDialog({ file, onClose, onMissing }: { file: FileEntry; o
   const [state, setState] = useState<PState>({ s: "load" });
   const [frameReady, setFrameReady] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const x = useExitClose(onClose);
   useEffect(() => {
     const ac = new AbortController();
     const fail = (e: unknown) => {
@@ -115,7 +116,7 @@ export function PreviewDialog({ file, onClose, onMissing }: { file: FileEntry; o
   }, [file.id, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
   const title = `${t.filePreview}: ${file.name}`;
   return (
-    <Frame id="file-preview-title" title={title} onClose={onClose} maxWidth={960}>
+    <Frame id="file-preview-title" title={title} open={x.open} onClose={x.close} onExited={x.onExited} maxWidth={960}>
       {state.s === "load" && <PreviewSkeleton label={t.previewLoading} />}
       {state.s === "err" && (
         <Alert severity="info" role="status" action={state.retry ? <Button color="inherit" size="small" onClick={() => { setState({ s: "load" }); setFrameReady(false); setAttempt((n) => n + 1); }} sx={{ minHeight: 44 }}>{t.previewRetry}</Button> : undefined}>{state.msg}</Alert>
@@ -145,6 +146,7 @@ export function PreviewDialog({ file, onClose, onMissing }: { file: FileEntry; o
 export function RenameDialog({ file, onClose, onMissing }: { file: FileEntry; onClose: () => void; onMissing: () => void }) {
   const t = useT();
   const [v, setV] = useState(file.name), [err, setErr] = useState(""), [busy, setBusy] = useState(false);
+  const x = useExitClose(onClose);
   const submit = async () => {
     if (busy) return;
     const c = checkName(v, file.kind);
@@ -156,7 +158,7 @@ export function RenameDialog({ file, onClose, onMissing }: { file: FileEntry; on
     try {
       const m = await renameFile(file.id, c.name);
       useFilesStore.getState().rename(file.id, m.name);
-      onClose();
+      x.close();
     } catch (e) {
       if (e instanceof FileApiError && e.status === 404) onMissing();
       setErr(e instanceof FileApiError && e.status === 422 ? t.nameErrExt.replace("{ext}", file.kind) : apiMessage(e, t));
@@ -164,8 +166,8 @@ export function RenameDialog({ file, onClose, onMissing }: { file: FileEntry; on
     }
   };
   return (
-    <Frame id="file-rename-title" title={t.renameFileTitle} onClose={onClose}
-      actions={<><Button color="inherit" onClick={onClose} sx={{ minHeight: 44 }}>{t.cancel}</Button><Button variant="contained" disabled={busy} onClick={submit} sx={{ minHeight: 44 }}>{t.saveName}</Button></>}>
+    <Frame id="file-rename-title" title={t.renameFileTitle} open={x.open} onClose={x.close} onExited={x.onExited}
+      actions={<><Button color="inherit" onClick={x.close} sx={{ minHeight: 44 }}>{t.cancel}</Button><Button variant="contained" disabled={busy} onClick={submit} sx={{ minHeight: 44 }}>{t.saveName}</Button></>}>
       <TextField autoFocus fullWidth margin="dense" label={t.fileNameLabel} value={v} error={!!err} helperText={err || undefined}
         onChange={(e) => { setV(e.target.value); setErr(""); }} onFocus={(e) => e.target.select()}
         slotProps={{ htmlInput: { maxLength: 200, "aria-describedby": err ? "file-rename-err" : undefined }, formHelperText: { id: "file-rename-err", role: "alert" } }}
@@ -177,6 +179,7 @@ export function RenameDialog({ file, onClose, onMissing }: { file: FileEntry; on
 export function DeleteDialog({ file, onClose, onRemove = (id) => useFilesStore.getState().remove(id) }: { file: FileEntry; onClose: () => void; onRemove?: (id: string) => void }) {
   const t = useT();
   const [err, setErr] = useState(""), [busy, setBusy] = useState(false);
+  const x = useExitClose(onClose);
   const shared = useSync((s) => s.status) !== "disabled"; // shared database: the file goes to the trash, the stored object is purged after 7 days
   const go = async () => {
     if (busy) return;
@@ -189,8 +192,8 @@ export function DeleteDialog({ file, onClose, onRemove = (id) => useFilesStore.g
     onClose();
   };
   return (
-    <Frame id="file-delete-title" title={t.deleteFileTitle} onClose={onClose}
-      actions={<><Button color="inherit" autoFocus onClick={onClose} sx={{ minHeight: 44 }}>{t.cancel}</Button><Button color="error" variant="contained" disabled={busy} onClick={go} sx={{ minHeight: 44 }}>{t.deleteItem}</Button></>}>
+    <Frame id="file-delete-title" title={t.deleteFileTitle} open={x.open} onClose={x.close} onExited={x.onExited}
+      actions={<><Button color="inherit" autoFocus onClick={x.close} sx={{ minHeight: 44 }}>{t.cancel}</Button><Button color="error" variant="contained" disabled={busy} onClick={go} sx={{ minHeight: 44 }}>{t.deleteItem}</Button></>}>
       <Typography sx={{ fontWeight: 600, overflowWrap: "anywhere" }}>{file.name}</Typography>
       <Typography sx={{ mt: 0.5, color: "text.secondary" }}>{shared ? t.deleteFileBodyTrash : t.deleteFileBody}</Typography>
       {err && <Alert severity="error" role="alert" sx={{ mt: 2 }}>{err}</Alert>}

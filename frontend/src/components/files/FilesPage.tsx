@@ -146,7 +146,7 @@ export function FilesPage() {
   const count = t.filesCount.replace("{n}", String(files.length));
 
   return (
-    <Box component="main" id="main" sx={{ maxWidth: 1000, mx: "auto", px: { xs: 2, sm: 3 }, py: { xs: 2, md: 3 } }}>
+    <Box id="main" sx={{ maxWidth: 1000, mx: "auto", px: { xs: 2, sm: 3 }, py: { xs: 2, md: 3 } }}>
       <input ref={picker} type="file" accept={ACCEPT} hidden onChange={onPick} />
       <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, mb: 2.5 }}>
         <Box sx={{ flex: "1 1 auto", minWidth: 0 }}>

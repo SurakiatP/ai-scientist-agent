@@ -8,7 +8,7 @@ import type { Turn } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
 import { stopTurn, useForeign, useSending, useStoppable, useTurnLocked } from "@/lib/run";
 import type { Progress } from "@/lib/progress";
-import { ease, enterRise, prefersReduced, stageCheckSx, stageDotSx, stageFillSx, stageRingSx, stageSettleSx } from "@/lib/motion";
+import { ease, enterFade, enterRise, prefersReduced, stageCheckSx, stageDotSx, stageFillSx, stageRingSx, stageSettleSx } from "@/lib/motion";
 import { SourcesUsed } from "./SourcesUsed";
 import { PlanCard, type RowState } from "./PlanCard";
 import { ResearchScan } from "./ResearchScan";
@@ -148,6 +148,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
   const cur = p.searches.find((s) => !p.answered.includes(s.term))?.term; // what is being worked on right now
   const rowState = (term: string): RowState =>
     p.answered.includes(term) ? "done" : p.phase === "writing" || p.phase === "done" ? "skipped" : running && p.phase !== "waiting" && (term in p.sources || term === cur) ? "active" : "wait";
+  const label = sendingNow ? t.sending : running ? (p.phase === "waiting" ? statusText(p, t) : `${statusText(p, t)} (${t.stepOfN.replace("{n}", String(step))})`) : t.progress;
   return (
     <Box sx={{ border: 1, borderColor: "divider", borderRadius: 2, bgcolor: "surface.raised", p: { xs: 1.5, sm: 2 } }}>
       <Stack spacing={2}>
@@ -156,7 +157,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
           {/* the only live region: announces phase changes, not every paper or tick */}
           <Typography role="status" aria-live="polite" sx={{ display: "flex", alignItems: "center", gap: 1, fontWeight: 600, fontSize: "1rem", color: running ? "primary.main" : "text.primary" }}>
             {running && <SearchRoundedIcon aria-hidden sx={{ fontSize: 22 }} />}
-            {sendingNow ? t.sending : running ? (p.phase === "waiting" ? statusText(p, t) : `${statusText(p, t)} (${t.stepOfN.replace("{n}", String(step))})`) : t.progress}
+            <Box component="span" key={label} sx={enterFade}>{label}</Box>
           </Typography>
           {running && <Elapsed since={turn.createdAt} />}
           </Stack>

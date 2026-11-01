@@ -4,12 +4,14 @@ import { Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitl
 import type { Editor } from "@tiptap/react";
 import { LIM, STATEMENT_KINDS, statementText, type Draft } from "@/lib/exportReport";
 import { missingHeadings, outlineNodes, PAPER_TYPES, type PaperType } from "@/lib/paperOutline";
+import { useExitClose } from "@/lib/motion";
 import { useT } from "@/lib/prefs";
 import { strings } from "@/lib/strings";
 
 // Paper type (outline helper), front matter and closing statements of the document. Everything here is optional.
 export function PaperDetails({ editor, d, set, onClose }: { editor: Editor | null; d: Draft; set: (p: Partial<Draft>) => void; onClose: () => void }) {
   const t = useT();
+  const x = useExitClose(onClose);
   const [type, setType] = useState<PaperType | "">("");
   const [msg, setMsg] = useState("");
   const insert = () => {
@@ -28,7 +30,7 @@ export function PaperDetails({ editor, d, set, onClose }: { editor: Editor | nul
     );
   };
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="sm" aria-labelledby="pd-title">
+    <Dialog open={x.open} onClose={x.close} slotProps={{ transition: { onExited: x.onExited } }} fullWidth maxWidth="sm" aria-labelledby="pd-title">
       <DialogTitle id="pd-title" sx={{ fontSize: "1.0625rem", fontWeight: 700 }}>{t.fDetailsTitle}</DialogTitle>
       <DialogContent>
         <Stack sx={{ gap: 2, pt: 1 }}>
@@ -51,7 +53,7 @@ export function PaperDetails({ editor, d, set, onClose }: { editor: Editor | nul
           </Box>
         </Stack>
       </DialogContent>
-      <DialogActions><Button autoFocus onClick={onClose} sx={{ minHeight: 44 }}>{t.fDetailsClose}</Button></DialogActions>
+      <DialogActions><Button autoFocus onClick={x.close} sx={{ minHeight: 44 }}>{t.fDetailsClose}</Button></DialogActions>
     </Dialog>
   );
 }

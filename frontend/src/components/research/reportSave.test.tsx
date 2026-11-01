@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type Turn } from "@/lib/chat";
 import { docFromSections, libraryName, useExport } from "@/lib/exportReport";
@@ -262,5 +263,21 @@ describe("ReportForm paper details", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/reports/export"))).toBe(true));
     const sent = JSON.parse(String(fetchMock.mock.calls.find((c) => String(c[0]).includes("/reports/export"))![1].body));
     for (const k of ["authors", "keywords", "abstract", "statements"]) expect(sent).not.toHaveProperty(k);
+  });
+});
+
+describe("ReportForm fade close", () => {
+  it("Cancel then Discard closes once and returns focus to the trigger", async () => {
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
+    const onClose = vi.fn();
+    const Host = () => { const [o, setO] = useState(false); return <><button id="trig" onClick={() => setO(true)}>open</button>{o && <ReportForm turn={turn} onClose={() => { onClose(); setO(false); }} />}</>; };
+    render(<Host />);
+    act(() => document.getElementById("trig")!.focus());
+    fireEvent.click(document.getElementById("trig")!);
+    fireEvent.change(screen.getByRole("textbox", { name: t.fSubtitle }), { target: { value: "edited" } });
+    fireEvent.click(screen.getByRole("button", { name: t.fCancel }));
+    fireEvent.click(await screen.findByRole("button", { name: t.fDiscard }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(document.activeElement?.id).toBe("trig");
   });
 });

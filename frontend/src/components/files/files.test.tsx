@@ -146,6 +146,19 @@ describe("My files", () => {
     await waitFor(() => expect(useFilesStore.getState().files.map((f) => f.id)).toEqual([id(2)]));
     expect(document.activeElement?.tagName).toBe("H1");
   });
+  it("a dialog fades out under no-preference: still mounted right after Cancel, then gone, focus back on the kebab", async () => {
+    stubMedia((q) => q.includes("no-preference"));
+    vi.stubGlobal("fetch", vi.fn(async () => reply(200, meta(1))));
+    useFilesStore.setState({ files: [entry(1)] });
+    render(<FilesPage />);
+    openMenu(1);
+    fireEvent.click(screen.getByRole("menuitem", { name: t.rename }));
+    await screen.findByLabelText(t.fileNameLabel);
+    fireEvent.click(screen.getByRole("button", { name: t.cancel }));
+    expect(screen.getByRole("dialog", { hidden: true })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole("dialog", { hidden: true })).toBeNull());
+    await waitFor(() => expect(document.activeElement?.id).toBe(`kebab-${id(1)}`));
+  });
 });
 
 

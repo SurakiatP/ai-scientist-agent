@@ -120,7 +120,7 @@ export default function Home() {
     }}>
       <LandingHeader />
 
-      <Box component="main" sx={{ position: "relative" }}>
+      <Box sx={{ position: "relative" }}>
         {/* hero */}
         <Box sx={{ ...section, pt: { xs: 6, md: 10 }, pb: { xs: 8, md: 12 }, display: "grid", gap: { xs: 7, md: 6 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1.1fr) minmax(0,0.9fr)" }, alignItems: "center" }}>
           <Box>
@@ -135,6 +135,7 @@ export default function Home() {
               <ArrowPill href="/chat" big>{L.cta}</ArrowPill>
               <Button component="a" href="#how" color="inherit" sx={{ minHeight: 52, px: 2.5, borderRadius: 999, fontSize: "1rem", fontWeight: 500, color: "text.secondary", "&:hover": { color: "text.primary", bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.06)" }, ...ring }}>{L.how}</Button>
             </Box>
+            <Typography sx={{ mt: 1.5, fontSize: "0.875rem", color: "text.secondary" }}>{L.footerSub}</Typography>
             <Box component={Link} href="/chat" aria-label={`${L.example}. ${L.exampleHint}`}
               sx={{ mt: { xs: 4, md: 6 }, display: "flex", gap: 1.5, alignItems: "flex-start", maxWidth: "36rem", p: 2, borderRadius: "16px", border: 1, borderColor: "divider", bgcolor: "color-mix(in srgb, var(--mui-palette-background-paper) 55%, transparent)", color: "text.primary", textDecoration: "none", transition: `background-color 200ms ${out}, border-color 200ms ${out}`, ...ring, "&:hover": { bgcolor: "background.paper", borderColor: "primary.main" } }}>
               <AutoAwesomeRoundedIcon sx={{ mt: 0.25, fontSize: 18, color: "surface.ai" }} />

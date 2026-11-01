@@ -76,7 +76,7 @@ export function TrashPage() {
   const th = { fontSize: "0.75rem", fontWeight: 700, color: "text.secondary", whiteSpace: "nowrap", bgcolor: "action.hover", borderColor: "divider" } as const;
 
   return (
-    <Box component="main" id="main" sx={{ maxWidth: 1000, mx: "auto", px: { xs: 2, sm: 3 }, py: { xs: 2, md: 3 } }}>
+    <Box id="main" sx={{ maxWidth: 1000, mx: "auto", px: { xs: 2, sm: 3 }, py: { xs: 2, md: 3 } }}>
       <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, mb: 2.5 }}>
         <Box sx={{ flex: 1, minWidth: 220 }}>
           <Typography ref={heading} tabIndex={-1} component="h1" sx={{ fontSize: "1.5rem", fontWeight: 700, outline: 0 }}>{t.trashTitle}</Typography>

@@ -14,7 +14,7 @@ import { useEditor } from "@tiptap/react";
 import type { Turn } from "@/lib/chat";
 import { defaultFont, draftIssue, hasLead, errorText, FONTS, initialDraft, refsOf, requestExport, TEX_TEMPLATES, toPayload, useExport, type Draft, type Format, type TexTemplate } from "@/lib/exportReport";
 import { reportExtensions } from "@/lib/reportExtensions";
-import { enterFade } from "@/lib/motion";
+import { enterFade, useExitClose } from "@/lib/motion";
 import { useGoFiles } from "@/lib/nav";
 import { usePreview } from "@/lib/preview";
 import { usePrefs, useT } from "@/lib/prefs";
@@ -60,10 +60,11 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   const [clean, setClean] = useState({ ver: 0, base }); // last saved (or opened) state
   const [fontTouched, setFontTouched] = useState(false); // a style change resets the font to the style default until the user picks one
   const [ask, setAsk] = useState(false);
+  const x = useExitClose(onClose);
   const [details, setDetails] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const dirty = ver !== clean.ver || base !== clean.base;
-  const leave = () => (dirty ? setAsk(true) : onClose());
+  const leave = () => (dirty ? setAsk(true) : x.close());
   const tex = base.tex;
   const preview = usePreview(useMemo(() => (pv && !issue && !tex ? toPayload(d, "pdf", turn) : null), [pv, d, issue, turn, tex]));
   const texPayload = useMemo(() => (pv && !issue && tex ? toPayload(d, "tex", turn) : null), [pv, d, issue, turn, tex]);
@@ -172,7 +173,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   );
   const sheetOn = wide || !pv; // below md the preview replaces the page
   return (
-    <Dialog open fullScreen onClose={busy ? undefined : leave} aria-labelledby="rf-title" slotProps={{ paper: { sx: { display: "flex", flexDirection: "column" } } }}>
+    <Dialog open={x.open} fullScreen onClose={busy ? undefined : leave} aria-labelledby="rf-title" slotProps={{ transition: { onExited: x.onExited }, paper: { sx: { display: "flex", flexDirection: "column" } } }}>
       <Stack direction="row" useFlexGap sx={{ alignItems: "center", gap: 1, px: 2, py: 1, flexWrap: "wrap", borderBottom: 1, borderColor: "divider" }}>
         <Typography id="rf-title" component="h2" sx={{ flex: "1 1 0", minWidth: 0, fontSize: "1.0625rem", fontWeight: 700 }}>{t.fTitle}</Typography>
         {wide ? (
@@ -251,7 +252,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
         <DialogContent><DialogContentText>{t.fDiscardBody}</DialogContentText></DialogContent>
         <DialogActions>
           <Button autoFocus onClick={() => setAsk(false)} sx={{ minHeight: 44 }}>{t.fKeepEditing}</Button>
-          <Button color="error" onClick={onClose} sx={{ minHeight: 44 }}>{t.fDiscard}</Button>
+          <Button color="error" onClick={() => { setAsk(false); x.close(); }} sx={{ minHeight: 44 }}>{t.fDiscard}</Button>
         </DialogActions>
       </Dialog>
     </Dialog>

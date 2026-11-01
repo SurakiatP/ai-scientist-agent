@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { keyframes } from "@emotion/react";
 
 // Shared motion vocabulary. Motion is CSS under no-preference only (the theme also zeroes durations
@@ -65,11 +66,17 @@ export const skeletonBar = (i: number) => ({
 
 // Finished answer: children of the markdown root rise in one after another (presentational stagger, capped).
 export const revealStagger = {
-  [NO_PREF]: Object.fromEntries(Array.from({ length: 12 }, (_, k) => [`& > :nth-child(${k + 1})`, { animation: `${rise} 360ms ${ease} ${k * 120}ms both` }])),
+  [NO_PREF]: Object.fromEntries(Array.from({ length: 12 }, (_, k) => [`& > :nth-child(${k + 1})`, { animation: `${rise} 360ms ${ease} ${k * 50}ms both` }])),
 };
 
 // True only when the browser positively reports no-preference, so jsdom/SSR/reduce all take the instant path.
 export const canAnimate = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
+// A dialog its parent unmounts on close ({x && <Dialog open/>}): hold it open through MUI's exit fade, then tell the parent.
+// Motion off (reduce, SSR, jsdom) keeps the old instant path, so callers expecting a synchronous onClose still get one.
+export function useExitClose(onClose: () => void) {
+  const [open, setOpen] = useState(true);
+  return { open, close: () => (canAnimate() ? setOpen(false) : onClose()), onExited: onClose };
+}
 // List row entrance: rises with a short stagger (first 8 rows only, 40ms apart).
 export const enterRow = (i: number) => ({ [NO_PREF]: { animation: `${rise} 280ms ${ease} ${Math.min(i, 8) * 40}ms backwards` } });
 // List row exit: fades and slides out before the entry is removed (see EXIT_MS).

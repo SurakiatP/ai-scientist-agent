@@ -46,7 +46,7 @@ export function UsagePage() {
   const row = (name: string, value: string) => <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}><Box component="dt" sx={{ color: "text.secondary" }}>{name}</Box><Box component="dd" sx={{ m: 0, fontVariantNumeric: "tabular-nums", textAlign: "right" }}>{value}</Box></Box>;
 
   return (
-    <Box component="main" id="main" sx={{ maxWidth: 1000, mx: "auto", px: { xs: 2, sm: 3 }, py: { xs: 2, md: 3 } }}>
+    <Box id="main" sx={{ maxWidth: 1000, mx: "auto", px: { xs: 2, sm: 3 }, py: { xs: 2, md: 3 } }}>
       <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, mb: 2.5 }}>
         <Box sx={{ flex: 1, minWidth: 220 }}>
           <Typography component="h1" sx={{ fontSize: "1.5rem", fontWeight: 700 }}>{t.usageTitle}</Typography>

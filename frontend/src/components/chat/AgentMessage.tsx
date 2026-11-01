@@ -28,7 +28,7 @@ import { packName, usablePack } from "@/lib/packs";
 import { downloadProvenance, downloadText, provenanceOf, referencesFilename } from "@/lib/provenance";
 import { toBibtex, toRis } from "@/lib/bibliography";
 import { useReportPanel } from "@/lib/exportReport";
-import { enterPop } from "@/lib/motion";
+import { enterFade, enterPop } from "@/lib/motion";
 import { useInspector } from "@/lib/inspector";
 import { usePrefs, useT } from "@/lib/prefs";
 import { strings, type Strings } from "@/lib/strings";
@@ -122,7 +122,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
         bare ? (
           <>
             {(turn.progress.phase === "waiting" || sendingChat) && ( // the queue line shows in every mode, not only beside the search stages
-              <Typography role="status" aria-live="polite" sx={{ mb: 1, fontSize: "0.9375rem", fontWeight: 600, color: "primary.main", fontVariantNumeric: "tabular-nums" }}>{sendingChat ? t.sending : queueText(turn.progress, t)}</Typography>
+              <Typography role="status" aria-live="polite" sx={{ mb: 1, fontSize: "0.9375rem", fontWeight: 600, color: "primary.main", fontVariantNumeric: "tabular-nums" }}>{(() => { const q = sendingChat ? t.sending : queueText(turn.progress, t); return <Box component="span" key={q} sx={enterFade}>{q}</Box>; })()}</Typography>
             )}
             {docsTurn && !!turn.progress.indexing && ( // live only: a reload of a finished turn shows the answer
               <Typography role="status" aria-live="polite" sx={{ mb: 1, fontSize: "0.9375rem", fontWeight: 600, color: "primary.main" }}>{t.docsReading}</Typography>
