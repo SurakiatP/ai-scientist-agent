@@ -9,10 +9,10 @@ import { FACE } from "./reportFonts";
 import { registerUpload, useFilesStore } from "./files";
 import { uploadFile, UploadError } from "./sse";
 import { doiOf, httpUrl, paperLink } from "./refs";
-import type { Lang, Strings } from "./strings";
+import { strings, type Lang, type Strings } from "./strings";
 
 // Limits of POST /v1/reports/export (backend contract).
-export const LIM = { title: 200, subtitle: 300, heading: 200, para: 5000, sections: 30, paras: 60, refs: 100, runs: 200, cols: 12, rows: 100, cell: 500, items: 100 } as const;
+export const LIM = { title: 200, subtitle: 300, heading: 200, para: 5000, sections: 30, paras: 60, refs: 100, runs: 200, cols: 12, rows: 100, cell: 500, items: 100, authors: 20, author: 100, affil: 200, keywords: 8, keyword: 60, abstract: 3000, statement: 1500 } as const;
 export type Format = "pdf" | "docx" | "tex";
 // LaTeX classes of POST /v1/reports/export (TEMPLATES in backend/src/scientist/report_latex.py); all ship with TeX Live.
 export const TEX_TEMPLATES = ["article", "ieee", "elsevier", "springer"] as const;
@@ -30,9 +30,16 @@ export const FONTS = [
 ];
 export type FontId = (typeof FONTS)[number]["id"];
 export const defaultFont = (style: ReportStyle): FontId => (style === "official" ? "th-sarabun-new" : "sarabun");
-export type Draft = { style: ReportStyle; tex: TexTemplate | null; font: FontId; title: string; subtitle: string; refs: boolean; lang: Lang; doc: JSONContent; lead: string };
+// Closing statements of POST /v1/reports/export, in the order they are written before the references.
+export const STATEMENT_KINDS = ["ai", "data", "ethics", "coi"] as const;
+export type StatementKind = (typeof STATEMENT_KINDS)[number];
+// text null = the editable default of the document language (so it follows a language switch until the user types)
+export type StatementDraft = { on: boolean; text: string | null };
+export type Draft = { style: ReportStyle; tex: TexTemplate | null; font: FontId; title: string; subtitle: string; refs: boolean; lang: Lang; doc: JSONContent; lead: string;
+  authors: string; keywords: string; abstract: string; statements: Record<StatementKind, StatementDraft> }; // authors: one per line "Name, affiliation"; keywords: separated by , or ;
 type Section = { heading: string; blocks: Block[] };
-type Payload = { format: Format; template?: TexTemplate; style: ReportStyle; font: FontId; language: Lang; title: string; subtitle: string | null; sections: { heading: string; paragraphs: string[]; blocks: Block[] }[]; references: RefOut[] };
+type Payload = { format: Format; template?: TexTemplate; style: ReportStyle; font: FontId; language: Lang; title: string; subtitle: string | null; sections: { heading: string; paragraphs: string[]; blocks: Block[] }[]; references: RefOut[];
+  authors?: { name: string; affiliation?: string }[]; keywords?: string[]; abstract?: string; statements?: { kind: StatementKind; text: string }[] };
 
 export type Run = { text: string; bold?: boolean; italic?: boolean; code?: boolean };
 export type Block = { type: "paragraph"; runs: Run[] } | { type: "bullets" | "numbered"; items: Run[][] } | { type: "table"; header: string[]; rows: string[][] };
@@ -227,7 +234,7 @@ export function hasLead(d: Pick<Draft, "doc">): boolean {
 }
 
 export function initialDraft(turn: Turn, lang: Lang, t: Strings): Draft {
-  return { style: "standard", tex: null, font: defaultFont("standard"), title: docTitle(turn), subtitle: turn.answer ? turn.question.slice(0, LIM.subtitle) : "", refs: true, lang, lead: t.reportAnswerSection, doc: docFromSections(draftSections(turn.answer?.content ?? "", t.reportAnswerSection)) };
+  return { style: "standard", tex: null, font: defaultFont("standard"), title: docTitle(turn), subtitle: turn.answer ? turn.question.slice(0, LIM.subtitle) : "", refs: true, lang, lead: t.reportAnswerSection, authors: "", keywords: "", abstract: "", statements: { ai: { on: false, text: null }, data: { on: false, text: null }, ethics: { on: false, text: null }, coi: { on: false, text: null } }, doc: docFromSections(draftSections(turn.answer?.content ?? "", t.reportAnswerSection)) };
 }
 
 const MAX_CHARS = 200_000; // backend ExportRequest total: title + headings + every run, header and cell
@@ -244,6 +251,15 @@ export function draftIssue(d: Draft): "title" | "limits" | "heading" | "table" |
 }
 
 export type RefOut = { id: string; title: string; authors: string[]; year: number | null; doi: string | null; url: string | null; status: "verified" | "unverified" | "unknown" };
+// "Name, affiliation" per line -> authors (blank lines dropped; the affiliation is everything after the first comma).
+export const parseAuthors = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, LIM.authors).map((l) => {
+  const i = l.indexOf(","), name = (i < 0 ? l : l.slice(0, i)).trim().slice(0, LIM.author), affiliation = i < 0 ? "" : l.slice(i + 1).trim().slice(0, LIM.affil);
+  return { name, ...(affiliation ? { affiliation } : {}) };
+}).filter((a) => a.name); // a line with no name (", MIT") is dropped
+export const parseKeywords = (s: string) => s.split(/[,;，；\n]/).map((k) => k.trim().slice(0, LIM.keyword)).filter(Boolean).slice(0, LIM.keywords);
+// The text a statement will carry: the user's edit, else the default of the document language.
+export const statementText = (st: StatementDraft, kind: StatementKind, t: Strings) => st.text ?? t[`stmtDefault_${kind}`];
+
 export const refsOf = (turn: Turn): RefOut[] => (turn.answer?.references ?? []).slice(0, LIM.refs).map((r) => ({
   id: r.id, title: r.paper.title, authors: r.paper.authors, year: r.paper.year ?? null,
   doi: doiOf(r.paper) || null, url: httpUrl(paperLink(r.paper) ?? r.paper.url) ?? null, status: r.status,
@@ -267,8 +283,11 @@ export function refLines(refs: RefOut[], lang: Lang): string[] {
 }
 
 export function toPayload(d: Draft, format: Format, turn: Turn): Payload {
+  const t = strings[d.lang];
   const refs = d.refs ? refsOf(turn) : [];
-  return { format, ...(format === "tex" ? { template: d.tex ?? "article" } : {}), style: d.style, font: d.font, language: d.lang, title: d.title.trim().slice(0, LIM.title), subtitle: d.subtitle.trim().slice(0, LIM.subtitle) || null, sections: sectionsOf(d).map((s) => ({ heading: s.heading.trim() || " ", paragraphs: [], blocks: s.blocks })), references: refs };
+  const authors = parseAuthors(d.authors), keywords = parseKeywords(d.keywords), abstract = d.abstract.trim().slice(0, LIM.abstract);
+  const statements = STATEMENT_KINDS.filter((k) => d.statements[k].on).map((k) => ({ kind: k, text: statementText(d.statements[k], k, t).trim().slice(0, LIM.statement) })).filter((x) => x.text);
+  return { ...(authors.length ? { authors } : {}), ...(keywords.length ? { keywords } : {}), ...(abstract ? { abstract } : {}), ...(statements.length ? { statements } : {}), format, ...(format === "tex" ? { template: d.tex ?? "article" } : {}), style: d.style, font: d.font, language: d.lang, title: d.title.trim().slice(0, LIM.title), subtitle: d.subtitle.trim().slice(0, LIM.subtitle) || null, sections: sectionsOf(d).map((s) => ({ heading: s.heading.trim() || " ", paragraphs: [], blocks: s.blocks })), references: refs };
 }
 
 export type ExportError = "413" | "422" | "503" | "net" | "other";

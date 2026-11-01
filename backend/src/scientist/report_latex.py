@@ -7,7 +7,7 @@ from contextvars import ContextVar
 
 from pythainlp.tokenize import word_tokenize
 
-from scientist.report_render import blocks_of, clean
+from scientist.report_render import LABELS, blocks_of, clean
 
 TEMPLATES = {  # id -> (\documentclass line, abstract heading inside frontmatter, serif face for Latin text or None = Latin Modern)
     "article": (r"\documentclass[11pt]{article}", False, None),
@@ -105,6 +105,34 @@ def _block(b: dict, keys: dict[str, str]) -> str:
                       r"\tablelasttail{\bottomrule}", rf"\begin{{supertabular}}{{{col * n}}}", *rows, r"\end{supertabular}}", r"\par\medskip"])
 
 
+def _line(s: str) -> str:
+    """Escaped single-line text: a blank line inside \\author{} or \\keywords{} would end the paragraph and break the build."""
+    return tex(" ".join(s.split()))
+
+
+def _front(d: dict, cls: str, kw_label: str) -> tuple[list[str], list[str]]:
+    """(author lines, keyword lines placed after the abstract); empty lists when the request has none."""
+    authors = [(_line(a["name"]), _line(a["affiliation"]) if a.get("affiliation") else "") for a in d.get("authors") or []]
+    kws = [k for k in map(_line, d.get("keywords") or []) if k]
+    AND = r" \and "
+    if cls.endswith("{IEEEtran}"):
+        au = r"\author{" + AND.join(r"\IEEEauthorblockN{" + n + "}" + (r"\IEEEauthorblockA{" + a + "}" if a else "") for n, a in authors) + "}"
+        kw = [r"\begin{IEEEkeywords}", ", ".join(kws), r"\end{IEEEkeywords}"] if kws else []
+    elif cls.endswith("{elsarticle}"):
+        au = "\n".join(rf"\author[a{i}]{{{n}}}\address[a{i}]{{{a}}}" if a else rf"\author{{{n}}}" for i, (n, a) in enumerate(authors, 1))
+        kw = [r"\begin{keyword}", r" \sep ".join(kws), r"\end{keyword}"] if kws else []
+    elif cls.endswith("{llncs}"):
+        affs = list(dict.fromkeys(a for _, a in authors if a))
+        au = r"\author{" + AND.join(n + (rf"\inst{{{affs.index(a) + 1}}}" if a else "") for n, a in authors) + "}"
+        if affs:
+            au += "\n" + r"\institute{" + AND.join(affs) + "}"
+        kw = [r"\keywords{" + AND.join(kws) + "}"] if kws else []
+    else:
+        au = r"\author{" + AND.join(n + (r" \\ \small " + a if a else "") for n, a in authors) + "}"
+        kw = [r"\par\noindent\textbf{" + kw_label + r":} " + ", ".join(kws) + r"\par\medskip"] if kws else []
+    return ([au] if authors else []), kw
+
+
 def _ref(r: dict) -> str:
     bits = []
     if r["authors"]:
@@ -132,13 +160,17 @@ def render_latex(d: dict) -> bytes:
 def _render(d: dict) -> bytes:
     cls, front, latin = TEMPLATES[d.get("template") or "article"]
     sections = [dict(s) for s in d["sections"]]
-    text_all = d["title"] + "".join(s["heading"] for s in sections) + str(sections)
+    text_all = (d["title"] + "".join(s["heading"] for s in sections) + str(sections) + (d.get("abstract") or "") + str(d.get("authors") or [])
+                + str(d.get("keywords") or []) + str(d.get("statements") or []) + str(d["references"]))
     thai = d["language"] == "th" or bool(THAI.search(text_all))
     _thai.set(thai)  # read by tex(); reset by render_latex
     w = WORDS["th" if d["language"] == "th" else "en"]
+    lbl = LABELS["th" if d["language"] == "th" else "en"]
     keys = {r["id"]: f"ref{i}" for i, r in enumerate(d["references"], 1)}
     abstract = ""
-    if sections and ABSTRACT.match(sections[0]["heading"]):
+    if d.get("abstract"):  # the front-matter field wins; a section headed Abstract then stays a normal section
+        abstract = "\n\n".join(tex(p) for p in re.split(r"\n\s*\n", d["abstract"].strip()) if p.strip())
+    elif sections and ABSTRACT.match(sections[0]["heading"]):
         abstract = "\n\n".join(_block(b, keys) for b in blocks_of(sections.pop(0)))
 
     pre = ["% !TeX program = xelatex", "% Draft exported from AI Scientist. Add the authors; check every claim and reference before submitting.",
@@ -158,27 +190,31 @@ def _render(d: dict) -> bytes:
             rf"\providecommand{{\refname}}{{}}\renewcommand{{\refname}}{{{w['refs']}}}"]
 
     title = tex(d["title"])
+    au, kw = _front(d, cls, tex(lbl["keywords"]))
     body = [r"\begin{document}"]
     if front:  # elsarticle: title, author and abstract live in the frontmatter environment
-        body += [r"\begin{frontmatter}", rf"\title{{{title}}}", r"\author{}  % add the authors"]
+        body += [r"\begin{frontmatter}", rf"\title{{{title}}}", *(au or [r"\author{}  % add the authors"])]
         if abstract:
             body += [r"\begin{abstract}", abstract, r"\end{abstract}"]
-        body.append(r"\end{frontmatter}")
+        body += kw + [r"\end{frontmatter}"]
     else:
-        pre += [rf"\title{{{title}}}", r"\author{}  % add the authors"]
-        if cls.endswith("{llncs}"):
+        pre += [rf"\title{{{title}}}", *(au or [r"\author{}  % add the authors"])]
+        if cls.endswith("{llncs}") and not au:
             pre.append(r"\institute{}  % add the affiliations")
         if cls.endswith("{article}"):
             pre.append(r"\date{\today}")
         body.append(r"\maketitle")
         if abstract:
             body += [r"\begin{abstract}", abstract, r"\end{abstract}"]
+        body += kw
     if d.get("subtitle"):
         body.append(rf"\noindent\emph{{{tex(d['subtitle'])}}}" + "\n")
     for s in sections:
         if s["heading"].strip():
             body.append(rf"\section{{{tex(s['heading'])}}}")
         body += [_block(b, keys) + "\n" for b in blocks_of(s)]
+    for st in d.get("statements") or []:
+        body += [rf"\section*{{{tex(lbl['stmt'][st['kind']])}}}", "\n\n".join(tex(p) for p in re.split(r"\n\s*\n", st["text"].strip()) if p.strip()) + "\n"]
     if d["references"]:
         body.append(r"\begin{thebibliography}{99}")
         body += [rf"\bibitem{{{keys[r['id']]}}} {_ref(r)}" for r in d["references"]]

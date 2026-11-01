@@ -38,11 +38,14 @@ THAI = re.compile("[฀-๿]")
 CTRL = re.compile("[\x00-\x08\x0b-\x1f\x7f​]")  # keeps \n and \t; drops stray ZWSP so ours is the only one
 LABELS = {
     "th": {"verified": "พบตัวระบุอ้างอิง", "unverified": "ยังไม่ยืนยัน", "unknown": "ตรวจสอบไม่ได้",
-           "refs": "เอกสารอ้างอิง", "page": "หน้า",
+           "refs": "เอกสารอ้างอิง", "page": "หน้า", "abstract": "บทคัดย่อ", "keywords": "คำสำคัญ",
+           "stmt": {"ai": "การใช้ปัญญาประดิษฐ์เชิงสร้างสรรค์", "data": "การเข้าถึงข้อมูลและโค้ด", "ethics": "จริยธรรมการวิจัย",
+                    "coi": "ผลประโยชน์ทับซ้อน"},
            "note": "หมายเหตุ: การตรวจสอบเอกสารอ้างอิงยืนยันเพียงว่าตัวระบุ (DOI/URL) มีอยู่จริง "
                    "ไม่ได้พิสูจน์ว่างานนั้นสนับสนุนข้อความที่อ้าง"},
     "en": {"verified": "identifier exists", "unverified": "not confirmed", "unknown": "could not be checked",
-           "refs": "References", "page": "Page",
+           "refs": "References", "page": "Page", "abstract": "Abstract", "keywords": "Keywords",
+           "stmt": {"ai": "Use of generative AI", "data": "Data and code availability", "ethics": "Ethics", "coi": "Conflicts of interest"},
            "note": "Note: the reference check only confirms that the identifier (DOI/URL) exists. "
                    "It does not prove the paper supports the claim it is cited for."},
 }
@@ -88,6 +91,22 @@ def blocks_of(sec: dict) -> list[dict]:
         return sec["blocks"]
     return [{"type": "paragraph", "runs": [{"text": t, "bold": False, "italic": False, "code": False}]}
             for t in sec["paragraphs"]]
+
+
+def front_lines(d: dict, lang: str) -> list[tuple[str, str]]:
+    """Authors, abstract and keywords of the title block as (kind, text) for PDF and DOCX; kind is plain, head or body."""
+    L, out = LABELS[lang], []
+    out += [("plain", clean(a["name"]) + (f", {clean(a['affiliation'])}" if a.get("affiliation") else "")) for a in d.get("authors") or []]
+    if d.get("abstract"):
+        out += [("head", L["abstract"]), ("body", clean(d["abstract"]))]
+    if d.get("keywords"):
+        out.append(("body", f"{L['keywords']}: " + "; ".join(clean(k) for k in d["keywords"])))
+    return out
+
+
+def statement_lines(d: dict, lang: str) -> list[tuple[str, str]]:
+    """Closing statements (heading, text) in the order the user gave them; placed before the reference list."""
+    return [(LABELS[lang]["stmt"][s["kind"]], clean(s["text"])) for s in d.get("statements") or []]
 
 
 def ref_line(r: dict, lang: str, *, seg=lambda s: s) -> str:
@@ -176,12 +195,17 @@ def render_pdf(d: dict) -> bytes:
     para(d["title"], st.title, True)
     if d["subtitle"]:
         para(d["subtitle"], st.body)
+    for kind, text in front_lines(d, lang):
+        para(text, st.heading if kind == "head" else st.body, kind == "head")
     for i, s in enumerate(d["sections"], 1):
         if pdf.get_y() > pdf.h - pdf.b_margin - 40:  # keep the heading with the text that follows
             pdf.add_page()
         para((f"{i}. " if st.numbered else "") + s["heading"], st.heading, True)
         for b in blocks_of(s):
             block(b)
+    for head, text in statement_lines(d, lang):
+        para(head, st.heading, True)
+        para(text, st.body)
     if d["references"]:
         para(LABELS[lang]["refs"], st.heading, True)
         for r in d["references"]:
@@ -266,10 +290,15 @@ def render_docx(d: dict) -> bytes:
     para(d["title"], st.title, True)
     if d["subtitle"]:
         para(d["subtitle"], st.body)
+    for kind, text in front_lines(d, lang):
+        para(text, st.heading if kind == "head" else st.body, kind == "head", keep=kind == "head")
     for i, s in enumerate(d["sections"], 1):
         para((f"{i}. " if st.numbered else "") + s["heading"], st.heading, True, keep=True)
         for b in blocks_of(s):
             block(b)
+    for head, text in statement_lines(d, lang):
+        para(head, st.heading, True, keep=True)
+        para(text, st.body)
     if d["references"]:
         para(LABELS[lang]["refs"], st.heading, True)
         for r in d["references"]:

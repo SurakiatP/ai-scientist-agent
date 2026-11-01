@@ -22,6 +22,7 @@ import { strings, type Lang } from "@/lib/strings";
 import { EditorState } from "@tiptap/pm/state";
 import { applySegments, cachedTranslation, hashOf, segmentsOf, shapeOf, translateSegments, type TrError } from "@/lib/translateReport";
 import type { JSONContent } from "@tiptap/react";
+import { PaperDetails } from "./PaperDetails";
 import { PreviewPane } from "./PreviewPane";
 import { ReportSheet } from "./ReportSheet";
 import { ReportToolbar } from "./ReportToolbar";
@@ -59,6 +60,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   const [clean, setClean] = useState({ ver: 0, base }); // last saved (or opened) state
   const [fontTouched, setFontTouched] = useState(false); // a style change resets the font to the style default until the user picks one
   const [ask, setAsk] = useState(false);
+  const [details, setDetails] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const dirty = ver !== clean.ver || base !== clean.base;
   const leave = () => (dirty ? setAsk(true) : onClose());
@@ -164,6 +166,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
           ...FONTS.filter((f) => f.group === g).map((f) => <MenuItem key={f.id} value={f.id} sx={{ fontFamily: f.cssFamily, minHeight: 44 }}>{f.label}</MenuItem>),
         ])}
       </TextField>
+      <Button variant="outlined" color="inherit" onClick={() => setDetails(true)} sx={{ minHeight: 44, borderColor: "divider" }}>{t.fDetails}</Button>
       <FormControlLabel control={<Switch checked={base.refs} onChange={(e) => set({ refs: e.target.checked })} />} label={t.fRefs} />
     </>
   );
@@ -242,6 +245,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
           </Box>
         )}
       </Box>
+      {details && <PaperDetails editor={editor} d={d} set={set} onClose={() => setDetails(false)} />}
       <Dialog open={ask} onClose={() => setAsk(false)} aria-labelledby="rf-discard">
         <DialogTitle id="rf-discard">{t.fDiscardTitle}</DialogTitle>
         <DialogContent><DialogContentText>{t.fDiscardBody}</DialogContentText></DialogContent>

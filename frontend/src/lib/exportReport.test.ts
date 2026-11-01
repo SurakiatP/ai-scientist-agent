@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Turn } from "./chat";
-import { blocksOf, docFromSections, draftIssue, draftSections, errorText, fileNameOf, initialDraft, requestExport, sectionsOf, toPayload, refLines, hasLead, FONTS, defaultFont, LIM } from "./exportReport";
+import { blocksOf, docFromSections, draftIssue, draftSections, errorText, fileNameOf, initialDraft, requestExport, sectionsOf, toPayload, parseAuthors, parseKeywords, refLines, hasLead, FONTS, defaultFont, LIM } from "./exportReport";
 import { strings } from "./strings";
+import { missingHeadings, outlineNodes, OUTLINES } from "./paperOutline";
 
 const turn = { id: "t", question: "Q?", createdAt: 0, status: "done", progress: {} as never, answer: { content: "intro\n\n## A\n\np1\n\np2\n\n```\n# not heading\n```\n\n### B\n\nx", references: [{ id: "1", status: "verified", paper: { title: "T", authors: ["a"], year: 2020, doi: "doi:10.1000/x", pmid: null, url: "javascript:1" } }] } } as Turn;
 afterEach(() => vi.unstubAllGlobals());
@@ -157,5 +158,35 @@ describe("hasLead", () => {
     expect(hasLead({ doc: { type: "doc", content: [p(), h, p("x")] } })).toBe(false);
     expect(hasLead({ doc: { type: "doc", content: [p("lead"), h] } })).toBe(true);
     expect(hasLead({ doc: { type: "doc", content: [p("only")] } })).toBe(true);
+  });
+});
+
+describe("paper type outline and front matter", () => {
+  const withHeads = (hs: string[]) => ({ type: "doc", content: hs.flatMap((h) => [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: h }] }, { type: "paragraph", content: [{ type: "text", text: "my text" }] }]) });
+  it("lists only the missing headings, ignoring case and spacing, per language", () => {
+    expect(missingHeadings(withHeads(["introduction", " Methods "]), "research", "en")).toEqual(["Results", "Discussion", "Conclusion"]);
+    expect(missingHeadings({ type: "doc" }, "thesis_th", "th")).toHaveLength(5);
+    expect(missingHeadings({ type: "doc" }, "proposal", "th")[0]).toBe("ความเป็นมาและความสำคัญ");
+    expect(missingHeadings({ type: "doc" }, "cs", "en")).toHaveLength(7);
+    expect(missingHeadings({ type: "doc" }, "review", "en")).toHaveLength(5);
+    expect(missingHeadings(withHeads(OUTLINES.cs.en), "cs", "en")).toEqual([]);
+  });
+  it("outline nodes add a heading and an empty paragraph each, so existing text is untouched", () => {
+    const nodes = outlineNodes(["A", "B"]);
+    expect(nodes.map((n) => n.type)).toEqual(["heading", "paragraph", "heading", "paragraph"]);
+    const doc = { type: "doc", content: [...withHeads(["A"]).content, ...nodes.slice(2)] };
+    expect(sectionsOf({ doc, lead: "L" }).map((s) => [s.heading, s.blocks.length])).toEqual([["A", 1], ["B", 0]]);
+  });
+  it("parses authors, keywords and sends only what is filled in", () => {
+    expect(parseAuthors("Ann Lee, MIT, Cambridge\n\n  Bo  \n, odd")).toEqual([{ name: "Ann Lee", affiliation: "MIT, Cambridge" }, { name: "Bo" }]);
+    expect(parseKeywords("a; b, c，d\n e,,")).toEqual(["a", "b", "c", "d", "e"]);
+    expect(parseKeywords("1,2,3,4,5,6,7,8,9,10")).toHaveLength(8);
+    const base = initialDraft(turn, "en", strings.en);
+    expect(Object.keys(toPayload(base, "tex", turn))).not.toEqual(expect.arrayContaining(["authors"]));
+    for (const k of ["authors", "keywords", "abstract", "statements"]) expect(toPayload(base, "pdf", turn)).not.toHaveProperty(k);
+    const p = toPayload({ ...base, authors: "Ann, MIT", keywords: "x, y", abstract: " Abs {\\input{/etc/passwd} ", statements: { ...base.statements, ai: { on: true, text: null }, coi: { on: true, text: "none }" }, data: { on: false, text: "x" } } }, "pdf", turn);
+    expect(p).toMatchObject({ authors: [{ name: "Ann", affiliation: "MIT" }], keywords: ["x", "y"], abstract: "Abs {\\input{/etc/passwd}" });
+    expect(p.statements).toEqual([{ kind: "ai", text: strings.en.stmtDefault_ai }, { kind: "coi", text: "none }" }]); // unticked ones are not sent; hostile text passes through untouched (the server escapes)
+    expect(toPayload({ ...base, lang: "th", statements: { ...base.statements, ethics: { on: true, text: null } } }, "pdf", turn).statements).toEqual([{ kind: "ethics", text: strings.th.stmtDefault_ethics }]);
   });
 });

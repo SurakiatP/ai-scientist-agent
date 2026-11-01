@@ -1,4 +1,9 @@
 import io
+import pathlib
+import re
+import shutil
+import subprocess
+import tempfile
 import zipfile
 from urllib.parse import unquote
 
@@ -9,6 +14,7 @@ from pypdf import PdfReader
 from scientist import report_render
 from scientist.config import get_settings
 from scientist.main import create_app
+from scientist.routes_reports import ExportRequest
 
 TH = "รายงานผู้ป่วยที่เป็นโรคเบาหวาน น้ำปั๊ม"
 BODY = "ผู้ป่วยที่เป็นโรคเบาหวานควรออกกำลังกายสม่ำเสมอและตรวจน้ำตาลในเลือดทุกสัปดาห์ " * 20
@@ -244,3 +250,90 @@ def test_greek_and_symbols_become_maths_and_thai_borrows_a_latin_face_for_accent
 def test_adjacent_citations_merge_into_one_cite():
     keys = {"6": "ref6", "7": "ref7", "8": "ref8", "12": "ref12"}
     assert report_latex._text("restored.[6][7][8][12] and [6][99]", keys) == "restored.\\cite{ref6,ref7,ref8,ref12} and [6][99]"
+
+
+# --- front matter and closing statements -------------------------------------------------------------------------------
+HOSTILE = r"\input{/etc/passwd} } { \and"
+FRONT = {"authors": [{"name": "Ann Lee", "affiliation": "MIT " + HOSTILE}, {"name": "Bo " + HOSTILE}],
+         "keywords": ["rag", "k" + HOSTILE], "abstract": "Abs " + HOSTILE + "\n\nSecond paragraph.",
+         "statements": [{"kind": "ai", "text": "AI " + HOSTILE}, {"kind": "coi", "text": "None declared."}]}
+
+
+@pytest.mark.parametrize("template", list(report_latex.TEMPLATES))
+async def test_tex_front_matter_and_statements(template, monkeypatch):
+    src = (await post(tex_body(template=template, **FRONT), monkeypatch)).text
+    assert "\\input{" not in src.replace("\\textbackslash{}input\\{", "") and "\\textbackslash{}input\\{/etc/passwd\\} \\} \\{" in src
+    assert "Ann Lee" in src and "rag" in src and "Second paragraph." in src
+    assert src.count("\\begin{abstract}") == 1 and "We compare" in src  # the field wins; the Abstract section stays a section
+    assert "\\section*{Use of generative AI}" in src and "\\section*{Conflicts of interest}" in src
+    assert src.index("\\section*{Conflicts") < src.index("\\begin{thebibliography}")
+    marker = {"ieee": "\\IEEEauthorblockN{Ann Lee}", "elsevier": "\\author[a1]{Ann Lee}\\address[a1]{MIT", "springer": "\\institute{MIT",
+              "article": "\\author{Ann Lee \\\\ \\small MIT"}[template]
+    assert marker in src
+    assert {"ieee": "\\begin{IEEEkeywords}", "elsevier": "\\begin{keyword}", "springer": "\\keywords{", "article": "\\textbf{Keywords:}"}[template] in src
+
+
+def test_tex_without_new_fields_is_unchanged():
+    src = report_latex.render_latex({**body(format="tex"), "template": "springer"}).decode()
+    assert "\\author{}" in src and "\\institute{}" in src and "keywords" not in src and "\\section*" not in src
+
+
+async def test_pdf_and_docx_front_matter(monkeypatch):
+    kw = {"language": "en", "authors": [{"name": "Ann Lee", "affiliation": "MIT"}], "keywords": ["rag", "llm"], "abstract": "Short abstract.",
+          "statements": [{"kind": "data", "text": "Data on request."}]}
+    r = await post(body(**kw), monkeypatch)
+    txt = pdf_text(r)
+    assert all(x in txt for x in ("Ann Lee, MIT", "Abstract", "Short abstract.", "Keywords: rag; llm", "Data and code availability", "Data on request."))
+    assert txt.index("Data on request.") < txt.index("References")
+    r = await post(body(format="docx", **kw), monkeypatch)
+    from docx import Document
+    paras = [p.text for p in Document(io.BytesIO(r.content)).paragraphs]
+    assert "Ann Lee, MIT" in paras and "Short abstract." in paras and "Keywords: rag; llm" in paras
+    assert paras.index("Data on request.") < paras.index("References")
+
+
+@pytest.mark.parametrize("patch", [
+    {"keywords": ["k"] * 9}, {"keywords": ["x" * 61]}, {"keywords": [""]}, {"authors": [{"name": ""}]}, {"authors": [{"name": "x" * 101}]},
+    {"authors": [{"name": "a", "affiliation": "x" * 201}]}, {"authors": [{"name": "a"}] * 21}, {"abstract": "x" * 3001},
+    {"statements": [{"kind": "funding", "text": "x"}]}, {"statements": [{"kind": "ai", "text": "x" * 1501}]},
+    {"statements": [{"kind": "ai", "text": "x"}] * 5},
+])
+async def test_front_matter_limits(patch, monkeypatch):
+    assert (await post(body(**patch), monkeypatch)).status_code == 422
+
+
+@pytest.mark.parametrize("template", list(report_latex.TEMPLATES))
+def test_blank_lines_in_single_line_fields_are_collapsed(template):
+    d = {**tex_body(template=template), "authors": [{"name": "Ann\n\nLee", "affiliation": "MIT\n\n\nLab"}, {"name": "Bo\n \nWu"}],
+         "keywords": ["rag\n\nllm", "b"]}
+    src = report_latex.render_latex(ExportRequest(**d).model_dump()).decode()
+    assert "Ann Lee" in src and "Bo Wu" in src and "rag llm" in src and "MIT Lab" in src
+    assert "Ann\n" not in src and "rag\n" not in src and "MIT\n" not in src
+
+
+def test_thai_only_in_new_fields_enables_the_thai_font_and_compiles():
+    d = {**tex_body(), "language": "en", "authors": [{"name": "สมชาย ใจดี", "affiliation": "มหาวิทยาลัยเชียงใหม่"}], "keywords": ["ข้อมูล"],
+         "abstract": "บทคัดย่อภาษาไทย", "statements": [{"kind": "coi", "text": "ไม่มีผลประโยชน์ทับซ้อน"}]}
+    d = ExportRequest(**d).model_dump()
+    src = report_latex.render_latex(d).decode()
+    assert "\\setmainfont{Laksaman}" in src
+    plain = report_latex.render_latex(ExportRequest(**tex_body()).model_dump()).decode()
+    assert "Laksaman" not in plain  # English-only documents are unchanged
+    if shutil.which("tectonic"):
+        with tempfile.TemporaryDirectory() as tmp:
+            pathlib.Path(tmp, "a.tex").write_text(src, encoding="utf-8")
+            r = subprocess.run(["tectonic", "--untrusted", "a.tex"], cwd=tmp, capture_output=True, text=True, timeout=300)
+            assert r.returncode == 0 and "Missing character" not in r.stderr, r.stderr[-800:]
+
+
+@pytest.mark.parametrize("patch", [
+    {"authors": [{"name": "   "}]}, {"keywords": ["  "]}, {"statements": [{"kind": "ai", "text": " \n "}]}, {"abstract": "x" * 3001},
+    {"statements": [{"kind": "ai", "text": "a"}, {"kind": "ai", "text": "b"}]},
+])
+async def test_whitespace_only_and_duplicate_kinds_are_422(patch, monkeypatch):
+    r = await post(body(**patch), monkeypatch)
+    assert r.status_code == 422 and isinstance(r.json()["detail"], list)
+
+
+def test_whitespace_abstract_is_dropped():
+    assert ExportRequest(**body(abstract="   \n ")).abstract == ""

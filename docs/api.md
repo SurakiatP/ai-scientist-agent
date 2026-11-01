@@ -124,6 +124,19 @@ async def main():
 asyncio.run(main())
 ```
 
+## Report export (browser endpoint)
+
+`POST /v1/reports/export` is used by the app's document editor, not by the API keys above (JSON body, no `Authorization`). It returns a PDF, DOCX or LaTeX file; the optional front-matter and closing-statement fields below are rendered identically in all three formats. A request without them behaves as before. Invalid values answer `422` in the usual FastAPI error shape (`{"detail": [...]}`).
+
+| Field | Type and limits | Where it goes |
+|---|---|---|
+| `authors` | up to 20 of `{name` (1-100 chars)`, affiliation` (optional, up to 200)`}` | under the title; LaTeX `\author`/`\institute`/`\address` per template |
+| `keywords` | up to 8 strings, 1-60 chars each | after the abstract (`Keywords:` line; `IEEEkeywords`, `keyword`, `\keywords` in the IEEE, Elsevier and LNCS templates) |
+| `abstract` | plain text, up to 3000 chars, may be empty | under the authors; when set it replaces an abstract detected from a first section headed Abstract |
+| `statements` | up to 4 of `{kind` (`ai`, `data`, `ethics`, `coi`)`, text` (1-1500 chars)`}` | one headed paragraph each, before the reference list, in the order sent |
+
+All text is plain: LaTeX markup characters are escaped and nothing is interpreted. The statement headings follow the document `language`; the texts are exactly what the client sends (the app offers editable neutral templates and sends only the ticked ones).
+
 ## Rate limits and queues
 
 - Each key has its own bucket (`key:<id>`) of `STORE_WRITE_RATE_PER_MIN` requests per minute, shared by REST and MCP. It is the same size as the app's write budget, but not the same counter: browser traffic does not use it up. Every request counts: GETs, polls (`get_run`, `wait_run` polling from your side), and each MCP POST including `initialize`.

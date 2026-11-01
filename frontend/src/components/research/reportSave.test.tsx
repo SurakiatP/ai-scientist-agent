@@ -58,7 +58,7 @@ describe("ReportForm save", () => {
     flow(() => upJson(), () => new Response("x"));
     fetchMock.mockImplementationOnce(() => new Promise(() => {})); // preview or export, whichever comes first stays pending
     render(<ReportForm turn={turn} onClose={() => {}} />);
-    await act(async () => { void useExport.getState().save({ style: "standard", tex: null, font: "sarabun", title: "T", subtitle: "", refs: false, lang: "en", lead: "L", doc: docFromSections([{ heading: "h", text: "b" }]) }, "pdf", turn); });
+    await act(async () => { void useExport.getState().save({ style: "standard", tex: null, font: "sarabun", title: "T", subtitle: "", refs: false, lang: "en", lead: "L", authors: "", keywords: "", abstract: "", statements: { ai: { on: false, text: null }, data: { on: false, text: null }, ethics: { on: false, text: null }, coi: { on: false, text: null } }, doc: docFromSections([{ heading: "h", text: "b" }]) }, "pdf", turn); });
     expect(screen.getByRole("button", { name: t.fSaveDocx })).toBeDisabled();
   });
   it.each([[422, "fErr422"], [503, "fErr503"]] as const)("export %i leaves the library untouched", async (status, key) => {
@@ -195,5 +195,72 @@ describe("ReportForm sheet extras", () => {
     fireEvent.mouseDown(screen.getByRole("combobox", { name: t.fStyle }));
     fireEvent.click(screen.getByRole("option", { name: t.fStyleOfficial }));
     expect(document.querySelector("article")).toHaveAttribute("data-numbered", "true");
+  });
+});
+
+describe("ReportForm paper details", () => {
+  const open = () => { fireEvent.click(screen.getByRole("button", { name: t.fSettings })); fireEvent.click(screen.getByRole("button", { name: t.fDetails, hidden: true })); };
+  it("inserts only the missing outline headings after the existing text and never changes it", async () => {
+    render(<ReportForm turn={{ ...turn, answer: { content: "# Introduction\n\nBody text.", references: [] } } as unknown as Turn} onClose={() => {}} />);
+    open();
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: t.fPaperType }));
+    fireEvent.click(screen.getByRole("option", { name: t.fPaper_research }));
+    fireEvent.click(screen.getByRole("button", { name: t.fOutlineInsert }));
+    await waitFor(() => expect(screen.getAllByText(t.fOutlineDone.replace("{n}", "4")).length).toBeGreaterThan(0));
+    const body = screen.getAllByRole("textbox", { name: t.fBody, hidden: true })[0];
+    const heads = [...body.querySelectorAll("h2")].map((h) => h.textContent);
+    expect(heads).toEqual(["Introduction", "Methods", "Results", "Discussion", "Conclusion"]);
+    expect(body).toHaveTextContent("Body text.");
+    fireEvent.click(screen.getByRole("button", { name: t.fOutlineInsert }));
+    await waitFor(() => expect(screen.getAllByText(t.fOutlineNone).length).toBeGreaterThan(0)); // second click adds nothing
+    expect(body.querySelectorAll("h2")).toHaveLength(5);
+  });
+  it("sends authors, keywords, abstract and only the ticked statements, with the default text editable", async () => {
+    flow(() => upJson(), () => new Response("% !TeX", { status: 200, headers: { "Content-Disposition": "attachment; filename*=UTF-8''T.tex" } }));
+    URL.createObjectURL = vi.fn(() => "blob:x"); URL.revokeObjectURL = vi.fn();
+    render(<ReportForm turn={turn} onClose={() => {}} />);
+    open();
+    fireEvent.change(screen.getByRole("textbox", { name: t.fAuthors, hidden: true }), { target: { value: "Ann Lee, MIT" } });
+    fireEvent.change(screen.getByRole("textbox", { name: t.fKeywords, hidden: true }), { target: { value: "rag, llm" } });
+    fireEvent.change(screen.getByRole("textbox", { name: t.fAbstract, hidden: true }), { target: { value: "\\input{/etc/passwd} {" } });
+    expect(screen.queryByRole("textbox", { name: t.fStmt_ai, hidden: true })).toBeNull(); // nothing included until ticked
+    fireEvent.click(screen.getByRole("checkbox", { name: t.fStmt_ai, hidden: true }));
+    expect(screen.getByRole("textbox", { name: t.fStmt_ai, hidden: true })).toHaveValue(t.stmtDefault_ai);
+    expect(screen.getByText(t.fStmtDefault)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: t.fStmt_coi, hidden: true }));
+    fireEvent.change(screen.getByRole("textbox", { name: t.fStmt_coi, hidden: true }), { target: { value: "None } {" } });
+    fireEvent.click(screen.getByRole("button", { name: t.fDetailsClose }));
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: t.fStyle, hidden: true }));
+    fireEvent.click(screen.getByRole("option", { name: t.fTex_ieee }));
+    fireEvent.click(screen.getByRole("button", { name: t.fDownloadTex, hidden: true }));
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/reports/export"))).toBe(true));
+    const sent = JSON.parse(String(fetchMock.mock.calls.find((c) => String(c[0]).includes("/reports/export"))![1].body));
+    expect(sent).toMatchObject({ authors: [{ name: "Ann Lee", affiliation: "MIT" }], keywords: ["rag", "llm"], abstract: "\\input{/etc/passwd} {",
+      statements: [{ kind: "ai", text: t.stmtDefault_ai }, { kind: "coi", text: "None } {" }] });
+  });
+  it("shows the default statement text in the document language, not the interface language", async () => {
+    flow(() => upJson(), () => new Response("% !TeX", { status: 200, headers: { "Content-Disposition": "attachment; filename*=UTF-8''T.tex" } }));
+    URL.createObjectURL = vi.fn(() => "blob:x"); URL.revokeObjectURL = vi.fn();
+    render(<ReportForm turn={turn} onClose={() => {}} />); // document language: en
+    open();
+    act(() => usePrefs.setState({ lang: "th" })); // interface switches to Thai; the document stays English
+    const th = strings.th;
+    fireEvent.click(screen.getByRole("checkbox", { name: th.fStmt_ai, hidden: true }));
+    expect(screen.getByRole("textbox", { name: th.fStmt_ai, hidden: true })).toHaveValue(strings.en.stmtDefault_ai);
+    fireEvent.click(screen.getByRole("button", { name: th.fDetailsClose }));
+    fireEvent.mouseDown(screen.getByRole("combobox", { name: th.fStyle, hidden: true }));
+    fireEvent.click(screen.getByRole("option", { name: th.fTex_ieee }));
+    fireEvent.click(screen.getByRole("button", { name: th.fDownloadTex, hidden: true }));
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/reports/export"))).toBe(true));
+    const sent = JSON.parse(String(fetchMock.mock.calls.find((c) => String(c[0]).includes("/reports/export"))![1].body));
+    expect(sent.statements).toEqual([{ kind: "ai", text: strings.en.stmtDefault_ai }]);
+  });
+  it("a request without the new fields carries none of them", async () => {
+    flow(() => upJson(), () => new Response("% !TeX", { status: 200 }));
+    render(<ReportForm turn={turn} onClose={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: t.fSavePdf }));
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).includes("/reports/export"))).toBe(true));
+    const sent = JSON.parse(String(fetchMock.mock.calls.find((c) => String(c[0]).includes("/reports/export"))![1].body));
+    for (const k of ["authors", "keywords", "abstract", "statements"]) expect(sent).not.toHaveProperty(k);
   });
 });

@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from scientist import llm, report_latex, report_render, usage
 from scientist.routes_store import require_json
@@ -92,6 +92,16 @@ class Reference(BaseModel):
     status: Literal["verified", "unverified", "unknown"]
 
 
+class Author(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    affiliation: str | None = Field(default=None, max_length=200)
+
+
+class Statement(BaseModel):
+    kind: Literal["ai", "data", "ethics", "coi"]  # AI-use, data and code availability, ethics, conflicts of interest
+    text: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1500)]
+
+
 class ExportRequest(BaseModel):
     format: Literal["pdf", "docx", "tex"]
     language: Literal["th", "en"]
@@ -103,10 +113,17 @@ class ExportRequest(BaseModel):
     # None = style default (sarabun; DOCX of official style names "TH Sarabun New"). PDF always embeds a bundled OFL face.
     font: Literal[tuple(report_render.FONTS_BY_ID)] | None = None
     template: Literal[tuple(report_latex.TEMPLATES)] = "article"  # format tex only: the journal/conference class
+    # optional front matter and closing statements; all plain text, rendered on the title block / before the references
+    authors: list[Author] = Field(default=[], max_length=20)
+    keywords: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]] = Field(default=[], max_length=8)
+    abstract: Annotated[str, StringConstraints(strip_whitespace=True, max_length=3000)] = ""
+    statements: list[Statement] = Field(default=[], max_length=4)
 
     @model_validator(mode="after")
     def _total(self):
-        n = len(self.title) + sum(s.chars() for s in self.sections)
+        if len({s.kind for s in self.statements}) != len(self.statements):
+            raise ValueError("duplicate statement kind")
+        n = len(self.title) + sum(s.chars() for s in self.sections) + len(self.abstract) + sum(len(x.text) for x in self.statements)
         if n > MAX_CHARS:
             raise ValueError(f"document is longer than {MAX_CHARS} characters")
         return self
