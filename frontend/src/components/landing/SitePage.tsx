@@ -25,7 +25,7 @@ function Shell({ active, trail, wide, children }: { active: NavKey; trail: strin
   return (
     <Box lang={lang} sx={{ ...rise, position: "relative", overflow: "clip" }}>
       <LandingHeader active={active} />
-      <Box component="article" sx={{ ...wrap, maxWidth: wide ? 1320 : 960, py: { xs: 3, md: 6 }, display: "grid", gap: { xs: 4, md: 6 } }}>
+      <Box component="main" id="content" tabIndex={-1} sx={{ ...wrap, outline: "none", maxWidth: wide ? 1320 : 960, py: { xs: 3, md: 6 }, display: "grid", gap: { xs: 4, md: 6 } }}>
         <Box component="nav" aria-label="breadcrumb" sx={{ display: "flex", flexWrap: "wrap", gap: 1, fontSize: "0.875rem", color: "text.secondary" }}>
           <Box component={Link} href="/" sx={{ color: "inherit", ...ring, "&:hover": { color: "text.primary" } }}>{L.home}</Box><span aria-hidden="true">/</span>
           <Box component="span" aria-current="page" sx={{ color: "text.primary", fontWeight: 500 }}>{trail}</Box>

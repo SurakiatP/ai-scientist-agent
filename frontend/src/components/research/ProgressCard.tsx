@@ -103,6 +103,19 @@ function Elapsed({ since }: { since: number }) {
   return <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{t.elapsed} {mmss(now - since)}</Typography>;
 }
 
+// Not a live region (it would nag screen readers); shown while searching has found nothing for 90 s.
+function SlowHint() {
+  const t = useT();
+  const [since] = useState(() => Date.now()); // mounts when searching with 0 found starts, so plan-review time is not counted
+  const [now, setNow] = useState(since);
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
+  return now - since >= 90_000 ? <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.6 }}>{t.slowHint}</Typography> : null;
+}
+
+// The chip under a search that has no papers: "thin" after a re-plan (round 1 is over, so that is a fact), else "not yet" while searching.
+const noPapers = (p: Progress, term: string, t: Strings) =>
+  (p.replans ?? []).some((r) => r.thin.includes(term)) && !p.sources[term] ? t.noPapersRound1 : p.phase === "searching" && !(term in p.sources) ? t.noPapersYet : undefined;
+
 const tint = (pct: number) => `color-mix(in srgb, var(--mui-palette-evidence-unverified) ${pct}%, transparent)`;
 
 // The search list. Searches the re-plan added (index >= the first re-plan's start) carry the quiet plan-change line
@@ -124,6 +137,7 @@ function SearchRows({ p, from, rows0 }: { p: Progress; from: number; rows0: numb
               <Typography sx={{ width: 20, flexShrink: 0, fontSize: "0.6875rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{String(i + 1).padStart(2, "0")}</Typography>
               <Typography sx={{ flex: "1 1 160px", minWidth: 0, fontSize: "0.875rem", lineHeight: 1.5, overflowWrap: "anywhere" }}>{s.term}</Typography>
               {added && <Chip size="small" variant="outlined" label={t.replanAdded} />}
+              {noPapers(p, s.term, t) && <Chip size="small" variant="outlined" label={noPapers(p, s.term, t)} />}
               {s.term in p.sources && <Chip size="small" variant="outlined" label={`${t.found} ${p.sources[s.term]} ${p.sources[s.term] === 1 ? t.paper : t.papers}`} />}
               {p.answered.includes(s.term) && <Chip size="small" variant="outlined" icon={<CheckRoundedIcon />} label={t.branchDone} sx={{ color: "evidence.verified", borderColor: "evidence.verified", "& .MuiChip-icon": { color: "inherit", fontSize: 14 } }} />}
             </Stack>
@@ -177,7 +191,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
         {turn.plan ? (
           // The run goes by the plan the user reviewed: show it read-only, in place of a model-proposed listing.
           <Box>
-            <PlanCard searches={turn.plan} editable={false} heading={t.planUsedTitle} rowState={rowState} onApprove={() => {}} onCancel={() => {}} />
+            <PlanCard searches={turn.plan} editable={false} heading={t.planUsedTitle} rowState={rowState} rowNote={(term) => (running ? noPapers(p, term, t) : undefined)} onApprove={() => {}} onCancel={() => {}} />
             {p.reasoning && <Typography sx={{ mt: 1.5, fontSize: "0.875rem", lineHeight: 1.7, color: "text.secondary", overflowWrap: "anywhere" }}>{p.reasoning}</Typography>}
             {p.replans?.length ? <SearchRows p={p} from={p.searches.length - p.replans.reduce((n, r) => n + r.searches.length, 0)} rows0={rows0} /> : null}
           </Box>
@@ -191,6 +205,7 @@ export function ProgressCard({ turn }: { turn: Turn }) {
             </Box>
           )
         )}
+        {running && p.phase === "searching" && Object.values(p.sources).every((n) => n === 0) && <SlowHint />}
         {running && cur && p.phase !== "waiting" && (
           <Typography sx={{ fontSize: "0.875rem", color: "text.secondary", overflowWrap: "anywhere", border: 1, borderColor: "divider", borderRadius: 1.5, px: 1.5, py: 1 }}>
             {t.searching}: <Box component="span" sx={{ color: "text.primary" }}>{cur}</Box>

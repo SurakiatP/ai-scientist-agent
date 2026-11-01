@@ -17,7 +17,7 @@ import { ArrowPill, LandingHeader, lift, ring, wrap } from "@/components/landing
 import { useHydrated } from "@/lib/history";
 import { PACK_IDS } from "@/lib/packs";
 import { usePrefs } from "@/lib/prefs";
-import { SOURCE_NAMES } from "@/lib/sources";
+import { usableCounts } from "@/lib/sources";
 import { landing } from "@/lib/strings";
 
 const out = "cubic-bezier(0.22, 1, 0.36, 1)";
@@ -105,7 +105,8 @@ export default function Home() {
   const lang = hydrated ? prefLang : "th";
   const L = landing[lang];
   const [b1, b2] = L.titleB.split("|");
-  const stats = [String(Object.keys(SOURCE_NAMES).length), String(PACK_IDS.length), L.langs, L.exportFormats];
+  const usable = usableCounts();
+  const stats = [String(usable.all), String(PACK_IDS.length), L.langs, L.exportFormats];
   const dataIcons = [CloudUploadOutlinedIcon, TerminalRoundedIcon, KeyOutlinedIcon, GavelRoundedIcon];
   const moreIcons = [PictureAsPdfOutlinedIcon, IosShareRoundedIcon, HubOutlinedIcon];
   const section = { ...wrap, maxWidth: 1180, scrollMarginTop: 96 } as const;
@@ -120,7 +121,7 @@ export default function Home() {
     }}>
       <LandingHeader />
 
-      <Box sx={{ position: "relative" }}>
+      <Box component="main" id="content" tabIndex={-1} sx={{ position: "relative", outline: "none" }}>
         {/* hero */}
         <Box sx={{ ...section, pt: { xs: 6, md: 10 }, pb: { xs: 8, md: 12 }, display: "grid", gap: { xs: 7, md: 6 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1.1fr) minmax(0,0.9fr)" }, alignItems: "center" }}>
           <Box>
@@ -157,7 +158,7 @@ export default function Home() {
                 <Typography sx={{ fontSize: "0.75rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{String(i + 1).padStart(2, "0")}</Typography>
                 <Typography sx={{ mt: 1, fontSize: { xs: "1.75rem", md: "2.5rem" }, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{stats[i]}</Typography>
                 <Typography sx={{ mt: 1, fontSize: "0.875rem", fontWeight: 600 }}>{s.t}</Typography>
-                <Typography sx={{ fontSize: "0.75rem", color: "text.secondary", lineHeight: 1.6 }}>{s.d}</Typography>
+                <Typography sx={{ fontSize: "0.75rem", color: "text.secondary", lineHeight: 1.6 }}>{s.d.replace("{papers}", String(usable.papers)).replace("{dbs}", String(usable.dbs))}</Typography>
               </Box>
             ))}
           </Box>

@@ -28,7 +28,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <InitColorSchemeScript attribute="data" defaultMode="system" />
         <Providers>
           <SkipLink />
-          <Box id="content" tabIndex={-1} component="main" sx={{ minHeight: "100dvh", bgcolor: "background.default", outline: "none" }}>{children}</Box>
+          <Box sx={{ minHeight: "100dvh", bgcolor: "background.default" }}>{children}</Box>
         </Providers>
       </body>
     </html>

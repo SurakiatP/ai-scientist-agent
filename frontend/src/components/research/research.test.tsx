@@ -74,6 +74,47 @@ describe("ProgressCard", () => {
     expect(screen.getAllByText(t.replanAdded)).toHaveLength(2);
     expect(screen.queryByText("beta", { selector: "p" })).toBeNull();
   });
+  it("a search without papers says so while searching, and after a re-plan the thin terms say round 1 found nothing", () => {
+    const base = prog({ phase: "searching", searches: [{ term: "alpha", instructions: "" }, { term: "beta", instructions: "" }], sources: { alpha: 3 } });
+    const { rerender } = render(<ProgressCard turn={turn(base)} />);
+    expect(screen.getAllByText(t.noPapersYet)).toHaveLength(1);
+    const rp = prog({ ...base, searches: [...base.searches, { term: "gamma", instructions: "" }], replans: [{ reasoning: "r", thin: ["beta"], searches: [{ term: "gamma", instructions: "" }] }] });
+    rerender(<ProgressCard turn={turn(rp)} />);
+    expect(screen.getAllByText(t.noPapersRound1)).toHaveLength(1);
+    rerender(<ProgressCard turn={turn(rp, { plan: rp.searches.slice(0, 2) })} />);
+    expect(screen.getAllByText(t.noPapersRound1)).toHaveLength(1);
+  });
+  it("a thin term that did find one paper is not labelled as finding nothing", () => {
+    const p = prog({ phase: "searching", searches: [{ term: "alpha", instructions: "" }, { term: "beta", instructions: "" }], sources: { alpha: 3, beta: 1 },
+      replans: [{ reasoning: "r", thin: ["beta"], searches: [{ term: "gamma", instructions: "" }] }] });
+    render(<ProgressCard turn={turn(p)} />);
+    expect(screen.queryByText(t.noPapersRound1)).toBeNull();
+  });
+  it("shows the slow hint only when nothing was found and 90 s have passed", () => {
+    vi.useFakeTimers();
+    try {
+      const empty = prog({ phase: "searching", searches: [{ term: "alpha", instructions: "" }] });
+      const { rerender } = render(<ProgressCard turn={turn(empty, { createdAt: Date.now() })} />);
+      expect(screen.queryByText(t.slowHint)).toBeNull();
+      act(() => { vi.advanceTimersByTime(91_000); });
+      expect(screen.getByText(t.slowHint)).toBeInTheDocument();
+      rerender(<ProgressCard turn={turn({ ...empty, sources: { alpha: 2 } }, { createdAt: Date.now() - 200_000 })} />);
+      expect(screen.queryByText(t.slowHint)).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
+  it("the slow hint follows the 90 s rule: none at 89 s, shown at 90 s, none once papers exist", () => {
+    vi.useFakeTimers();
+    try {
+      const empty = prog({ phase: "searching", searches: [{ term: "alpha", instructions: "" }] });
+      const { rerender } = render(<ProgressCard turn={turn(empty, { createdAt: Date.now() - 500_000 })} />);
+      act(() => { vi.advanceTimersByTime(89_000); });
+      expect(screen.queryByText(t.slowHint)).toBeNull();
+      act(() => { vi.advanceTimersByTime(1_000); });
+      expect(screen.getByText(t.slowHint)).toBeInTheDocument();
+      rerender(<ProgressCard turn={turn({ ...empty, sources: { alpha: 1 } })} />);
+      expect(screen.queryByText(t.slowHint)).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
   it("shows the queue position while waiting", () => {
     render(<ProgressCard turn={turn({ phase: "waiting", waiting: 3 })} />);
     expect(screen.getAllByText(t.queueRow.replace("{n}", "3")).length).toBeGreaterThan(0);

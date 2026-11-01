@@ -86,6 +86,12 @@ export const SOURCE_NAMES: Record<string, string> = {
   "zinc": "ZINC",
 };
 
+// Databases that need an API key. The bridge passes no keys (backend sources.py `key=True`), so they return nothing; the landing does not count them.
+// The first PAPER_COUNT entries above are literature sources, the rest databases (sources.test.ts checks both against sources.py).
+export const KEY_GATED = ["addgene", "biogrid", "brenda", "cosmic", "disgenet", "drugbank", "lincs-l1000", "materials-project", "omim"];
+export const PAPER_COUNT = 18;
+export const usableCounts = () => { const all = Object.keys(SOURCE_NAMES).length - KEY_GATED.length; return { papers: PAPER_COUNT, dbs: all - PAPER_COUNT, all }; };
+
 /** Display name for a source id, or "" when it is missing or unknown (old turns, a name the table does not know). */
 export const sourceName = (id: string | null | undefined): string => (id && Object.hasOwn(SOURCE_NAMES, id) ? SOURCE_NAMES[id] : "");
 

@@ -81,6 +81,7 @@ export function AnswerView({ content, references = [], scope, reveal, plainLinks
           position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", maxWidth: "24ch", verticalAlign: "middle",
           px: 0.9, mx: 0.25, borderRadius: 999, border: 1, borderColor: "primary.main", color: "primary.main",
           fontSize: "0.75rem", fontWeight: 600, lineHeight: 1, textDecoration: "none", minWidth: 24, height: 24, "&::after": { content: '""', position: "absolute", inset: "-4px -2px" },
+          "@media (pointer: coarse)": { "&::after": { inset: "-10px -4px" } }, // 44px tall hit area on touch; the chip itself does not grow
           "&:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)" },
           "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 },
           "& .cite-host": { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },

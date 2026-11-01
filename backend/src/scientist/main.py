@@ -46,6 +46,10 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     """runner/client/store replace the real Hermes runtime, citation-check client and MinIO store (tests).
     Several workers are fine: each runtime owns its own hermes-home/<process> dir and branch container label."""
     settings = get_settings()
+    _scientist = logging.getLogger("scientist")  # uvicorn leaves non-uvicorn loggers at WARNING: make INFO lines (branch done) visible
+    _scientist.setLevel(logging.INFO)
+    if not logging.getLogger().handlers and not _scientist.handlers:
+        _scientist.addHandler(logging.StreamHandler())
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

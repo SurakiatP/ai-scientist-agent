@@ -34,6 +34,19 @@ beforeEach(() => {
 });
 
 describe("shell", () => {
+  it("the sidebar footer stays pinned: one inner scroll area holds projects and chats, the nav itself does not scroll", () => {
+    render(<AppShell>x</AppShell>);
+    const nav = sb(), heading = within(nav).getByRole("heading", { name: t.recentShort });
+    let scroll: HTMLElement = heading;
+    while (scroll !== nav && getComputedStyle(scroll).overflowY !== "auto") scroll = scroll.parentElement!;
+    expect(scroll).not.toBe(nav);
+    expect(getComputedStyle(nav).overflow).toBe("hidden");
+    expect(getComputedStyle(scroll).overflowY).toBe("auto");
+    expect(scroll.contains(within(nav).getByRole("heading", { name: t.recentShort }))).toBe(true);
+    expect(scroll.contains(within(nav).getByRole("button", { name: t.settings }))).toBe(false);
+    expect(scroll.contains(within(nav).getByRole("button", { name: t.newChat }))).toBe(false);
+  });
+
   it("New chat reuses an existing empty session instead of piling up blanks", () => {
     render(<AppShell>x</AppShell>);
     fireEvent.click(within(sb()).getByRole("button", { name: t.newChat }));

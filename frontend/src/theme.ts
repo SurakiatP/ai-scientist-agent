@@ -48,10 +48,11 @@ export const theme = createTheme({
   typography: { fontFamily: FONT_FAMILY, button: { textTransform: "none", fontWeight: 600 } },
   components: {
     MuiPaper: { defaultProps: { elevation: 0 }, styleOverrides: { root: { backgroundImage: "none" } } },
-    MuiButton: { defaultProps: { disableElevation: true }, styleOverrides: { root: { minHeight: 44 } } },
+    MuiButton: { defaultProps: { disableElevation: true, disableFocusRipple: true }, // the 2px outline below is the focus signal; the pulsing ripple only added a grey box
+      styleOverrides: { root: { minHeight: 44 } } },
     MuiButtonBase: { styleOverrides: { root: { "&.Mui-focusVisible": { outline: "2px solid var(--mui-palette-primary-main)", outlineOffset: 2 } } } }, // MUI sets outline:0, which beats the global :focus-visible rule
     MuiMenuItem: { styleOverrides: { root: { "&.Mui-focusVisible": { outlineOffset: -2 } } } }, // menu paper clips an outside ring
-    MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } },
+    MuiIconButton: { defaultProps: { disableFocusRipple: true }, styleOverrides: { root: { minWidth: 44, minHeight: 44 } } },
     MuiTooltip: { styleOverrides: { tooltip: { backgroundColor: "var(--mui-palette-text-primary)", color: "var(--mui-palette-background-paper)", fontSize: "0.75rem", lineHeight: 1.5, padding: "6px 10px", borderRadius: 8 } } }, // navy ink instead of MUI's stock grey
     MuiMenu: { styleOverrides: { paper: { marginTop: 4, borderRadius: 12, border: "1px solid var(--mui-palette-divider)", boxShadow: "0 16px 40px -12px rgb(14 26 44 / 0.3), 0 2px 6px rgb(14 26 44 / 0.06)" } } }, // same paper as landing/Dropdown
     MuiBackdrop: { styleOverrides: { root: { "&:not(.MuiBackdrop-invisible)": { backgroundColor: "rgb(14 26 44 / 0.45)" } } } }, // navy scrim; menus and popovers use the invisible one

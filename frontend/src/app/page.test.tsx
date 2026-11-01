@@ -4,6 +4,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { landing } from "@/lib/strings";
 import { usePrefs } from "@/lib/prefs";
+import { usableCounts } from "@/lib/sources";
 import Home from "./page";
 
 const cs = vi.hoisted(() => ({ mode: "system" as string, setMode: vi.fn() }));
@@ -20,6 +21,19 @@ describe("landing page", () => {
     const h1 = screen.getAllByRole("heading", { level: 1 });
     expect(h1).toHaveLength(1);
     expect(h1[0]).toHaveTextContent(landing.th.titleA);
+  });
+
+  it("the source number counts only usable sources, and the landmarks nest correctly", () => {
+    const { container } = render(<Home />);
+    const u = usableCounts();
+    expect(u.all).toBeLessThan(80);
+    const sec = screen.getByRole("region", { name: landing.th.stats[0].t });
+    expect(within(sec).getByText(String(u.all))).toBeInTheDocument();
+    expect(within(sec).getByText(landing.th.stats[0].d.replace("{papers}", String(u.papers)).replace("{dbs}", String(u.dbs)))).toBeInTheDocument();
+    expect(container.querySelectorAll("main")).toHaveLength(1);
+    const main = container.querySelector("main")!;
+    expect(main.id).toBe("content");
+    expect(main.querySelector("header,footer")).toBeNull(); // header and footer sit outside main
   });
 
   it("renders English when the language is en", () => {
@@ -114,5 +128,10 @@ it("layout skip link has its #content target on every page", () => {
   const src = readFileSync("src/app/layout.tsx", "utf8");
   expect(readFileSync("src/components/SkipLink.tsx", "utf8")).toContain('href="#content"');
   expect(src).toContain("<SkipLink />");
-  expect(src).toMatch(/id="content"[^>]*>\{children\}/);
+  expect(src).not.toContain("id=\"content\""); // the layout wraps no main: each page renders exactly one, with header and footer outside it
+  for (const f of ["app/page.tsx", "app/not-found.tsx", "app/error.tsx", "components/shell/AppShell.tsx", "components/landing/SitePage.tsx"]) {
+    const s = readFileSync("src/" + f, "utf8");
+    expect(s.match(/id="content"/g)).toHaveLength(1);
+    expect(s.match(/component="main"/g)).toHaveLength(1);
+  }
 });

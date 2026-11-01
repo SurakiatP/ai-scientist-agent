@@ -21,6 +21,12 @@ describe("theme", () => {
     expect(Object.keys(schemes)).toEqual(expect.arrayContaining(["light", "dark"]));
   });
 
+  it("buttons draw no focus ripple: the 2px outline is the only focus signal", () => {
+    const c = theme.components as Record<string, { defaultProps?: Record<string, unknown> }>;
+    expect(c.MuiButton.defaultProps?.disableFocusRipple).toBe(true);
+    expect(c.MuiIconButton.defaultProps?.disableFocusRipple).toBe(true);
+  });
+
   it("loads Noto_Sans_Thai with thai + latin subsets", () => {
     const src = readFileSync("src/app/layout.tsx", "utf8");
     expect(src).toMatch(/import\s*{[^}]*Noto_Sans_Thai[^}]*}\s*from\s*"next\/font\/google"/);

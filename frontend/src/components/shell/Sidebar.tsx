@@ -77,7 +77,7 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
   }
 
   return (
-    <Stack component="nav" aria-label={t.sidebar} sx={{ height: "100%", p: 1.5, gap: 1.25, bgcolor: "surface.shell", overflowY: "auto" }}>
+    <Stack component="nav" aria-label={t.sidebar} sx={{ height: "100%", p: 1.5, gap: 1.25, bgcolor: "surface.shell", overflow: "hidden" }}>
       <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", px: 0.5, minHeight: 44 }}>
         {/* the brand is a link to the landing page too (same target as the home icon) */}
         <Stack component={Link} href="/" aria-label={`${t.brand}: ${t.goHome}`} onClick={() => onPick?.()} direction="row" spacing={1}
@@ -100,13 +100,16 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
         sx={{ justifyContent: "flex-start", gap: 0.25, pl: 1, pr: 1.5, minHeight: 48, borderRadius: "14px", fontSize: "0.875rem", fontWeight: 600, color: "text.primary", bgcolor: "background.paper", border: 1, borderColor: "color-mix(in srgb, var(--mui-palette-divider) 70%, transparent)", boxShadow: "0 6px 16px -12px rgb(14 26 44 / 0.35)", "&:hover": { bgcolor: "background.paper", borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 40%, transparent)" } }}>
         {t.newChat}
       </Button>
-      <ProjectTree query={query} onPick={onPick} />
+      {/* one scroll area for projects and chats: the header, New chat and the footer stay pinned */}
       <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+      <ProjectTree query={query} onPick={onPick} />
+      <Box>
         <Typography component="h2" sx={{ px: 1.25, pb: 0.5, fontSize: "0.6875rem", fontWeight: 500, color: "text.secondary" }}>{t.recentShort}</Typography>
         <TextField size="small" type="search" placeholder={t.searchChats} value={query} onChange={(e) => setQuery(e.target.value)} fullWidth
           sx={{ mb: 0.5, "& .MuiOutlinedInput-root": { ...UI.row, borderRadius: 1.5, fontSize: "0.875rem" }, "& fieldset": { borderColor: "transparent" }, "& .MuiOutlinedInput-root:hover fieldset": { borderColor: "divider" } }}
           slotProps={{ htmlInput: { "aria-label": t.searchChats }, input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small" /></InputAdornment> } }} />
         <SessionList query={query} onPick={() => { onPick?.(); goChat(); }} />
+      </Box>
       </Box>
       <Stack sx={{ borderTop: 1, borderColor: "divider", pt: 1, flexShrink: 0 }}>
         <SyncChip />

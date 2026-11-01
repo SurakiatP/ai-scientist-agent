@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { SOURCE_NAMES, sourceName, sourceNames } from "./sources";
+import { KEY_GATED, PAPER_COUNT, SOURCE_NAMES, sourceName, sourceNames, usableCounts } from "./sources";
 
 const PY = new URL("../../../backend/src/scientist/sources.py", import.meta.url);
 
@@ -25,5 +25,13 @@ describe("source names", () => {
     for (const m of data.matchAll(/"([a-z0-9-]+)": _d\("([^"]+)"/g)) expected[m[1]] = m[2];
     expect(Object.keys(expected).length).toBeGreaterThan(70);
     expect(SOURCE_NAMES).toEqual(expected);
+    // the landing counts only what can answer: key-gated databases and the literature/database split come from sources.py
+    expect([...KEY_GATED].sort()).toEqual([...data.matchAll(/"([a-z0-9-]+)": _d\("[^"]+"[^\n]*key=True/g)].map((m) => m[1]).sort());
+    expect(PAPER_COUNT).toBe([...papers.matchAll(/"([a-z0-9-]+)": "([^"]+)"/g)].length);
+  });
+  it("usable counts exclude key-gated databases", () => {
+    const c = usableCounts();
+    expect(c.all).toBe(Object.keys(SOURCE_NAMES).length - KEY_GATED.length);
+    expect(c.papers + c.dbs).toBe(c.all);
   });
 });

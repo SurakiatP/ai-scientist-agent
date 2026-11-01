@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 import unicodedata
 from collections.abc import AsyncIterator
 from contextlib import aclosing, suppress
@@ -20,6 +21,7 @@ from scientist.gate import RunGate
 from scientist.guardrail import guard
 from scientist.hermes import BranchFailed, BranchRunner, BranchUsage, InvalidPaper, InvalidRecord
 from scientist.packs import hint as pack_hint
+from scientist.script_guard import stray
 from scientist.sources import DATA_SOURCES
 
 log = logging.getLogger(__name__)
@@ -35,6 +37,71 @@ PLAN_ERROR = "Could not plan a search for this question. Please rephrase it and 
 
 
 QUICK_SEARCHES = 2
+
+# Notes appended to an answer, in the question's language. The "en" strings are the original wording, unchanged.
+NOTES = {
+    "en": {
+        "failed": 'Note: the search for "{term}" failed, so this answer does not cover it.',
+        "dropped": "Note: {n} paper(s) were left out because their metadata was invalid.",
+        "rec_dropped": "Note: {n} database record(s) were left out because their data was invalid.",
+        "gated": "Note: {names} {was} skipped because {needs} an API key that is not configured.",
+        "rec_capped": "Note: {n} database record(s) were left out because a search reported more than {max}.",
+        "capped": "Note: {n} paper(s) were left out because a search reported more than {max}.",
+        "unverified_id": ("Warning: reference(s) {ids} could not be confirmed to exist (the DOI, PubMed ID or arXiv ID "
+                          "was not found in Crossref, doi.org, PubMed or arXiv). Treat claims that cite only them as unconfirmed."),
+        "unverified_noid": ("Warning: reference(s) {ids} have no DOI, PubMed ID or arXiv ID, so their existence could not "
+                            "be checked. Treat claims that cite only them as unconfirmed."),
+        "unknown": "Note: reference(s) {ids} could not be checked (the lookup service did not answer).",
+        "unsupported": ("Note: the abstract of reference(s) {ids} does not state the claim it is cited for "
+                        "(the reviewer checks abstracts only). Check the full paper before relying on those claims."),
+        "no_summary": ("Found {n} paper(s), but the search did not finish summarising them. "
+                       "The references below were found and checked; try again or narrow the question."),
+        "script": ("Note: this answer contains words in an unexpected script ({words}), which may be a model error. "
+                   "Check the text around them."),
+    },
+    "th": {
+        "failed": 'หมายเหตุ: การค้นหา "{term}" ล้มเหลว คำตอบนี้จึงไม่ครอบคลุมหัวข้อนั้น',
+        "dropped": "หมายเหตุ: ตัดเอกสาร {n} รายการออก เพราะข้อมูลอ้างอิงไม่ถูกต้อง",
+        "rec_dropped": "หมายเหตุ: ตัดระเบียนฐานข้อมูล {n} รายการออก เพราะข้อมูลไม่ถูกต้อง",
+        "gated": "หมายเหตุ: ข้ามฐานข้อมูล {names} เพราะต้องใช้คีย์ API ที่ยังไม่ได้ตั้งค่า",
+        "rec_capped": "หมายเหตุ: ตัดระเบียนฐานข้อมูล {n} รายการออก เพราะการค้นหาหนึ่งรายงานเกิน {max} รายการ",
+        "capped": "หมายเหตุ: ตัดเอกสาร {n} รายการออก เพราะการค้นหาหนึ่งรายงานเกิน {max} รายการ",
+        "unverified_id": ("คำเตือน: ตรวจไม่พบว่าอ้างอิง {ids} มีอยู่จริง (ไม่พบ DOI, PubMed ID หรือ arXiv ID ใน Crossref, "
+                          "doi.org, PubMed หรือ arXiv) ถือว่าข้อความที่อ้างอิงเฉพาะรายการเหล่านี้ยังไม่ได้รับการยืนยัน"),
+        "unverified_noid": ("คำเตือน: อ้างอิง {ids} ไม่มี DOI, PubMed ID หรือ arXiv ID จึงตรวจสอบไม่ได้ว่ามีอยู่จริง "
+                            "ถือว่าข้อความที่อ้างอิงเฉพาะรายการเหล่านี้ยังไม่ได้รับการยืนยัน"),
+        "unknown": "หมายเหตุ: อ้างอิง {ids} ตรวจสอบไม่ได้ (บริการตรวจสอบไม่ตอบกลับ)",
+        "unsupported": ("หมายเหตุ: บทคัดย่อของอ้างอิง {ids} ไม่ได้ระบุข้อความที่อ้างถึง "
+                        "(ผู้ตรวจดูเฉพาะบทคัดย่อ) โปรดตรวจเอกสารฉบับเต็มก่อนใช้ข้อความเหล่านั้น"),
+        "no_summary": ("พบเอกสาร {n} รายการ แต่การค้นหายังสรุปไม่เสร็จ "
+                       "อ้างอิงด้านล่างได้รับการค้นพบและตรวจสอบแล้ว ลองอีกครั้งหรือจำกัดคำถามให้แคบลง"),
+        "script": ("หมายเหตุ: คำตอบนี้มีคำในอักษรที่ไม่คาดคิด ({words}) ซึ่งอาจเป็นข้อผิดพลาดของโมเดล "
+                   "โปรดตรวจข้อความรอบคำเหล่านั้น"),
+    },
+}
+
+
+def _lang(question: str) -> str:
+    return "th" if THAI.search(question) else "en"  # the synthesis prompt answers in the question's language
+
+
+async def _script_checked(text: str, question: str, source: str, system: str, user: str, max_tokens: int,
+                          settings: Settings, cite: str) -> tuple[str, str]:
+    """(text, note). Letters in an unexpected script: one re-ask; if still stray (or the citations changed) keep the
+    original and return a visible note. Characters are never removed."""
+    if not (words := stray(text, question, source)):
+        return text, ""
+    try:
+        r = await llm.complete(system, f"{user}\n\n<previous_answer>\n{text.replace('<', chr(92) + 'u003c')}\n</previous_answer>\n\n"
+                               f"The previous answer contained words in an unexpected script: {', '.join(words)}. Rewrite only those words "
+                               "in the question's language; keep everything else, including every citation marker, unchanged.",
+                               max_tokens=max_tokens, settings=settings)
+        again = r.text.strip().replace("\\u003c", "<")  # the model may echo the escaped "<" of the previous_answer block
+        if not stray(again, question, source) and set(re.findall(cite, again)) == set(re.findall(cite, text)):
+            return again, ""
+    except Exception:  # the re-ask is best effort
+        log.warning("script re-ask failed", exc_info=True)
+    return text, "\n\n" + NOTES[_lang(question)]["script"].format(words=", ".join(words[:5]) + (", …" if len(words) > 5 else ""))
 
 
 def _history_block(history: list) -> str:
@@ -237,11 +304,14 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     yield plan
 
     async def branch(queue: asyncio.Queue, s: Search) -> None:
+        t0 = time.monotonic()
         try:
             async for item in runner.run(s.term, "\n".join(filter(None, (s.instructions, focus)))):
                 await queue.put((s.term, item))
         except Exception as e:  # a runner bug in one branch must not stop the others
             await queue.put((s.term, BranchFailed(term=s.term, reason=type(e).__name__)))
+        finally:
+            log.info("branch done term=%s papers=%d secs=%.1f", s.term, per_branch.get(s.term, 0), time.monotonic() - t0)
 
     async def run_all(queue: asyncio.Queue, searches: list[Search]) -> None:
         try:
@@ -341,30 +411,27 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     refs = await verify_references([r.paper for r in references.values()], client=client,
                                    contact_email=settings.contact_email)
     final_records = list(records.values())[:100]  # the store rejects an answer with more than 100 records (store.Answer)
-    note = "".join(f'\n\nNote: the search for "{t}" failed, so this answer does not cover it.' for t in failed)
+    N = NOTES[_lang(question)]
+    note = "".join("\n\n" + N["failed"].format(term=t) for t in failed)
     if dropped:
-        note += f"\n\nNote: {dropped} paper(s) were left out because their metadata was invalid."
+        note += "\n\n" + N["dropped"].format(n=dropped)
     rec_dropped = sum(1 for k in rec_invalid if not isinstance(k, str) or tuple(k.split(":", 1)) not in records)  # a corrected retry is not a drop
     if rec_dropped:
-        note += f"\n\nNote: {rec_dropped} database record(s) were left out because their data was invalid."
+        note += "\n\n" + N["rec_dropped"].format(n=rec_dropped)
     if gated:
-        names = ", ".join(sorted(gated))
-        note += f"\n\nNote: {names} {'was' if len(gated) == 1 else 'were'} skipped because {'it needs' if len(gated) == 1 else 'they need'} an API key that is not configured."
+        one = len(gated) == 1
+        note += "\n\n" + N["gated"].format(names=", ".join(sorted(gated)), was="was" if one else "were", needs="it needs" if one else "they need")
     if rec_capped:
-        note += (f"\n\nNote: {rec_capped} database record(s) were left out because a search reported more than "
-                 f"{settings.max_records_per_branch}.")
+        note += "\n\n" + N["rec_capped"].format(n=rec_capped, max=settings.max_records_per_branch)
     if capped:
-        note += (f"\n\nNote: {capped} paper(s) were left out because a search reported more than "
-                 f"{settings.max_papers_per_branch}.")
+        note += "\n\n" + N["capped"].format(n=capped, max=settings.max_papers_per_branch)
     unverified = [r for r in refs if r.status == "unverified"]
     if ids := _ids([r for r in unverified if _has_id(r)], "unverified"):
-        note += (f"\n\nWarning: reference(s) {ids} could not be confirmed to exist (the DOI, PubMed ID or arXiv ID "
-                 "was not found in Crossref, doi.org, PubMed or arXiv). Treat claims that cite only them as unconfirmed.")
+        note += "\n\n" + N["unverified_id"].format(ids=ids)
     if ids := _ids([r for r in unverified if not _has_id(r)], "unverified"):
-        note += (f"\n\nWarning: reference(s) {ids} have no DOI, PubMed ID or arXiv ID, so their existence could not "
-                 "be checked. Treat claims that cite only them as unconfirmed.")
+        note += "\n\n" + N["unverified_noid"].format(ids=ids)
     if ids := _ids(refs, "unknown"):
-        note += f"\n\nNote: reference(s) {ids} could not be checked (the lookup service did not answer)."
+        note += "\n\n" + N["unknown"].format(ids=ids)
 
     def prov(used: set[str]):
         """Hashes of the prompts the run configured and attempted: strategy when the model planned, replan when a re-plan call
@@ -377,9 +444,7 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
                                    history_turns=len(history), pack=pack)
 
     if not answers:  # papers but no branch summary: say so plainly; never synthesise a comparison from titles alone
-        yield FinalAnswer(content=f"Found {len(refs)} paper(s), but the search did not finish summarising them. "
-                                  "The references below were found and checked; try again or narrow the question."
-                                  + note, references=_trim("", refs), records=final_records,
+        yield FinalAnswer(content=N["no_summary"].format(n=len(refs)) + note, references=_trim("", refs), records=final_records,
                           usage=usage.snapshot(), provenance=prov(set()))
         yield Complete()
         return
@@ -391,13 +456,14 @@ async def _run(question: str, runner: BranchRunner, settings: Settings, client: 
     except Exception:
         yield Error(message="Could not write the answer. Please try again.")
         return
-    text = r.text.strip()
+    text, script_note = await _script_checked(r.text.strip(), question, user, SYNTHESIS, user, settings.synthesis_max_tokens,
+                                              settings, r"\[\d+\]")
+    note += script_note
     reviewing = settings.review_enabled and mode in ("deep", "quick") and bool(_pool(text, refs))  # a call is sent only with a pool
     if reviewing and (reviewed := await _review(text, refs, settings)):
         refs = reviewed
         if ids := "".join(f"[{x.id}]" for x in refs if any(c.support == "unsupported" for c in x.checks)):
-            note += (f"\n\nNote: the abstract of reference(s) {ids} does not state the claim it is cited for "
-                     "(the reviewer checks abstracts only). Check the full paper before relying on those claims.")
+            note += "\n\n" + N["unsupported"].format(ids=ids)
     yield FinalAnswer(content=text + note, references=_trim(text, refs), records=final_records, usage=usage.snapshot(),
                       provenance=prov({"synthesis"} | ({"review"} if reviewing else set())))
     yield Complete()
@@ -460,8 +526,10 @@ async def _chat(question: str, memory: list, settings: Settings, gate: RunGate) 
         except Exception:
             yield Error(message="Could not write the answer. Please try again.")
             return
-        text, cited = _cited(r.text.strip(), refs)
-        yield FinalAnswer(content=text, references=cited)
+        text, script_note = await _script_checked(r.text.strip(), question, block, CHAT,
+                                                  f"{block}\n\nQuestion:\n{question}", settings.synthesis_max_tokens, settings, r"\[M\d+\]")
+        text, cited = _cited(text, refs)
+        yield FinalAnswer(content=text + script_note, references=cited)
         yield Complete()
     finally:
         gate.release()

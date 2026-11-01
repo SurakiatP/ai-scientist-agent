@@ -28,13 +28,15 @@ function Badge({ n, state }: { n: number; state?: RowState }) {
   );
 }
 
-export function PlanCard({ searches, editable, heading, rowState, onApprove, onCancel }: {
+export function PlanCard({ searches, editable, heading, rowState, rowNote, onApprove, onCancel }: {
   searches: PlanSearch[];
   editable: boolean;
   /** Card title; defaults to the editable-plan wording. Read-only use (the approved plan) passes its own. */
   heading?: string;
   /** Read-only use while a run is going: real per-search status (derived from progress), shown as a chip per row. */
   rowState?: (term: string) => RowState;
+  /** Read-only use: a short factual line under a search (e.g. nothing found yet). */
+  rowNote?: (term: string) => string | undefined;
   onApprove: (plan: PlanSearch[]) => void;
   onCancel: () => void;
 }) {
@@ -114,13 +116,14 @@ export function PlanCard({ searches, editable, heading, rowState, onApprove, onC
           <>
             <Box component="ol" sx={{ m: 0, p: 0, listStyle: "none", display: "grid" }}>
               {searches.map((s, i) => {
-                const st = rowState?.(s.term);
+                const st = rowState?.(s.term), note = rowNote?.(s.term);
                 return (
                   <Stack component="li" key={`${s.term}#${i}`} data-state={st} direction="row" useFlexGap sx={{ alignItems: "flex-start", gap: 1.5, py: 1.25 }}>
                     <Badge n={i} state={st} />
                     <Box sx={{ minWidth: 0, flex: 1 }}>
                       <Typography sx={{ fontSize: "0.9375rem", fontWeight: 600, lineHeight: 1.5, overflowWrap: "anywhere" }}>{s.term}</Typography>
                       {s.instructions.trim() !== "" && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", mt: 0.25, lineHeight: 1.6, overflowWrap: "anywhere" }}>{s.instructions}</Typography>}
+                      {note && <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", mt: 0.25 }}>{note}</Typography>}
                     </Box>
                     {st && (
                       <Chip size="small" variant="outlined" label={st === "done" ? t.rowDone : st === "active" ? t.rowSearching : st === "skipped" ? t.rowSkipped : t.stepPending}

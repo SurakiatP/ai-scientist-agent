@@ -181,6 +181,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
             <Button variant="outlined" color="inherit" startIcon={<ArticleOutlinedIcon />} disabled={!firstSource} sx={{ borderColor: "divider" }}
               onClick={(e) => firstSource && openInspector({ ...scope, refId: firstSource }, e.currentTarget)}>{t.openEvidence}</Button>
             {!bare && <Button variant="outlined" color="inherit" startIcon={<BarChartRoundedIcon />} sx={{ borderColor: "divider" }} aria-controls={reportId(turn.id)} onClick={() => openReport(sessionId, turn.id)}>{t.makeReport}</Button>}
+            <Stack role="group" aria-label={t.answerTools} direction="row" spacing={0.5} useFlexGap sx={{ flexWrap: "nowrap" }}>
             <Tooltip title={copied === "fail" ? t.copyFailed : copied === "ok" ? t.copied : t.copyAnswer}>
               <IconButton aria-label={t.copyAnswer} onClick={copy} sx={{ width: 44, height: 44, color: copied === "ok" ? "primary.main" : "text.secondary" }}>
                 <Box key={copied ?? "idle"} component="span" sx={{ display: "inline-flex", ...(copied === "ok" ? enterPop : {}) }}>{copied === "ok" ? <CheckRoundedIcon fontSize="small" /> : <ContentCopyRoundedIcon fontSize="small" />}</Box>
@@ -199,6 +200,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
             <Tooltip title={noDocs ? t.docsAttachAgain : busy ? t.retryBusy : t.regen}>
               <span><IconButton aria-label={t.regen} onClick={retry} disabled={busy || noDocs} sx={{ width: 44, height: 44, color: "text.secondary" }}><ReplayRoundedIcon fontSize="small" /></IconButton></span>
             </Tooltip>
+            </Stack>
           </Stack>
           <Box role="status" sx={{ fontSize: "0.75rem", color: "text.secondary", minHeight: copied ? undefined : 0 }}>{copied === "fail" ? t.copyFailed : copied === "ok" ? t.copied : ""}</Box>
           {!bare && <ReportArtifact sessionId={sessionId} turn={turn} />} {/* a memory answer is not a research report */}

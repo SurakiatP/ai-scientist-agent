@@ -47,7 +47,7 @@ export function AppShell({ children, aside, asideWide }: { children: ReactNode; 
           <Box sx={{ flex: { xs: 1, md: "none" }, minWidth: 0, display: "flex", justifyContent: { xs: "flex-end", md: "flex-start" } }}><ProjectSwitcher /></Box>
           <IconButton aria-label={t.menu} onClick={() => setDrawer(true)} sx={{ display: { md: "none" }, border: 1, borderColor: "divider", borderRadius: 1.5 }}><MenuRoundedIcon /></IconButton>
         </Stack>
-        <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>{children}</Box>
+        <Box component="main" id="content" tabIndex={-1} sx={{ flex: 1, minHeight: 0, overflowY: "auto", outline: "none" }}>{children}</Box>
       </Box>
       {aside && <Box component="aside" sx={{ display: { xs: "none", lg: "block" }, width: asideWide ? UI.asideWide : UI.aside, flexShrink: 0, borderLeft: 1, borderColor: "divider", overflowY: "auto", p: 2 }}>{aside}</Box>}
       <SettingsDialog />

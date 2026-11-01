@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UploadError } from "@/lib/sse";
 import { useChatStore, type Turn } from "@/lib/chat";
@@ -376,6 +376,14 @@ describe("Thread", () => {
     fireEvent.click(btn);
     expect(await screen.findByText(t.copied)).toBeInTheDocument();
     expect(btn.querySelector('[data-testid="CheckRoundedIcon"]')).not.toBeNull();
+  });
+
+  it("copy, evidence-file downloads and retry wrap together as one group", () => {
+    const ref = { id: "1", status: "verified" as const, paper: { title: "P", authors: [], year: 2020, doi: null, pmid: null, url: "https://x" } };
+    render(<AgentMessage sessionId="s" turn={turn("done", { answer: { content: "x [1]", references: [ref] } })} />);
+    const g = screen.getByRole("group", { name: t.answerTools });
+    for (const n of [t.copyAnswer, t.downloadBibtex, t.downloadRis, t.regen]) expect(within(g).getByRole("button", { name: n })).toBeInTheDocument();
+    expect(within(g).queryByRole("button", { name: t.askFollowUp })).toBeNull();
   });
 
   it("copy failure shows feedback", async () => {
