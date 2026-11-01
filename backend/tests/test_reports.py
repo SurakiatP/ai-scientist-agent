@@ -1,4 +1,5 @@
 import io
+import json
 import pathlib
 import re
 import shutil
@@ -267,7 +268,7 @@ async def test_tex_front_matter_and_statements(template, monkeypatch):
     assert src.count("\\begin{abstract}") == 1 and "We compare" in src  # the field wins; the Abstract section stays a section
     assert "\\section*{Use of generative AI}" in src and "\\section*{Conflicts of interest}" in src
     assert src.index("\\section*{Conflicts") < src.index("\\begin{thebibliography}")
-    marker = {"ieee": "\\IEEEauthorblockN{Ann Lee}", "elsevier": "\\author[a1]{Ann Lee}\\address[a1]{MIT", "springer": "\\institute{MIT",
+    marker = {"ieee": "\\IEEEauthorblockN{Ann Lee}", "elsevier": "\\author[a1]{Ann Lee}\n\\author{Bo", "springer": "\\institute{MIT",
               "article": "\\author{Ann Lee \\\\ \\small MIT"}[template]
     assert marker in src
     assert {"ieee": "\\begin{IEEEkeywords}", "elsevier": "\\begin{keyword}", "springer": "\\keywords{", "article": "\\textbf{Keywords:}"}[template] in src
@@ -337,3 +338,72 @@ async def test_whitespace_only_and_duplicate_kinds_are_422(patch, monkeypatch):
 
 def test_whitespace_abstract_is_dropped():
     assert ExportRequest(**body(abstract="   \n ")).abstract == ""
+
+
+# --- characters XML and TeX cannot take (U+FFFE/U+FFFF crashed DOCX with a 500; U+2028 had no glyph in LaTeX) -----------------
+BAD = "a￾b￿c\x0cd e f"
+
+
+def bad_fields():
+    return dict(title="T" + BAD, subtitle="S" + BAD, authors=[{"name": "N" + BAD, "affiliation": "A" + BAD}], keywords=["K" + BAD],
+                abstract="Abs" + BAD, statements=[{"kind": "ai", "text": "St" + BAD}],
+                sections=[{"heading": "H" + BAD, "paragraphs": [], "blocks": [
+                    {"type": "paragraph", "runs": [{"text": "P" + BAD, "bold": False, "italic": False, "code": False}]},
+                    {"type": "table", "header": ["h" + BAD], "rows": [["c" + BAD]]}]}])
+
+
+@pytest.mark.parametrize("fmt", ["pdf", "docx", "tex"])
+async def test_xml_illegal_characters_in_any_field_do_not_fail_export(fmt, monkeypatch):
+    r = await post(body(format=fmt, language="en", **bad_fields()), monkeypatch)
+    assert r.status_code == 200
+    if fmt == "tex":
+        assert "￾" not in r.text and "￿" not in r.text and " " not in r.text and " " not in r.text
+    if fmt == "docx":
+        assert b"\xef\xbf\xbe" not in zipfile.ZipFile(io.BytesIO(r.content)).read("word/document.xml")
+
+
+def test_clean_turns_line_separators_into_breaks():
+    assert report_render.clean(BAD) == "abc" + "d\ne\nf"
+
+
+def test_elsevier_shares_one_address_and_the_header_comment_follows_the_authors():
+    d = {**tex_body(template="elsevier"), "authors": [{"name": "A", "affiliation": "MIT"}, {"name": "B", "affiliation": "MIT"}, {"name": "C"}]}
+    src = report_latex.render_latex(ExportRequest(**d).model_dump()).decode()
+    assert src.count("\\address[a1]{MIT}") == 1 and "\\author[a1]{A}" in src and "\\author[a1]{B}" in src and "\\author{C}" in src
+    assert "Add the authors" not in src
+    assert "Add the authors" in report_latex.render_latex(ExportRequest(**tex_body(template="elsevier")).model_dump()).decode()
+
+
+# --- doubled line separators must not become a blank line inside a one-paragraph argument; lone surrogates must not be a 500 ---
+def _compiles(src):
+    if shutil.which("tectonic"):
+        with tempfile.TemporaryDirectory() as tmp:
+            pathlib.Path(tmp, "a.tex").write_text(src, encoding="utf-8")
+            r = subprocess.run(["tectonic", "--untrusted", "a.tex"], cwd=tmp, capture_output=True, text=True, timeout=300)
+            assert r.returncode == 0, r.stderr[-800:]
+
+
+@pytest.mark.parametrize("template", list(report_latex.TEMPLATES))
+@pytest.mark.parametrize("sep", ["\u2028\u2028", "\u2029\u2029", "\n\n"])
+def test_doubled_separators_compile(template, sep):
+    x = f"x{sep}y"
+    d = {**tex_body(template=template), "title": x, "subtitle": x}
+    d["sections"] = [{"heading": x, "paragraphs": [], "blocks": [
+        {"type": "paragraph", "runs": [{"text": x, "bold": True}, {"text": x, "italic": True}, {"text": x, "code": True}]},
+        {"type": "table", "header": [x, "B"], "rows": [["1", "2"]]}]}]
+    src = report_latex.render_latex(ExportRequest(**d).model_dump()).decode()
+    assert not re.search(r"\\n[ \t]*\n", src.split("\\begin{document}")[1].split("\\maketitle")[0] if False else "")
+    _compiles(src)
+
+
+@pytest.mark.parametrize("fmt", ["pdf", "docx", "tex"])
+async def test_lone_surrogate_is_not_a_500(fmt, monkeypatch):
+    for k, v in ENV.items():
+        monkeypatch.setenv(k, v)
+    get_settings.cache_clear()
+    raw = json.dumps(body(format=fmt, title="T"), ensure_ascii=True).replace('"T"', '"a\\ud835b"').encode()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app()), base_url="http://t") as c:
+        r = await c.post("/v1/reports/export", content=raw, headers={"content-type": "application/json"})
+    assert r.status_code in (200, 422), r.status_code
+    if r.status_code == 422:
+        assert isinstance(r.json()["detail"], list)

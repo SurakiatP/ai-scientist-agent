@@ -4,7 +4,12 @@ import os
 from contextlib import asynccontextmanager, suppress
 
 import httpx
+import json
+
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from starlette.routing import Route
@@ -114,6 +119,10 @@ def create_app(*, runner: BranchRunner | None = None, client: httpx.AsyncClient 
     app.state.db = db or open_database(settings)
     app.state.pgbus = None  # set in the lifespan when a database is configured
     app.state.data = Store(app.state.db, Bus(), settings, lambda: app.state.store) if app.state.db else None
+
+    @app.exception_handler(RequestValidationError)
+    async def _invalid(_req, exc: RequestValidationError):  # the default handler crashes (500) re-encoding a lone surrogate it echoes back
+        return Response(json.dumps({"detail": jsonable_encoder(exc.errors())}), 422, media_type="application/json")
 
     @app.exception_handler(RateLimited)
     async def limited(_, e):  # the same body everywhere: clients branch on the code, and wait Retry-After seconds

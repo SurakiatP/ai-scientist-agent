@@ -36,7 +36,7 @@ WORDS = {"th": {"refs": "เอกสารอ้างอิง", "abstract": "
 
 
 def tex(s: str) -> str:
-    s = clean(s)
+    s = re.sub(r"\n\s*\n", "\n", clean(s))  # a blank line would end the paragraph inside \section{}, \emph{}, \title{}
     if _thai.get() and THAI.search(s):  # Thai has no spaces between words: mark each word boundary as a break point
         toks = word_tokenize(s, engine="newmm", keep_whitespace=True)
         return "".join((r"\allowbreak{}" if i and THAI.search(t) and THAI.search(toks[i - 1]) else "") + _esc(t) for i, t in enumerate(toks))
@@ -73,7 +73,7 @@ def _text(s: str, keys: dict[str, str]) -> str:
 def _runs(runs: list[dict], keys: dict[str, str]) -> str:
     out = []
     for r in runs:
-        t = r"\newline ".join(_text(x, keys) for x in r["text"].split("\n"))
+        t = r"\newline ".join(_text(x, keys) for x in clean(r["text"]).split("\n"))
         if r.get("code"):
             t = rf"\texttt{{{t}}}"
         if r.get("italic"):
@@ -119,7 +119,9 @@ def _front(d: dict, cls: str, kw_label: str) -> tuple[list[str], list[str]]:
         au = r"\author{" + AND.join(r"\IEEEauthorblockN{" + n + "}" + (r"\IEEEauthorblockA{" + a + "}" if a else "") for n, a in authors) + "}"
         kw = [r"\begin{IEEEkeywords}", ", ".join(kws), r"\end{IEEEkeywords}"] if kws else []
     elif cls.endswith("{elsarticle}"):
-        au = "\n".join(rf"\author[a{i}]{{{n}}}\address[a{i}]{{{a}}}" if a else rf"\author{{{n}}}" for i, (n, a) in enumerate(authors, 1))
+        affs = list(dict.fromkeys(a for _, a in authors if a))  # one \address per distinct affiliation
+        au = "\n".join([rf"\author[a{affs.index(a) + 1}]{{{n}}}" if a else rf"\author{{{n}}}" for n, a in authors]
+                       + [rf"\address[a{i}]{{{a}}}" for i, a in enumerate(affs, 1)])
         kw = [r"\begin{keyword}", r" \sep ".join(kws), r"\end{keyword}"] if kws else []
     elif cls.endswith("{llncs}"):
         affs = list(dict.fromkeys(a for _, a in authors if a))
@@ -173,8 +175,9 @@ def _render(d: dict) -> bytes:
     elif sections and ABSTRACT.match(sections[0]["heading"]):
         abstract = "\n\n".join(_block(b, keys) for b in blocks_of(sections.pop(0)))
 
-    pre = ["% !TeX program = xelatex", "% Draft exported from AI Scientist. Add the authors; check every claim and reference before submitting.",
-           cls]
+    au, kw = _front(d, cls, tex(lbl["keywords"]))
+    pre = ["% !TeX program = xelatex",
+           "% Draft exported from AI Scientist. " + ("Check" if au else "Add the authors; check") + " every claim and reference before submitting.", cls]
     if cls.endswith("{article}"):
         pre.append(r"\usepackage[margin=1in]{geometry}")
     pre += [r"\usepackage{fontspec}", r"\usepackage{booktabs}", r"\usepackage{array}", r"\usepackage{supertabular}", r"\usepackage{url}"]
@@ -190,7 +193,6 @@ def _render(d: dict) -> bytes:
             rf"\providecommand{{\refname}}{{}}\renewcommand{{\refname}}{{{w['refs']}}}"]
 
     title = tex(d["title"])
-    au, kw = _front(d, cls, tex(lbl["keywords"]))
     body = [r"\begin{document}"]
     if front:  # elsarticle: title, author and abstract live in the frontmatter environment
         body += [r"\begin{frontmatter}", rf"\title{{{title}}}", *(au or [r"\author{}  % add the authors"])]

@@ -16,13 +16,14 @@ export const OUTLINES: Record<PaperType, Record<Lang, string[]>> = {
     ["Background and rationale", "Objectives", "Scope", "Methodology", "Work plan", "Expected outcomes"]),
 };
 
-const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+// Case, spacing and numbering ("1.", "I.", "บทที่ 1") are ignored, so "1. Introduction" counts as Introduction.
+const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase().replace(/^(\d+(\.\d+)*\.?|[ivx]+\.|บทที่\s*\d+)\s*/, "");
 const headingText = (n: JSONContent): string => n.text ?? (n.content ?? []).map(headingText).join("");
 
 // Outline headings that the document does not have yet (case and spacing ignored). Existing text is never compared away or touched.
 export function missingHeadings(doc: JSONContent, type: PaperType, lang: Lang): string[] {
   const have = new Set((doc.content ?? []).filter((n) => n.type === "heading").map((n) => norm(headingText(n))));
-  return OUTLINES[type][lang].filter((h) => !have.has(norm(h)));
+  return OUTLINES[type][lang].filter((h, i) => !have.has(norm(h)) && !have.has(norm(OUTLINES[type][lang === "th" ? "en" : "th"][i]))); // the other language at the same position counts too
 }
 
 // Heading + empty paragraph per missing heading, to append after the existing content.

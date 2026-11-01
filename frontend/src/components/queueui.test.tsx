@@ -55,6 +55,16 @@ describe("queue copy", () => {
     rerender(<AgentMessage sessionId={sid} turn={mk({})} />);
     expect(screen.getByText("Run failed")).toBeInTheDocument();
   });
+  it("the chat queue status region is mounted before its first text, and the text is inserted into the same node", () => {
+    const sid = useChatStore.getState().newSession();
+    const mk = (progress: Turn["progress"]): Turn => ({ id: "c", question: "q", createdAt: 1, status: "running", mode: "chat", progress });
+    const { rerender } = render(<AgentMessage sessionId={sid} turn={mk({ ...emptyProgress, phase: "writing" })} />);
+    const region = screen.getAllByRole("status").find((n) => n.getAttribute("aria-live") === "polite")!;
+    expect(region).toBeEmptyDOMElement();
+    rerender(<AgentMessage sessionId={sid} turn={mk({ ...emptyProgress, phase: "waiting", waiting: 2 })} />);
+    expect(region).toBeInTheDocument();
+    expect(region).toHaveTextContent("2");
+  });
 });
 
 describe("server load line", () => {

@@ -12,7 +12,7 @@ import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import { useEditor } from "@tiptap/react";
 import type { Turn } from "@/lib/chat";
-import { defaultFont, draftIssue, hasLead, errorText, FONTS, initialDraft, refsOf, requestExport, TEX_TEMPLATES, toPayload, useExport, type Draft, type Format, type TexTemplate } from "@/lib/exportReport";
+import { defaultFont, draftIssue, draftWarn, hasLead, errorText, FONTS, initialDraft, refsOf, requestExport, TEX_TEMPLATES, toPayload, useExport, type Draft, type Format, type TexTemplate } from "@/lib/exportReport";
 import { reportExtensions } from "@/lib/reportExtensions";
 import { enterFade, useExitClose } from "@/lib/motion";
 import { useGoFiles } from "@/lib/nav";
@@ -207,6 +207,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
       </Stack>
       <Box sx={{ px: 2, py: wide ? 0.75 : 0, borderBottom: wide ? 1 : 0, borderColor: "divider" }}>
         {(issue === "limits" || issue === "table" || issue === "heading") && <Alert severity="warning" sx={{ mb: 1 }}>{issue === "table" ? t.fTableWide : issue === "heading" ? t.fHeadingLong : t.fTooMany}</Alert>}
+        {!issue && draftWarn(d) && <Alert severity="info" role="status" sx={{ mb: 1 }}>{t.fStmtUnedited}</Alert>}
         {trErr && <Alert severity="error" onClose={() => setTrErr(null)} sx={{ mb: 1 }}>{({ "422": t.tr422, "429": t.tr429, "502": t.tr502, "504": t.tr504, net: t.trNet, other: t.tr502 })[trErr]}</Alert>}
         {error && <Alert severity="error" sx={{ mb: 1 }}>{errorText(error, t)}</Alert>}
         {upErr !== null && <Alert severity="error" sx={{ mb: 1 }}>{upErr ? `${t.fSaveFail} (${upErr})` : t.fSaveFail}</Alert>}

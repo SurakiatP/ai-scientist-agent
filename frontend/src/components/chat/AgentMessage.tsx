@@ -91,6 +91,7 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
   const sourceIds = sourceNames(ids) ? ids : null; // no wrapper at all when no known source is to be named
   const [tab, setTab] = useState<"answer" | "sources">("answer");
   const openInspector = useInspector((x) => x.open);
+  const queueQ = turn.progress.phase === "waiting" || sendingChat ? (sendingChat ? t.sending : queueText(turn.progress, t)) : "";
   return (
     <Box sx={{ px: 0.5 }}>
       <Box sx={{ display: "flex", gap: 1.5, alignItems: "center", flexWrap: "wrap", mb: 1.5 }}>
@@ -121,9 +122,8 @@ function AgentMessageBase({ sessionId, turn }: { sessionId: string; turn: Turn }
       ) : status === "running" && (
         bare ? (
           <>
-            {(turn.progress.phase === "waiting" || sendingChat) && ( // the queue line shows in every mode, not only beside the search stages
-              <Typography role="status" aria-live="polite" sx={{ mb: 1, fontSize: "0.9375rem", fontWeight: 600, color: "primary.main", fontVariantNumeric: "tabular-nums" }}>{(() => { const q = sendingChat ? t.sending : queueText(turn.progress, t); return <Box component="span" key={q} sx={enterFade}>{q}</Box>; })()}</Typography>
-            )}
+            {/* always mounted so a screen reader sees the first text as a change, not as an inserted region */}
+            <Typography role="status" aria-live="polite" sx={{ mb: queueQ ? 1 : 0, fontSize: "0.9375rem", fontWeight: 600, color: "primary.main", fontVariantNumeric: "tabular-nums" }}>{queueQ && <Box component="span" key={queueQ} sx={enterFade}>{queueQ}</Box>}</Typography>
             {docsTurn && !!turn.progress.indexing && ( // live only: a reload of a finished turn shows the answer
               <Typography role="status" aria-live="polite" sx={{ mb: 1, fontSize: "0.9375rem", fontWeight: 600, color: "primary.main" }}>{t.docsReading}</Typography>
             )}

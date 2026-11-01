@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Turn } from "./chat";
-import { blocksOf, docFromSections, draftIssue, draftSections, errorText, fileNameOf, initialDraft, requestExport, sectionsOf, toPayload, parseAuthors, parseKeywords, refLines, hasLead, FONTS, defaultFont, LIM } from "./exportReport";
+import { blocksOf, docFromSections, draftIssue, draftSections, draftWarn, errorText, fileNameOf, initialDraft, requestExport, sectionsOf, toPayload, parseAuthors, parseKeywords, refLines, hasLead, noLone, FONTS, defaultFont, LIM } from "./exportReport";
 import { strings } from "./strings";
 import { missingHeadings, outlineNodes, OUTLINES } from "./paperOutline";
 
@@ -188,5 +188,31 @@ describe("paper type outline and front matter", () => {
     expect(p).toMatchObject({ authors: [{ name: "Ann", affiliation: "MIT" }], keywords: ["x", "y"], abstract: "Abs {\\input{/etc/passwd}" });
     expect(p.statements).toEqual([{ kind: "ai", text: strings.en.stmtDefault_ai }, { kind: "coi", text: "none }" }]); // unticked ones are not sent; hostile text passes through untouched (the server escapes)
     expect(toPayload({ ...base, lang: "th", statements: { ...base.statements, ethics: { on: true, text: null } } }, "pdf", turn).statements).toEqual([{ kind: "ethics", text: strings.th.stmtDefault_ethics }]);
+  });
+  it("matches headings with numbering or in the other language, so no duplicate is appended", () => {
+    expect(missingHeadings(withHeads(["1. Introduction", "II. Methods", "ผลการวิจัย"]), "research", "en")).toEqual(["Discussion", "Conclusion"]);
+    expect(missingHeadings(withHeads(["Introduction"]), "research", "th")).toHaveLength(4);
+  });
+  it("counts abstract and statements toward the 200k limit, and warns about unedited statements", () => {
+    const base = { ...initialDraft(turn, "en", strings.en), title: "T" };
+    expect(draftIssue({ ...base, abstract: "a".repeat(LIM.abstract) })).toBeNull();
+    const para = { type: "paragraph", content: [{ type: "text", text: "a".repeat(5000) }] };
+    const full = { type: "doc", content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "h" }] }, ...Array.from({ length: 39 }, () => para), { type: "paragraph", content: [{ type: "text", text: "a".repeat(4900) }] }] };
+    expect(draftIssue({ ...base, doc: full })).toBeNull(); // 199,901 characters with the title
+    expect(draftIssue({ ...base, doc: full, abstract: "a".repeat(LIM.abstract) })).toBe("limits");
+    expect(draftIssue({ ...base, doc: full, statements: { ...base.statements, ai: { on: true, text: "b".repeat(LIM.statement) } } })).toBe("limits");
+    expect(draftWarn(base)).toBeNull();
+    expect(draftWarn({ ...base, statements: { ...base.statements, ai: { on: true, text: null } } })).toBe("stmt");
+    expect(draftWarn({ ...base, statements: { ...base.statements, coi: { on: true, text: "None [x]" } } })).toBeNull(); // a bracket the author wrote is not a placeholder
+    expect(draftWarn({ ...base, statements: { ...base.statements, coi: { on: true, text: "See [1]. " + strings.en.stmtDefault_coi } } })).toBe("stmt");
+    expect(draftWarn({ ...base, statements: { ...base.statements, coi: { on: true, text: "None." } } })).toBeNull();
+  });
+});
+
+describe("noLone", () => {
+  it("drops unpaired surrogates but keeps whole emoji", () => {
+    const o = { a: "x\ud835y", b: ["\ude00z", "😀"], n: 1 };
+    expect(JSON.stringify(o, noLone)).toBe(JSON.stringify({ a: "xy", b: ["z", "😀"], n: 1 }));
+    expect(JSON.stringify({ t: "ab".repeat(2) + "😀".slice(0, 1) }, noLone)).toBe('{"t":"abab"}');
   });
 });

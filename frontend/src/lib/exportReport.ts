@@ -246,9 +246,14 @@ export function draftIssue(d: Draft): "title" | "limits" | "heading" | "table" |
   if (ss.some((s) => s.heading.length > LIM.heading)) return "heading";
   if (ss.length > LIM.sections || ss.some((s) => s.blocks.length > LIM.paras)) return "limits";
   if (ss.some((s) => s.blocks.some((b) => (b.type === "paragraph" && b.runs.length > LIM.runs) || ((b.type === "bullets" || b.type === "numbered") && b.items.some((i) => i.length > LIM.runs))))) return "limits";
-  if (d.title.length + ss.reduce((n, s) => n + (s.heading.trim() || " ").length + s.blocks.reduce((m, b) => m + blockChars(b), 0), 0) > MAX_CHARS) return "limits";
+  const t = strings[d.lang], stmts = STATEMENT_KINDS.reduce((n, k) => n + (d.statements[k].on ? statementText(d.statements[k], k, t).trim().length : 0), 0); // the backend counts abstract and statements too
+  if (d.title.length + d.abstract.trim().length + stmts + ss.reduce((n, s) => n + (s.heading.trim() || " ").length + s.blocks.reduce((m, b) => m + blockChars(b), 0), 0) > MAX_CHARS) return "limits";
   return ss.some((s) => tableIssue(s.blocks)) ? "table" : null;
 }
+
+// A ticked closing statement that still holds its starting text or a [placeholder]: allowed, but worth a reminder before saving.
+const holes = (k: StatementKind) => [strings.th, strings.en].flatMap((s) => s[`stmtDefault_${k}`].match(/\[[^\]]*\]/g) ?? []);
+export const draftWarn = (d: Draft): "stmt" | null => STATEMENT_KINDS.some((k) => d.statements[k].on && (d.statements[k].text === null || holes(k).some((h) => d.statements[k].text!.includes(h)))) ? "stmt" : null;
 
 export type RefOut = { id: string; title: string; authors: string[]; year: number | null; doi: string | null; url: string | null; status: "verified" | "unverified" | "unknown" };
 // "Name, affiliation" per line -> authors (blank lines dropped; the affiliation is everything after the first comma).
@@ -300,10 +305,13 @@ export function fileNameOf(cd: string | null, ext: string): string {
   return `report.${ext}`;
 }
 
+// JSON.stringify replacer: drop unpaired surrogates (a hard .slice() can cut an emoji); the server answers them with an error.
+export const noLone = (_: string, v: unknown) => typeof v === "string" ? v.replace(/\p{Cs}/gu, "") : v;
+
 export async function requestExport(p: Payload, signal?: AbortSignal): Promise<{ blob: Blob; name: string }> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}/v1/reports/export`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p), signal });
+    res = await fetch(`${API_BASE}/v1/reports/export`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p, noLone), signal });
   } catch (e) {
     if ((e as Error)?.name === "AbortError") throw e;
     throw "net" satisfies ExportError;

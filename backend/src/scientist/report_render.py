@@ -35,7 +35,7 @@ NO_ITALIC = {"notosansthai", "ibmplexsansthai"}
 OFFICIAL_DEFAULT = "th-sarabun-new"  # official style with no explicit font keeps the government-letter face in DOCX
 ZWSP = "​"
 THAI = re.compile("[฀-๿]")
-CTRL = re.compile("[\x00-\x08\x0b-\x1f\x7f​]")  # keeps \n and \t; drops stray ZWSP so ours is the only one
+CTRL = re.compile("[\x00-\x08\x0b-\x1f\x7f\u200b\ud800-\udfff\ufffe\uffff]")  # keeps \n and \t; drops stray ZWSP so ours is the only one, plus what XML cannot hold (lxml raises on U+FFFE/U+FFFF)
 LABELS = {
     "th": {"verified": "พบตัวระบุอ้างอิง", "unverified": "ยังไม่ยืนยัน", "unknown": "ตรวจสอบไม่ได้",
            "refs": "เอกสารอ้างอิง", "page": "หน้า", "abstract": "บทคัดย่อ", "keywords": "คำสำคัญ",
@@ -68,7 +68,8 @@ STYLES = {
 
 
 def clean(s: str) -> str:
-    return CTRL.sub("", s)
+    """The one sanitising point for PDF, DOCX and LaTeX: U+2028/U+2029 become newlines, XML-illegal characters go."""
+    return CTRL.sub("", s.replace("\u2028", "\n").replace("\u2029", "\n"))
 
 
 def segment(s: str) -> str:

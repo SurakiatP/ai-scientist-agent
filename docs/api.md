@@ -126,7 +126,7 @@ asyncio.run(main())
 
 ## Report export (browser endpoint)
 
-`POST /v1/reports/export` is used by the app's document editor, not by the API keys above (JSON body, no `Authorization`). It returns a PDF, DOCX or LaTeX file; the optional front-matter and closing-statement fields below are rendered identically in all three formats. A request without them behaves as before. Invalid values answer `422` in the usual FastAPI error shape (`{"detail": [...]}`).
+`POST /v1/reports/export` is used by the app's document editor, not by the API keys above (JSON body, no `Authorization`). It returns a PDF, DOCX or LaTeX file; the optional front-matter and closing-statement fields below are rendered in all three formats (LaTeX puts the subtitle after the abstract and keywords; PDF and DOCX put it before the authors). A request without them behaves as before. Invalid values answer `422` in the usual FastAPI error shape (`{"detail": [...]}`).
 
 | Field | Type and limits | Where it goes |
 |---|---|---|
