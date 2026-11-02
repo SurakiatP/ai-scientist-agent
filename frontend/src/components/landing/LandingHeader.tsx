@@ -26,7 +26,7 @@ export function ArrowPill({ href, children, big }: { href: string; children: Rea
   return (
     <Button component={Link} href={href} variant="contained"
       endIcon={<Box component="span" aria-hidden="true" className="pill-arrow" sx={{ display: "grid", placeItems: "center", width: big ? 30 : 24, height: big ? 30 : 24, borderRadius: "50%", bgcolor: "rgb(255 255 255 / 0.16)", transition: `transform ${dur.fast}ms ${ease}` }}><NorthEastRoundedIcon sx={{ fontSize: big ? 16 : 14 }} /></Box>}
-      sx={{ minHeight: big ? 52 : 38, pl: big ? 3 : 2, pr: big ? 1.25 : 0.75, borderRadius: 999, fontSize: big ? "1rem" : "0.875rem", whiteSpace: "nowrap", boxShadow: "0 10px 24px -12px rgb(28 78 143 / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.18)", "& .MuiButton-endIcon": { ml: 1.25, mr: 0 }, "&:hover": { bgcolor: "primary.dark", boxShadow: "0 12px 28px -12px rgb(28 78 143 / 0.8), inset 0 1px 0 rgb(255 255 255 / 0.18)", "& .pill-arrow": { transform: "translate(2px, -2px)" } }, ...ring }}>
+      sx={{ minHeight: big ? 52 : 38, pl: big ? 3 : 2, pr: big ? 1.25 : 0.75, borderRadius: 999, fontSize: big ? "1rem" : "0.875rem", whiteSpace: "nowrap", boxShadow: "none", "& .MuiButton-endIcon": { ml: 1.25, mr: 0 }, "&:hover": { bgcolor: "primary.dark", boxShadow: "none", "& .pill-arrow": { transform: "translate(2px, -2px)" } }, ...ring }}>
       {children}
     </Button>
   );

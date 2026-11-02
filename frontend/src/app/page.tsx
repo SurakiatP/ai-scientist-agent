@@ -14,7 +14,6 @@ import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
 import IosShareRoundedIcon from "@mui/icons-material/IosShareRounded";
 import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
 import { ArrowPill, LandingHeader, lift, ring, wrap } from "@/components/landing/LandingHeader";
-import { LogoMark } from "@/components/landing/Dropdown";
 import { useHydrated } from "@/lib/history";
 import { PACK_IDS } from "@/lib/packs";
 import { usePrefs } from "@/lib/prefs";
@@ -24,21 +23,9 @@ import { dur, ease } from "@/lib/motion";
 
 const line = "1px solid var(--mui-palette-divider)"; // responsive border values need the full shorthand (a bare 1 loses the colour)
 const card = { borderRadius: "24px", border: 1, borderColor: "color-mix(in srgb, var(--mui-palette-divider) 60%, transparent)", bgcolor: "background.paper", boxShadow: lift } as const;
-const label = { fontSize: "0.75rem", fontWeight: 500, letterSpacing: "0.08em", color: "text.secondary", textTransform: "uppercase" } as const;
 const h2 = { m: 0, fontSize: { xs: "2rem", md: "2.75rem" }, fontWeight: 700, lineHeight: 1.3, letterSpacing: "-0.015em", textWrap: "balance" } as const;
 const body = { fontSize: "0.9375rem", lineHeight: 1.75, color: "text.secondary", textWrap: "pretty" } as const;
 const bar = (w: string, o = 1) => ({ height: 7, width: w, borderRadius: 99, bgcolor: "text.primary", opacity: 0.13 * o }) as const;
-
-// "02 // ความสามารถ" with a hairline running to the edge: the page reads as one numbered document.
-function SectionLabel({ n, children }: { n: number; children: string }) {
-  return (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: { xs: 2.5, md: 3.5 } }}>
-      <Typography component="span" sx={{ fontSize: "0.8125rem", color: "text.secondary", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{String(n).padStart(2, "0")}{" //"}</Typography>
-      <Typography component="span" sx={{ fontSize: "0.875rem", color: "text.secondary", whiteSpace: "nowrap" }}>{children}</Typography>
-      <Box aria-hidden="true" sx={{ flex: 1, borderTop: 1, borderColor: "divider" }} />
-    </Box>
-  );
-}
 
 // A small floating note pinned to the answer sheet (what the agent did).
 function Note({ icon, t, d, sx }: { icon: React.ReactNode; t: string; d: string; sx: object }) {
@@ -59,7 +46,7 @@ function AnswerSheet({ L }: { L: (typeof landing)["th"] | (typeof landing)["en"]
   const lines: [string, string?][] = [["100%"], ["94%", "1"], ["97%"], ["62%", "2"], ["0"], ["100%"], ["88%", "3"], ["45%"]];
   return (
     <Box aria-hidden="true" sx={{
-      position: "relative", pt: 4, mx: { xs: 1, sm: 4, md: 0 },
+      position: "relative", mx: { xs: 1, sm: 4, md: 0 },
       "@media (prefers-reduced-motion: no-preference)": {
         "& .fig-line": { animation: `fig-write 900ms ${ease} both`, transformOrigin: "left", animationDelay: "calc(250ms + var(--i) * 110ms)" },
         "& .fig-cite": { animation: `fig-land 420ms ${ease} both`, animationDelay: "calc(500ms + var(--i) * 110ms)" },
@@ -70,8 +57,7 @@ function AnswerSheet({ L }: { L: (typeof landing)["th"] | (typeof landing)["en"]
         "@keyframes fig-slide": { from: { transform: "translateX(12px)", filter: "blur(3px)" }, to: { transform: "none", filter: "none" } },
       },
     }}>
-      <Typography sx={{ position: "absolute", top: 0, left: 4, ...label, fontSize: "0.6875rem" }}>{L.figLabel}</Typography>
-      <Box sx={{ position: "relative", ...card, borderRadius: "14px", px: { xs: 3, md: 4 }, pt: { xs: 3, md: 3.5 }, pb: { xs: 4, md: 5 }, minHeight: { md: 470 }, boxShadow: "0 40px 80px -40px rgb(28 78 143 / 0.45), 0 4px 14px -6px rgb(14 26 44 / 0.12)" }}>
+      <Box sx={{ position: "relative", ...card, borderRadius: "14px", px: { xs: 3, md: 4 }, pt: { xs: 3, md: 3.5 }, pb: { xs: 4, md: 5 }, minHeight: { md: 470 } }}>
         <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", pb: 1.5, borderBottom: 2, borderColor: "text.primary" }}>
           <Typography sx={{ fontSize: "0.8125rem", fontWeight: 700 }}>AI Scientist</Typography>
           <Typography sx={{ fontSize: "0.6875rem", color: "text.secondary" }}>{L.figAnswer}</Typography>
@@ -124,14 +110,12 @@ export default function Home() {
 
       <Box component="main" id="content" tabIndex={-1} sx={{ position: "relative", outline: "none" }}>
         {/* hero */}
-        <Box sx={{ ...section, pt: { xs: 6, md: 10 }, pb: { xs: 8, md: 12 }, display: "grid", gap: { xs: 7, md: 6 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1.1fr) minmax(0,0.9fr)" }, alignItems: "center" }}>
-          <Box>
-            <Typography sx={label}>{L.heroLabel}</Typography>
-            <Typography component="h1" sx={{ m: 0, mt: 2.5, fontSize: { xs: "2.375rem", sm: "3rem", lg: "3.75rem" }, fontWeight: 700, lineHeight: 1.25, letterSpacing: "-0.02em", overflowWrap: "anywhere" }}>
-              <Box component="span" sx={{ display: "block" }}>{L.titleA}</Box>
-              <Box component="span" sx={{ display: "block" }}>{b1}</Box>
-              <Box component="span" sx={{ display: "block", color: "primary.main" }}>{b2}</Box>
-            </Typography>
+        <Box sx={{ ...section, pt: { xs: 6, md: 10 }, pb: { xs: 8, md: 12 }, display: "grid", gap: { xs: 7, md: 6 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1.1fr) minmax(0,0.9fr)" }, alignItems: "center", gridTemplateAreas: { xs: '"h1" "text" "fig"', md: '"h1 h1" "text fig"' } }}>
+          <Typography component="h1" sx={{ m: 0, gridArea: "h1", fontSize: { xs: "2.375rem", sm: "3rem", lg: "3.75rem" }, fontWeight: 700, lineHeight: 1.25, letterSpacing: "-0.02em", overflowWrap: "anywhere" }}>
+            {[L.titleA, b1].map((x) => <Box key={x} component="span" sx={{ display: lang === "th" ? "inline-block" : "inline", mr: "0.25em" }}>{x}</Box>)}
+            <Box component="span" sx={{ display: lang === "th" ? "inline-block" : "inline", color: "primary.main" }}>{b2}</Box>
+          </Typography>
+          <Box sx={{ gridArea: "text" }}>
             <Typography sx={{ mt: { xs: 3, md: 4 }, maxWidth: "36rem", fontSize: { xs: "1rem", md: "1.0625rem" }, lineHeight: 1.8, color: "text.secondary", textWrap: "pretty" }}>{L.lead}</Typography>
             <Box sx={{ mt: { xs: 4, md: 5 }, display: "flex", flexWrap: "wrap", gap: 1.5, alignItems: "center" }}>
               <ArrowPill href="/chat" big>{L.cta}</ArrowPill>
@@ -147,7 +131,7 @@ export default function Home() {
               </Box>
             </Box>
           </Box>
-          <AnswerSheet L={L} />
+          <Box sx={{ gridArea: "fig" }}><AnswerSheet L={L} /></Box>
         </Box>
 
         {/* the numbers, all read from the code */}
@@ -165,7 +149,6 @@ export default function Home() {
 
         {/* the statement */}
         <Box component="section" aria-labelledby="pain-h" sx={{ ...section, py: { xs: 9, md: 14 } }}>
-          <SectionLabel n={1}>{L.painLabel}</SectionLabel>
           <Typography id="pain-h" component="h2" sx={{ ...h2, fontSize: { xs: "1.625rem", md: "2.5rem" }, lineHeight: 1.45, maxWidth: "26em" }}>
             {L.painA}<Box component="span" sx={{ color: "text.secondary", opacity: 0.75 }}>{L.painB}</Box>{L.painC}
           </Typography>
@@ -174,14 +157,12 @@ export default function Home() {
 
         {/* capabilities: one lead card and its evidence, then the smaller tools */}
         <Box id="why" component="section" aria-labelledby="cap-h" sx={{ ...section, pb: { xs: 9, md: 14 } }}>
-          <SectionLabel n={2}>{L.capLabel}</SectionLabel>
           <Typography id="cap-h" component="h2" sx={{ ...h2, mb: { xs: 4, md: 6 } }}>
             {L.capTitle.split("|").map((x) => <Box key={x} component="span" sx={{ display: "block" }}>{x}</Box>)}
           </Typography>
           <Box sx={{ display: "grid", gap: 2.5, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1.85fr) minmax(0,1fr)" } }}>
             <Box sx={{ ...card, position: "relative", overflow: "hidden", p: { xs: 3, md: 4.5 } }}>
-              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.75, px: 1.25, py: 0.25, borderRadius: 99, bgcolor: "surface.aiSoft", color: "surface.ai", fontSize: "0.75rem", fontWeight: 600 }}><LogoMark size={14} />{L.capMain.chip}</Box>
-              <Typography component="h3" sx={{ m: 0, mt: 2, fontSize: { xs: "1.375rem", md: "1.875rem" }, fontWeight: 700, lineHeight: 1.4, textWrap: "balance" }}>{L.capMain.t}</Typography>
+              <Typography component="h3" sx={{ m: 0, fontSize: { xs: "1.375rem", md: "1.875rem" }, fontWeight: 700, lineHeight: 1.4, textWrap: "balance" }}>{L.capMain.t}</Typography>
               <Box sx={{ mt: 2, display: "inline-flex", gap: 0.5, flexWrap: "wrap" }}>
                 {L.capMain.tabs.map((x) => <Box key={x} component="span" sx={{ px: 1.25, py: 0.25, borderRadius: 99, border: 1, borderColor: "divider", fontSize: "0.8125rem", color: "text.secondary" }}>{x}</Box>)}
               </Box>
@@ -190,11 +171,8 @@ export default function Home() {
                 <Box aria-hidden="true" sx={{ p: 2.5, borderRadius: "16px", border: 1, borderColor: "divider", bgcolor: "background.paper", boxShadow: lift }}>
                   <Typography sx={{ fontSize: "0.6875rem", fontWeight: 600, color: "surface.ai" }}>{L.capMain.plan}</Typography>
                   <Box sx={{ mt: 1.5, pl: 1.75, borderLeft: 1, borderColor: "surface.ai", display: "grid", gap: 1.25 }}>
-                    {["retrieval-augmented generation clinical QA", "LLM fine-tuning medical question answering", "RAG versus fine-tuning benchmark"].map((q, i) => (
-                      <Box key={q}>
-                        <Typography sx={{ fontSize: "0.625rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{String(i + 1).padStart(2, "0")}</Typography>
-                        <Typography sx={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>{q}</Typography>
-                      </Box>
+                    {["retrieval-augmented generation clinical QA", "LLM fine-tuning medical question answering", "RAG versus fine-tuning benchmark"].map((q) => (
+                      <Typography key={q} sx={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>{q}</Typography>
                     ))}
                   </Box>
                 </Box>
@@ -250,13 +228,12 @@ export default function Home() {
 
         {/* how it works: three steps on one rule */}
         <Box id="how" component="section" aria-labelledby="how-h" sx={{ ...section, pb: { xs: 9, md: 14 } }}>
-          <SectionLabel n={3}>{L.howLabel}</SectionLabel>
           <Typography id="how-h" component="h2" sx={{ ...h2, mb: { xs: 4, md: 6 } }}>{L.howTitle}</Typography>
           <Box component="ol" aria-label={L.howTitle} sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: { xs: 3, md: 0 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "repeat(3, minmax(0,1fr))" }, borderTop: { md: line } }}>
             {L.steps.map((s, i) => (
               <Box component="li" key={s.t} sx={{ position: "relative", pt: { md: 3.5 }, pr: { md: 5 } }}>
                 <Box aria-hidden="true" sx={{ display: { xs: "none", md: "block" }, position: "absolute", top: -6, left: 0, width: 11, height: 11, borderRadius: "50%", bgcolor: "primary.main", boxShadow: "0 0 0 4px var(--mui-palette-background-default)" }} />
-                <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary", fontVariantNumeric: "tabular-nums" }}>{String(i + 1).padStart(2, "0")}</Typography>
+                <Typography sx={{ fontSize: "0.875rem", color: "text.secondary" }}>{L.stepN.replace("{n}", String(i + 1))}</Typography>
                 <Typography component="h3" sx={{ m: 0, mt: 0.5, fontSize: "1.375rem", fontWeight: 700, lineHeight: 1.4 }}>{s.t}</Typography>
                 <Typography sx={{ ...body, mt: 1 }}>{s.d}</Typography>
               </Box>
@@ -266,7 +243,6 @@ export default function Home() {
 
         {/* where the data goes: a 2x2 ledger, the one external hop tinted */}
         <Box component="section" aria-labelledby="data-h" sx={{ ...section, pb: { xs: 9, md: 14 } }}>
-          <SectionLabel n={4}>{L.dataLabel}</SectionLabel>
           <Typography id="data-h" component="h2" sx={{ ...h2, mb: { xs: 4, md: 6 } }}>{L.dataTitle}</Typography>
           <Box sx={{ borderRadius: "24px", border: line, overflow: "hidden", display: "grid", gridTemplateColumns: { xs: "minmax(0,1fr)", md: "repeat(2, minmax(0,1fr))" } }}>
             {L.data.map((c, i) => {
@@ -284,7 +260,6 @@ export default function Home() {
         </Box>
 
         <Box id="faq" component="section" aria-labelledby="faq-h" sx={{ ...section, pb: { xs: 9, md: 14 } }}>
-          <SectionLabel n={5}>{L.faqLabel}</SectionLabel>
           <Typography id="faq-h" component="h2" sx={{ ...h2, mb: { xs: 4, md: 6 } }}>{L.faqTitle}</Typography>
           <Box sx={{ display: "grid", gap: { xs: 3, md: 6 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "repeat(2, minmax(0,1fr))" } }}>
             {[[L.checkTitle, L.checkBody], [L.scopeQ, L.scope]].map(([q, a]) => (

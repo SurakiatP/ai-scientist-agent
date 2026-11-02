@@ -75,7 +75,7 @@ Paper elevation 0 and 1px hairlines inside the app; floating surfaces (landing h
 
 ## Landing
 
-A floating header bar; hero with a three-line heading (last line navy) beside an answer sheet figure built from markup; a strip of numbers read from the code (sources, fields, languages, export formats); then numbered sections ("01 //" with a hairline) for the statement, capabilities (one lead card plus a ruled list of the other tools), how it works, where data goes (a 2x2 ledger, the external hop tinted violet), and FAQ; a closing card with the call to action. Section numbers and labels are the user's explicit reference, not a default.
+A floating header bar; hero with a two-line heading across the full width (last phrase navy) above the lead and an answer sheet figure built from markup; a strip of numbers read from the code (sources, fields, languages, export formats); then plain sections (heading only: no eyebrow labels, no decorative numerals) for the statement, capabilities (one lead card plus a ruled list of the other tools), how it works, where data goes (a 2x2 ledger, the external hop tinted violet), and FAQ; a closing card with the call to action. How it works is a real ordered list with "Step N" in words. The primary button has no resting shadow.
 
 ## Components
 
