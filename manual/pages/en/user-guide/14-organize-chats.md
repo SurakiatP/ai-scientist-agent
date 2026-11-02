@@ -17,6 +17,8 @@ A project is a group of chats. Use projects to keep each research topic apart. A
 
 {{steps:organize-flow}}
 
+{{clip:organize-video}}
+
 ## Good to know
 
 - A new project stays empty until you move or start a chat in it. When you click a project name, the system switches to that project

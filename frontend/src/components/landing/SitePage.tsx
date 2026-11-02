@@ -21,7 +21,7 @@ export function useCopy() {
 }
 
 // Shell of every public page behind the header menu: header, breadcrumb, content, and a closing way in.
-function Shell({ active, trail, wide, children }: { active: NavKey; trail: string; wide?: boolean; children: ReactNode }) {
+export function Shell({ active, trail, wide, children }: { active: NavKey; trail: string; wide?: boolean; children: ReactNode }) {
   const { lang, L } = useCopy();
   return (
     <Box lang={lang} sx={{ ...rise, position: "relative", overflow: "clip" }}>
@@ -43,9 +43,9 @@ function Shell({ active, trail, wide, children }: { active: NavKey; trail: strin
   );
 }
 
-const h1 = { m: 0, fontSize: { xs: "1.875rem", md: "2.5rem" }, fontWeight: 700, lineHeight: 1.25, textWrap: "balance" } as const;
-const lead = { m: 0, maxWidth: "46rem", fontSize: { xs: "1rem", md: "1.125rem" }, lineHeight: 1.8, color: "text.secondary", textWrap: "pretty" } as const;
-const h2 = { m: 0, fontSize: { xs: "1.375rem", md: "1.625rem" }, fontWeight: 600, lineHeight: 1.5 } as const;
+export const h1 = { m: 0, fontSize: { xs: "1.875rem", md: "2.5rem" }, fontWeight: 700, lineHeight: 1.25, textWrap: "balance" } as const;
+export const lead = { m: 0, maxWidth: "46rem", fontSize: { xs: "1rem", md: "1.125rem" }, lineHeight: 1.8, color: "text.secondary", textWrap: "pretty" } as const;
+export const h2 = { m: 0, fontSize: { xs: "1.375rem", md: "1.625rem" }, fontWeight: 600, lineHeight: 1.5 } as const;
 
 function Note({ children }: { children: ReactNode }) {
   return (
@@ -135,35 +135,6 @@ export function InfoView({ kind }: { kind: "how" | "faq" }) {
         </Box>
       ))}
       <Note>{page.note}</Note>
-    </Shell>
-  );
-}
-
-// The guide is not written yet: say so plainly and point to what exists.
-export function DocsView() {
-  const { L, P } = useCopy();
-  const d = P.docs;
-  return (
-    <Shell active="docs" trail={L.navDocs}>
-      <Box className="rise" sx={{ display: "grid", gap: 2, justifyItems: "start" }}>
-        <Box component="span" role="status" sx={{ px: 1.5, py: 0.5, borderRadius: 999, border: 1, borderColor: "evidence.unverified", color: "evidence.unverified", fontSize: "0.875rem", fontWeight: 600 }}>{L.soon}</Box>
-        <Typography component="h1" sx={h1}>{d.title}</Typography>
-        <Typography sx={lead}>{d.lead}</Typography>
-        <Typography sx={{ ...lead, fontSize: "1rem" }}>{d.body}</Typography>
-      </Box>
-      <Box component="section" aria-labelledby="docs-links" sx={{ display: "grid", gap: 2 }}>
-        <Typography id="docs-links" component="h2" sx={{ ...h2, fontSize: "1.25rem" }}>{d.links}</Typography>
-        <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 1.5, gridTemplateColumns: { xs: "minmax(0,1fr)", sm: "repeat(2, minmax(0,1fr))" } }}>
-          {([["/how-it-works", L.navHow, P.how.lead], ["/faq", L.navCheck, P.faq.lead]] as const).map(([href, t, n]) => (
-            <li key={href}>
-              <Box component={Link} href={href} sx={{ display: "grid", gap: 0.25, minHeight: 44, p: 2, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "background.paper", color: "text.primary", textDecoration: "none", transition: `border-color ${dur.quick}ms ${ease}`, "&:hover": { borderColor: "primary.main" }, ...ring }}>
-                <Typography component="span" sx={{ fontWeight: 600 }}>{t}</Typography>
-                <Typography component="span" sx={{ fontSize: "0.875rem", color: "text.secondary", lineHeight: 1.6 }}>{n}</Typography>
-              </Box>
-            </li>
-          ))}
-        </Box>
-      </Box>
     </Shell>
   );
 }

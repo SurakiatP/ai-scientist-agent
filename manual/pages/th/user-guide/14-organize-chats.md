@@ -17,6 +17,8 @@ sources: [src/lib/strings.ts, src/components/shell/ProjectTree.tsx, src/componen
 
 {{steps:organize-flow}}
 
+{{clip:organize-video}}
+
 ## ข้อควรทราบ
 
 - โปรเจกต์ใหม่ยังว่างจนกว่าจะย้ายหรือเริ่มแชตเข้าไป เมื่อคลิกชื่อโปรเจกต์ ระบบสลับไปโปรเจกต์นั้น

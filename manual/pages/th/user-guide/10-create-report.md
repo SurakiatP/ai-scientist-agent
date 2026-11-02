@@ -19,6 +19,8 @@ sources: [src/lib/strings.ts, src/components/research/ReportPanel.tsx, src/compo
 
 {{steps:report-flow}}
 
+{{clip:report-video}}
+
 ## ข้อควรทราบ
 
 - คลิก {{ui:"ดูตัวอย่าง PDF"}} เพื่อดู PDF จริงที่จะได้ตามรูปแบบที่เลือก ไฟล์ Word ใช้เนื้อหาเดียวกัน แต่หน้าตาอาจต่างจากตัวอย่าง

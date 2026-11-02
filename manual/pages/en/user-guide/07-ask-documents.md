@@ -27,6 +27,8 @@ There are 2 ways
 
 {{steps:docs-files-flow}}
 
+{{clip:docs-video}}
+
 ## Good to know
 
 - You cannot attach PDFs together with a data file. If you attach a data file, the system analyses the data instead. See [[analyze-data]]

@@ -19,6 +19,8 @@ Use the full-screen editor when you want to change the text, set the title, and 
 
 {{steps:report-flow}}
 
+{{clip:report-video}}
+
 ## Good to know
 
 - Click {{ui:"Preview PDF"}} to see the real PDF you will get in the chosen style. The Word file has the same content, but its look may differ from the preview

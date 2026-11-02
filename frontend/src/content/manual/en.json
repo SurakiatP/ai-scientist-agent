@@ -1,0 +1,656 @@
+{
+ "book": {
+  "title": "User guide",
+  "description": "How to use AI Scientist from asking a research question to reading sourced answers and exporting a report"
+ },
+ "groups": [
+  {
+   "id": "start",
+   "title": "Start"
+  },
+  {
+   "id": "ask",
+   "title": "Ask and read"
+  },
+  {
+   "id": "files",
+   "title": "Documents and data"
+  },
+  {
+   "id": "report",
+   "title": "Reports"
+  },
+  {
+   "id": "chats",
+   "title": "Chats and projects"
+  },
+  {
+   "id": "settings",
+   "title": "Settings and usage"
+  },
+  {
+   "id": "safety",
+   "title": "Limits and help"
+  }
+ ],
+ "topics": [
+  {
+   "id": "about",
+   "file": "01-about",
+   "group": "start",
+   "title": "About this guide",
+   "summary": "This guide explains how to use AI Scientist, a web assistant for academic research. You ask a research question in Thai or English. The system plans search terms, searches scholarly sources, writes an answer from what it finds, and checks that the DOI, PMID or arXiv ID of each reference exists. You can then turn the answer into a report.",
+   "sections": [
+    {
+     "heading": "What is this guide",
+     "body": "This guide explains how to use AI Scientist, a web assistant for academic research. You ask a research question in Thai or English. The system plans search terms, searches scholarly sources, writes an answer from what it finds, and checks that the DOI, PMID or arXiv ID of each reference exists. You can then turn the answer into a report.\n\nEach chapter starts from what the reader wants to do and follows the real screens. Button and menu names in quotation marks match what you see on screen. The pictures use invented test data, not real user data."
+    },
+    {
+     "heading": "Reading order",
+     "body": "- Start with [Get started](/docs/getting-started), then read [Ask a research question](/docs/ask-a-question) and [Open the sources of an answer](/docs/read-sources)\n- If you have your own documents or data, see [Ask about PDF documents](/docs/ask-documents) and [Analyze a data file](/docs/analyze-data)\n- To turn an answer into a report, see [Create a report document from an answer](/docs/create-report)\n- Before you use an answer for real, read [What the system covers and what you must check](/docs/limits-and-safety) and [Where your data is kept and sent](/docs/data-and-privacy)\n- When a problem message appears, see [Common problems and fixes](/docs/faq)"
+    },
+    {
+     "heading": "Information pages on the website",
+     "body": "The first page of the system has menus “How it works”, “FAQ” and “Product” that describe the system in brief. You do not need them to work in the chat. The “Guide” menu on the first page still says that the guide is in development."
+    }
+   ]
+  },
+  {
+   "id": "getting-started",
+   "file": "02-getting-started",
+   "group": "start",
+   "title": "Get started",
+   "summary": "AI Scientist works right away in the browser. You do not need to register or sign in. This page takes you from the first page to the chat screen, the main place to ask research questions, read answers and browse files.",
+   "sections": [
+    {
+     "heading": "What is getting started",
+     "body": "AI Scientist works right away in the browser. You do not need to register or sign in. This page takes you from the first page to the chat screen, the main place to ask research questions, read answers and browse files.\n\n![The AI Scientist chat screen](/manual/en/chat-home.webp#1280x800 \"The AI Scientist chat screen\")\n\nThe chat screen has two parts. The left bar has the **New chat** button, the **Projects** list, the **Search chats** box and the menus **My files**, **Trash** and **Settings**. The middle is the question box with buttons for the research mode and the research field."
+    },
+    {
+     "heading": "How to get started",
+     "body": "1. Click **Get started** at the top right\n\n   ![Click Get started at the top right](/manual/en/start-open-1.webp#1280x800)\n\n2. The chat screen opens with the question box\n\n   ![The chat screen opens with the question box](/manual/en/start-open-2.webp#1280x800)"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- The left bar shows a connection status such as “Online · shared database”. See [Where your data is kept and sent](/docs/data-and-privacy) for what it means\n- The question box shows a faint sample question. Press the Tab key to put the sample question in the box, or click a sample card below it\n- You can ask in Thai or English. Change the language of the screen in [Change the language and theme](/docs/language-theme)\n- The system answers only scientific research questions. Read the limits in [What the system covers and what you must check](/docs/limits-and-safety)\n- Click **Hide sidebar** to hide the left bar and make room for the work area"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “Something went wrong”  \n  **Fix:** The page failed to render, but your chats stored in this browser are not affected. Click **Try again**\n- **Problem:** “Page not found”  \n  **Fix:** The link may be wrong or the page has moved. Click **Go to chat**"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Ask a research question](/docs/ask-a-question)\n- [Common problems and fixes](/docs/faq)"
+    }
+   ]
+  },
+  {
+   "id": "ask-a-question",
+   "file": "03-ask-a-question",
+   "group": "ask",
+   "title": "Ask a research question",
+   "summary": "The question box on the chat screen takes a research question of up to 2000 characters. Two buttons next to the send button choose how the system works.",
+   "sections": [
+    {
+     "heading": "What is asking a research question",
+     "body": "The question box on the chat screen takes a research question of up to 2000 characters. Two buttons next to the send button choose how the system works.\n\n- Mode button: **Deep research** plans search terms and searches scholarly sources, **General search** uses fewer search terms, and **Answer research** answers from results already found in that chat without searching again. You can choose it once the chat has an answer\n- Field button: **All fields** or the field that fits your topic, such as Medicine. The system then picks sources that fit better\n- While it works, the screen shows the stages (plan, search, write, check references) and papers appearing as they are found. Click **Stop** to stop the work at any time"
+    },
+    {
+     "heading": "How to ask a research question",
+     "body": "1. Click the question box and enter your research question\n\n   ![Click the question box and enter your research question](/manual/en/ask-flow-1.webp#1280x800)\n\n2. Click the research mode button\n\n   ![Click the research mode button](/manual/en/ask-flow-2.webp#1280x800)\n\n3. Choose a mode from the list\n\n   ![Choose a mode from the list](/manual/en/ask-flow-3.webp#1280x800)\n\n4. Click the research field button\n\n   ![Click the research field button](/manual/en/ask-flow-4.webp#1280x800)\n\n5. Choose a field from the list\n\n   ![Choose a field from the list](/manual/en/ask-flow-5.webp#1280x800)\n\n6. Click the paper-plane send button\n\n   ![Click the paper-plane send button](/manual/en/ask-flow-6.webp#1280x800)\n\n![Ask a question and get the answer](/manual/en/ask-video.mp4#cc \"Ask a question and get the answer\")"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- Press Enter to send the question, and hold Shift while pressing Enter to start a new line\n- In **Deep research** mode the system proposes the search plan for you to check before it starts. See [Review and edit the plan before searching](/docs/review-plan). If you turned this step off, it starts at once. See [Turn the plan review on or off](/docs/plan-setting)\n- The system searches with up to 5 search terms per question, and each search term can take up to 5 minutes\n- When several people use the system, work waits in a queue, and the screen shows your place and the estimated wait\n- If you attach a file, the send button acts differently. See [Ask about PDF documents](/docs/ask-documents) and [Analyze a data file](/docs/analyze-data)\n- The answer comes from a language model, so check the sources before you use it. See [Open the sources of an answer](/docs/read-sources)"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “Question is longer than 2000 characters”  \n  **Fix:** Shorten the question and send it again\n- **Problem:** “You already have the maximum jobs waiting. Wait for one to finish.”  \n  **Fix:** Wait for the earlier work to finish, or click **Stop** on it, then send the new question\n- **Problem:** “The queue is full. Try again shortly.”  \n  **Fix:** Wait a moment and send again\n- **Problem:** “Could not send the run. The server is not ready. Try again.”  \n  **Fix:** Send the question again. If it stays the same, see [Common problems and fixes](/docs/faq)\n- **Problem:** “The run failed. You can retry.”  \n  **Fix:** Click **Try again**"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Review and edit the plan before searching](/docs/review-plan)\n- [What the system covers and what you must check](/docs/limits-and-safety)\n- [Common problems and fixes](/docs/faq)"
+    }
+   ]
+  },
+  {
+   "id": "review-plan",
+   "file": "04-review-plan",
+   "group": "ask",
+   "title": "Review and edit the plan before searching",
+   "summary": "In Deep research mode, after you send a question, the system proposes a Research plan (editable): a list of search terms, one per item, each with a short instruction about what to take from the papers found. It does not search until you click Start search. Use this when you want the search to fit better, to drop a term you do not want, or to add a term of your own.",
+   "sections": [
+    {
+     "heading": "What is reviewing the plan",
+     "body": "In **Deep research** mode, after you send a question, the system proposes a **Research plan (editable)**: a list of search terms, one per item, each with a short instruction about what to take from the papers found. It does not search until you click **Start search**. Use this when you want the search to fit better, to drop a term you do not want, or to add a term of your own.\n\n**General search** and **Answer research** modes do not wait at this step."
+    },
+    {
+     "heading": "How to review and edit the plan",
+     "body": "1. The system shows the proposed research plan with each search term\n\n   ![The system shows the proposed research plan with each search term](/manual/en/plan-flow-1.webp#1280x800)\n\n2. Click **Edit plan**\n\n   ![Click Edit plan](/manual/en/plan-flow-2.webp#1280x800)\n\n3. Change the text in **Search term** as needed\n\n   ![Change the text in Search term as needed](/manual/en/plan-flow-3.webp#1280x800)\n\n4. Click **Add search** to search for one more term\n\n   ![Click Add search to search for one more term](/manual/en/plan-flow-4.webp#1280x800)\n\n5. Click **Start search**\n\n   ![Click Start search](/manual/en/plan-flow-5.webp#1280x800)"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- Search terms must be in English only, up to 5 of them, and at least 1 must remain\n- The **Extra instructions (optional)** box says what you want from the papers found. You can leave it empty\n- Remove a term with the trash can button at the end of its row\n- Click **Cancel** if you do not want to search\n- If the results are thin, the system may add search terms by itself while it searches and say so with “Plan adjusted”\n- If you do not want to review the plan every time, turn it off in [Turn the plan review on or off](/docs/plan-setting)"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “Search terms must be in English only”  \n  **Fix:** Change the term to English, then click **Start search** again\n- **Problem:** “Enter a search term”  \n  **Fix:** Enter a term in the empty box, or remove that row"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Ask a research question](/docs/ask-a-question)\n- [Turn the plan review on or off](/docs/plan-setting)"
+    }
+   ]
+  },
+  {
+   "id": "read-sources",
+   "file": "05-read-sources",
+   "group": "ask",
+   "title": "Open the sources of an answer",
+   "summary": "Every sentence in the answer that cites research has a source label, such as “Yucheng et al. 2023” (the first author and the year). Click a label to open a details panel on the right. It shows the authors, the year, the source, which database found it, the DOI, the identifier check, and the quoted evidence with a result saying whether the abstract supports the statement. Use it when you want to check a sentence before you cite it.",
+   "sections": [
+    {
+     "heading": "What is opening the sources",
+     "body": "Every sentence in the answer that cites research has a source label, such as “Yucheng et al. 2023” (the first author and the year). Click a label to open a details panel on the right. It shows the authors, the year, the source, which database found it, the DOI, the identifier check, and the quoted evidence with a result saying whether the abstract supports the statement. Use it when you want to check a sentence before you cite it.\n\nThe **Sources** tab above the answer lists all the sources of that answer."
+    },
+    {
+     "heading": "How to open the sources of an answer",
+     "body": "1. In the answer, click the name of a cited source, such as Yucheng et al. 2023\n\n   ![In the answer, click the name of a cited source, such as Yucheng et al. 2023](/manual/en/source-flow-1.webp#1280x800)\n\n2. The source details open on the right\n\n   ![The source details open on the right](/manual/en/source-flow-2.webp#1280x800)\n\n3. Click the button that closes the source details\n\n   ![Click the button that closes the source details](/manual/en/source-flow-3.webp#1280x800)\n\n4. Click the **Sources** tab above the answer\n\n   ![Click the Sources tab above the answer](/manual/en/source-flow-4.webp#1280x800)\n\n5. The system lists every source of the answer\n\n   ![The system lists every source of the answer](/manual/en/source-flow-5.webp#1280x800)"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- The identifier check only confirms that the DOI, PMID or arXiv ID exists. It does not confirm that the paper supports the sentence in the answer\n- The quote check has 4 results: **Supported by the abstract**, **Partly supported by the abstract**, **Not supported by the abstract** and **No quote found**. The reviewer reads only the abstract, not the full text\n- Click **Open source** at the end of the panel to read the original, and check it yourself before you use it\n- An answer from your own PDF documents uses numbers such as [1] and [2] at the end of sentences. Click one to see the page and the text in the document. See [Ask about PDF documents](/docs/ask-documents)\n- Records from some public databases (when present) appear under **Database records** below the answer"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “Could not confirm this reference exists”  \n  **Fix:** The system did not find this identifier in the checking sources. Look for the paper yourself before you use it, and do not cite it unchecked\n- **Problem:** “Could not be checked right now (the service did not answer)”  \n  **Fix:** The checking service did not answer. This does not mean the paper is fake. Wait a moment and ask again, or check the identifier yourself\n- **Problem:** “No identifier (DOI/PMID) to check”  \n  **Fix:** This item has no DOI, PMID or arXiv ID to check. Search for it by its title\n- **Problem:** “No abstract to check against”  \n  **Fix:** The system has no abstract for this paper. Open the original and read it yourself"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Copy an answer and export the references](/docs/export-references)\n- [What the system covers and what you must check](/docs/limits-and-safety)"
+    }
+   ]
+  },
+  {
+   "id": "export-references",
+   "file": "06-export-references",
+   "group": "ask",
+   "title": "Copy an answer and export the references",
+   "summary": "Below a finished answer there is a row of answer tools. Use it to copy the answer text, download the provenance file, and download the references as BibTeX or RIS to import into a reference manager such as Zotero or EndNote. The provenance file says which model, instructions and sources the answer used. The Regenerate answer button in the same row asks the same question again.",
+   "sections": [
+    {
+     "heading": "What is copying and exporting",
+     "body": "Below a finished answer there is a row of answer tools. Use it to copy the answer text, download the provenance file, and download the references as BibTeX or RIS to import into a reference manager such as Zotero or EndNote. The provenance file says which model, instructions and sources the answer used. The **Regenerate answer** button in the same row asks the same question again."
+    },
+    {
+     "heading": "How to copy an answer and export the references",
+     "body": "1. Scroll to the end of the answer to find the answer tools\n\n   ![Scroll to the end of the answer to find the answer tools](/manual/en/ref-flow-1.webp#1280x800)\n\n2. Click the copy answer icon\n\n   ![Click the copy answer icon](/manual/en/ref-flow-2.webp#1280x800)\n\n3. Click BibTeX to download the references for a reference manager\n\n   ![Click BibTeX to download the references for a reference manager](/manual/en/ref-flow-3.webp#1280x800)\n\n4. Click RIS to download the references in the other format\n\n   ![Click RIS to download the references in the other format](/manual/en/ref-flow-4.webp#1280x800)\n\n5. Click the download provenance icon to keep a file that names the model, the instructions and the sources used\n\n   ![Click the download provenance icon to keep a file that names the model, the instructions and the sources used](/manual/en/ref-flow-5.webp#1280x800)"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- The exported references are built from the sources of the answer. Check the titles and years against the originals before you use them in your writing\n- The provenance file keeps the question, the answer and the references with their identifier check, but not the abstracts of the papers\n- The download provenance button appears only on answers that have provenance data. Some older answers may not have it\n- To turn the answer into a document, see [Create a report document from an answer](/docs/create-report)"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “Copy failed”  \n  **Fix:** The browser did not allow copying. Select the text in the answer and copy it yourself"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Open the sources of an answer](/docs/read-sources)\n- [Create a report document from an answer](/docs/create-report)"
+    }
+   ]
+  },
+  {
+   "id": "ask-documents",
+   "file": "07-ask-documents",
+   "group": "files",
+   "title": "Ask about PDF documents",
+   "summary": "You can attach 1 to 5 of your own PDF files and ask about what is in them. When you attach a PDF, the system switches to From documents mode and answers only from the attached documents. It does not search other research and does not use the research field. The answer has numbers such as [1] and [2] at the end of sentences. Click a number to see the page and the text in the document that match the answer.",
+   "sections": [
+    {
+     "heading": "What is asking about PDF documents",
+     "body": "You can attach 1 to 5 of your own PDF files and ask about what is in them. When you attach a PDF, the system switches to **From documents** mode and answers only from the attached documents. It does not search other research and does not use the research field. The answer has numbers such as [1] and [2] at the end of sentences. Click a number to see the page and the text in the document that match the answer.\n\nUse it to summarise a paper, ask about its methods or limits, or read work that is not in a public database."
+    },
+    {
+     "heading": "How to ask about PDF documents",
+     "body": "There are 2 ways\n\n### Method 1 Attach the file in the question box\n\n1. Click **Attach file** in the question box and choose a PDF file from your computer; its name appears above the question box\n\n   ![Click Attach file in the question box and choose a PDF file from your computer; its name appears above the question box](/manual/en/docs-flow-1.webp#1280x800)\n\n2. Enter your question about the document\n\n   ![Enter your question about the document](/manual/en/docs-flow-2.webp#1280x800)\n\n3. Click the paper-plane send button\n\n   ![Click the paper-plane send button](/manual/en/docs-flow-3.webp#1280x800)\n\n4. The system shows the answer from the document with a reference number\n\n   ![The system shows the answer from the document with a reference number](/manual/en/docs-flow-4.webp#1280x800)\n\n### Method 2 Pick a file already uploaded to **My files**\n\n1. Click the actions button on the row of the PDF file\n\n   ![Click the actions button on the row of the PDF file](/manual/en/docs-files-flow-1.webp#1280x800)\n\n2. Choose **Ask about this document**\n\n   ![Choose Ask about this document](/manual/en/docs-files-flow-2.webp#1280x800)\n\n3. The system opens the chat with the file attached. Enter your question and click send\n\n   ![The system opens the chat with the file attached. Enter your question and click send](/manual/en/docs-files-flow-3.webp#1280x800)\n\n![Ask about an uploaded PDF](/manual/en/docs-video.mp4#cc \"Ask about an uploaded PDF\")"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- You cannot attach PDFs together with a data file. If you attach a data file, the system analyses the data instead. See [Analyze a data file](/docs/analyze-data)\n- The system reads at most the first 300 pages of each file\n- The **Reproduction plan** button, which appears when you attach a PDF, makes the system list what is needed to reproduce the paper: the main results, the data, the methods, the steps, and what the paper does not say. The system does not run any code\n- The text of the attached documents is sent to the language model to write the answer, so do not attach documents that must not be disclosed. See [Where your data is kept and sent](/docs/data-and-privacy)\n- An attached PDF also appears in **My files**. See [Upload and preview files](/docs/manage-files)\n- Always check the answer against the document. The system quotes the text and gives the page so you can check"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “You can attach up to 5 PDFs”  \n  **Fix:** Remove some attachments with **Remove file**, then attach again\n- **Problem:** “Choose PDFs or one data file, not both”  \n  **Fix:** Attach only PDFs, or only one data file\n- **Problem:** “sample-paper.pdf could not be read as a PDF (it may be damaged or password-protected)”  \n  **Fix:** Open the file in a PDF reader to check it, remove the password, then attach it again\n- **Problem:** “sample-paper.pdf has no extractable text (it may be a scanned image)”  \n  **Fix:** Use a file whose text can be selected, not a scanned image\n- **Problem:** “The selected document was not found (it may have been deleted)”  \n  **Fix:** Attach the PDF again\n- **Problem:** “Asking about documents needs the server's shared database, which is not available”  \n  **Fix:** Ask the server administrator to connect the shared database"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Open the sources of an answer](/docs/read-sources)\n- [Upload and preview files](/docs/manage-files)\n- [Where your data is kept and sent](/docs/data-and-privacy)"
+    }
+   ]
+  },
+  {
+   "id": "analyze-data",
+   "file": "08-analyze-data",
+   "group": "files",
+   "title": "Analyze a data file",
+   "summary": "Attach a table file (CSV, XLSX, Parquet or JSON) and ask in plain language. The system writes and runs a Python script in a container with no internet, then shows the result as tables, charts and findings. Use it to compare groups, find averages or draw charts from your own data.",
+   "sections": [
+    {
+     "heading": "What is analyzing a data file",
+     "body": "Attach a table file (CSV, XLSX, Parquet or JSON) and ask in plain language. The system writes and runs a Python script in a container with no internet, then shows the result as tables, charts and findings. Use it to compare groups, find averages or draw charts from your own data.\n\nWhen a data file is attached, the send button analyses that data instead of searching the literature."
+    },
+    {
+     "heading": "How to analyze a data file",
+     "body": "1. Go to **My files** in the left bar\n\n   ![Go to My files in the left bar](/manual/en/data-flow-1.webp#1280x800)\n\n2. Click the actions button on the row of the data file\n\n   ![Click the actions button on the row of the data file](/manual/en/data-flow-2.webp#1280x800)\n\n3. Choose **Analyze**\n\n   ![Choose Analyze](/manual/en/data-flow-3.webp#1280x800)\n\n4. Enter your question about the attached data\n\n   ![Enter your question about the attached data](/manual/en/data-flow-4.webp#1280x800)\n\n5. Click the paper-plane send button\n\n   ![Click the paper-plane send button](/manual/en/data-flow-5.webp#1280x800)\n\n6. The system shows the analysis with tables and a chart\n\n   ![The system shows the analysis with tables and a chart](/manual/en/data-flow-6.webp#1280x800)"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- The result has the tabs **Overview**, **Tables**, **Charts**, **Findings** and **Code and run log**, and a button to download the result table\n- The system shows the stages it went through: profile the file, write the script, run the analysis, repair the script (if needed) and store the results\n- A language model wrote the script. Before you use the numbers, open the **Code and run log** tab and check that it computed what you meant\n- A table in the result may show only the first rows, and a very large file may be cut at the row limit. The system says so in the result\n- You can ask only about the data in the file. To search the literature, remove the file first. See [Ask a research question](/docs/ask-a-question)\n- You can also choose the same file from **My files** and click **Analyze**. See [Upload and preview files](/docs/manage-files)"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “This question is not about the uploaded data.”  \n  **Fix:** Ask about the table in the file, for example compare the mean of each group\n- **Problem:** “This is a literature question, not an analysis of the uploaded file.”  \n  **Fix:** To search the literature, remove the file and ask again\n- **Problem:** “File analysis is not enabled on this server”  \n  **Fix:** Ask the server administrator to turn on file analysis\n- **Problem:** “Could not upload the file”  \n  **Fix:** Check that the file is a supported type and not damaged, then attach it again"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Upload and preview files](/docs/manage-files)\n- [What the system covers and what you must check](/docs/limits-and-safety)"
+    }
+   ]
+  },
+  {
+   "id": "manage-files",
+   "file": "09-manage-files",
+   "group": "files",
+   "title": "Upload and preview files",
+   "summary": "The My files menu lists the files you uploaded, the files you attached in the question box, and the documents saved from a report. Each row shows the name, type, size, upload date and project. Use it to upload a file ahead of time, check what is in a file, or download it again.",
+   "sections": [
+    {
+     "heading": "What is uploading and previewing files",
+     "body": "The **My files** menu lists the files you uploaded, the files you attached in the question box, and the documents saved from a report. Each row shows the name, type, size, upload date and project. Use it to upload a file ahead of time, check what is in a file, or download it again.\n\nThe menu of each file has **Preview**, **Download**, **Rename**, **Analyze** (data files) or **Ask about this document** (PDF), **Move to project** and **Delete**."
+    },
+    {
+     "heading": "How to upload and preview files",
+     "body": "1. Click **Upload a file** and choose a file from your computer; the system adds it to the list\n\n   ![Click Upload a file and choose a file from your computer; the system adds it to the list](/manual/en/files-flow-1.webp#1280x800)\n\n2. Click the actions button on the row of the file\n\n   ![Click the actions button on the row of the file](/manual/en/files-flow-2.webp#1280x800)\n\n3. Choose **Preview**\n\n   ![Choose Preview](/manual/en/files-flow-3.webp#1280x800)\n\n4. The system shows the first rows of the file in a preview window\n\n   ![The system shows the first rows of the file in a preview window](/manual/en/files-flow-4.webp#1280x800)"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- You can upload CSV, XLSX, Parquet and JSON to analyse, and PDF to ask about documents\n- The preview shows only the first rows of a table file\n- You can rename a file. The new name must not be empty, must be at most 120 characters, and must keep the same extension\n- Deleting a file moves it to the trash for 7 days, then removes it from storage for good. See [Restore an item from the trash](/docs/trash)\n- Use the **Search files** box to find a file by name\n- PDF and Word files saved from a report are listed here too. See [Create a report document from an answer](/docs/create-report)"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “The file is no longer in storage”  \n  **Fix:** Click **Remove from list**, then upload the file again\n- **Problem:** “File storage is unavailable right now. Try again later”  \n  **Fix:** Wait a moment and try again\n- **Problem:** “The file is too large to preview”  \n  **Fix:** Download the file and open it in a program on your computer\n- **Problem:** “No preview for this file type”  \n  **Fix:** Download the file and open it in a program on your computer\n- **Problem:** “The file extension must stay .csv”  \n  **Fix:** Give the new name, keeping the same extension at the end\n- **Problem:** “The name is longer than 120 characters”  \n  **Fix:** Use a shorter name"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Analyze a data file](/docs/analyze-data)\n- [Ask about PDF documents](/docs/ask-documents)\n- [Restore an item from the trash](/docs/trash)"
+    }
+   ]
+  },
+  {
+   "id": "create-report",
+   "file": "10-create-report",
+   "group": "report",
+   "title": "Create a report document from an answer",
+   "summary": "From a finished answer, click Open report to open the Research report draft in the right panel. The panel has Contents to jump to a heading, Share & export to export at once as PDF, Word or Markdown or to copy the text, and Edit & create document, which opens a full-screen editor.",
+   "sections": [
+    {
+     "heading": "What is creating a report document",
+     "body": "From a finished answer, click **Open report** to open the **Research report draft** in the right panel. The panel has **Contents** to jump to a heading, **Share & export** to export at once as PDF, Word or Markdown or to copy the text, and **Edit & create document**, which opens a full-screen editor.\n\nUse the full-screen editor when you want to change the text, set the title, and choose the language, style and font before saving. A PDF or Word file you save is kept in **My files**."
+    },
+    {
+     "heading": "How to create a report document from an answer",
+     "body": "1. Click **Open report** below the answer\n\n   ![Click Open report below the answer](/manual/en/report-flow-1.webp#1280x800)\n\n2. Click **Edit & create document**\n\n   ![Click Edit & create document](/manual/en/report-flow-2.webp#1280x800)\n\n3. Edit the title and the text on the page as needed\n\n   ![Edit the title and the text on the page as needed](/manual/en/report-flow-3.webp#1280x800)\n\n4. Choose **Document language**\n\n   ![Choose Document language](/manual/en/report-flow-4.webp#1280x800)\n\n5. Choose **Document style**\n\n   ![Choose Document style](/manual/en/report-flow-5.webp#1280x800)\n\n6. Click **Save as PDF** or **Save as Word**\n\n   ![Click Save as PDF or Save as Word](/manual/en/report-flow-6.webp#1280x800)\n\n![Open the report builder from an answer](/manual/en/report-video.mp4#cc \"Open the report builder from an answer\")"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- Click **Preview PDF** to see the real PDF you will get in the chosen style. The Word file has the same content, but its look may differ from the preview\n- When you change **Document language**, the system translates the content. If the translation fails, the original language and content stay\n- **Document style** offers **Standard** and **Official**. The font is chosen in the same row\n- The **Include references** switch adds the references built from the sources at the end of the document\n- If you close the editor without saving, the system asks **Discard your edits?** because the edited document would be lost\n- Set the authors, the paper type and the closing statements in [Add the paper type, authors and closing statements](/docs/report-details). For a journal file, see [Download an article as LaTeX](/docs/export-latex)\n- The draft from the system is a starting point. You must check the content and the sources yourself. See [What the system covers and what you must check](/docs/limits-and-safety)"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “A title is required”  \n  **Fix:** Enter a title at the top of the page\n- **Problem:** “A heading is longer than 200 characters. Shorten it before creating the file”  \n  **Fix:** Shorten the heading that is too long\n- **Problem:** “A table has more than 12 columns or a cell over 500 characters. Shrink the table before making the file.”  \n  **Fix:** Reduce the columns or shorten the text in the table cells\n- **Problem:** “Over the limit the server accepts. Remove sections or paragraphs before creating the file”  \n  **Fix:** Remove or merge sections and paragraphs\n- **Problem:** “The document service is unavailable. Try again later; your form is kept”  \n  **Fix:** Wait a moment, then click the save button again\n- **Problem:** “Could not save the file. Nothing was added to My files. Try again; your form is kept”  \n  **Fix:** Click the save button again\n- **Problem:** “The preview could not be made. Check the title, sections and paragraphs”  \n  **Fix:** Fix the title, headings or paragraphs the system points out"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Add the paper type, authors and closing statements](/docs/report-details)\n- [Download an article as LaTeX](/docs/export-latex)\n- [Upload and preview files](/docs/manage-files)"
+    }
+   ]
+  },
+  {
+   "id": "report-details",
+   "file": "11-report-details",
+   "group": "report",
+   "title": "Add the paper type, authors and closing statements",
+   "summary": "The Paper details window in the document editor adds an outline, the authors, keywords, an abstract and the closing statements that journals and universities often require. Use it after you open the editor as in Create a report document from an answer.",
+   "sections": [
+    {
+     "heading": "What is adding paper details",
+     "body": "The **Paper details** window in the document editor adds an outline, the authors, keywords, an abstract and the closing statements that journals and universities often require. Use it after you open the editor as in [Create a report document from an answer](/docs/create-report).\n\nThere are 5 paper types: **Research (IMRaD)**, **Computer science paper**, **Review article**, **Thai thesis, 5 chapters** and **Research proposal**. **Insert outline** adds only the headings that are not in the document yet, at the end. Text you already wrote is not changed or removed."
+    },
+    {
+     "heading": "How to add the paper type, authors and closing statements",
+     "body": "1. Click **Paper details**\n\n   ![Click Paper details](/manual/en/details-flow-1.webp#1280x800)\n\n2. Choose **Paper type** and click **Insert outline**\n\n   ![Choose Paper type and click Insert outline](/manual/en/details-flow-2.webp#1280x800)\n\n3. Enter the **Authors**, one per line\n\n   ![Enter the Authors, one per line](/manual/en/details-flow-3.webp#1280x800)\n\n4. Enter the **Keywords**, separated by commas\n\n   ![Enter the Keywords, separated by commas](/manual/en/details-flow-4.webp#1280x800)\n\n5. Tick the **Closing statements** you want to show\n\n   ![Tick the Closing statements you want to show](/manual/en/details-flow-5.webp#1280x800)\n\n6. Click **Done**\n\n   ![Click Done](/manual/en/details-flow-6.webp#1280x800)"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- **Authors**: one person per line, the full name and then the affiliation (optional), separated by a comma. Up to 20 people\n- **Keywords**: separated by commas, up to 8\n- **Abstract**: plain text, can be left empty. If you fill it in, it shows under the title\n- **Closing statements** has 4 items: Use of generative AI, Data and code availability, Ethics, and Conflicts of interest. They appear before the references, only the ones you tick\n- The starting text of each item is a neutral draft with square brackets [ ] to fill in. You must change it to match the facts before you use it\n- Author names can be personal data. Enter only what you want to appear in the document"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “A closing statement still has its starting text or an unfilled [ ]. Check it before submitting”  \n  **Fix:** Open the **Paper details** window, change the text of each ticked item to match the facts and fill in the [ ] parts\n- **Problem:** “All headings are already there”  \n  **Fix:** Do nothing. The document already has the headings of this type"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Create a report document from an answer](/docs/create-report)\n- [Download an article as LaTeX](/docs/export-latex)"
+    }
+   ]
+  },
+  {
+   "id": "export-latex",
+   "file": "12-export-latex",
+   "group": "report",
+   "title": "Download an article as LaTeX",
+   "summary": "If you must send an article to a journal or conference that uses LaTeX, choose a style in the LaTeX paper (.tex) group of the document editor. The system builds a .tex file for the chosen template: General article, IEEE Conference, Elsevier (elsarticle) or Springer LNCS. Use it after you open the editor as in Create a report document from an answer.",
+   "sections": [
+    {
+     "heading": "What is downloading as LaTeX",
+     "body": "If you must send an article to a journal or conference that uses LaTeX, choose a style in the **LaTeX paper (.tex)** group of the document editor. The system builds a .tex file for the chosen template: **General article**, **IEEE Conference**, **Elsevier (elsarticle)** or **Springer LNCS**. Use it after you open the editor as in [Create a report document from an answer](/docs/create-report).\n\nWhen you choose a LaTeX template, the buttons that save as PDF and Word turn into one **Download .tex** button."
+    },
+    {
+     "heading": "How to download an article as LaTeX",
+     "body": "1. Click the **Document style** box\n\n   ![Click the Document style box](/manual/en/latex-flow-1.webp#1280x800)\n\n2. Choose one in the **LaTeX paper (.tex)** group, such as IEEE Conference\n\n   ![Choose one in the LaTeX paper (.tex) group, such as IEEE Conference](/manual/en/latex-flow-2.webp#1280x800)\n\n3. Click **Download .tex**\n\n   ![Click Download .tex](/manual/en/latex-flow-3.webp#1280x800)\n\n4. Click **Show LaTeX** to check the code before downloading\n\n   ![Click Show LaTeX to check the code before downloading](/manual/en/latex-flow-4.webp#1280x800)\n\n5. The system shows the LaTeX code of the document\n\n   ![The system shows the LaTeX code of the document](/manual/en/latex-flow-5.webp#1280x800)"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- The .tex file compiles with XeLaTeX as is. For example, upload it to Overleaf and set the compiler to XeLaTeX\n- Add the authors in the file yourself before you submit\n- The font follows the template. Thai uses the Laksaman font, so you cannot choose a font\n- The .tex file downloads straight to your computer and is not kept in **My files**\n- Set the paper type, authors and closing statements before you download in [Add the paper type, authors and closing statements](/docs/report-details)"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “Could not create the file. Try again”  \n  **Fix:** Click **Download .tex** again\n- **Problem:** “Could not reach the server. Check your connection and try again”  \n  **Fix:** Check your internet connection and try again\n- **Problem:** “A title is required”  \n  **Fix:** Enter a title at the top of the page"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Create a report document from an answer](/docs/create-report)\n- [Add the paper type, authors and closing statements](/docs/report-details)"
+    }
+   ]
+  },
+  {
+   "id": "find-chats",
+   "file": "13-find-chats",
+   "group": "chats",
+   "title": "Find and open an earlier chat",
+   "summary": "Every chat is kept in the left bar. Use the Search chats box to find one by its title, then click it to see the earlier question and answer. You can ask a follow-up in the same chat.",
+   "sections": [
+    {
+     "heading": "What is finding a chat",
+     "body": "Every chat is kept in the left bar. Use the **Search chats** box to find one by its title, then click it to see the earlier question and answer. You can ask a follow-up in the same chat."
+    },
+    {
+     "heading": "How to find and open an earlier chat",
+     "body": "1. Click the **Search chats** box in the left bar\n\n   ![Click the Search chats box in the left bar](/manual/en/find-flow-1.webp#1280x800)\n\n2. Enter a word from the chat title\n\n   ![Enter a word from the chat title](/manual/en/find-flow-2.webp#1280x800)\n\n3. Click the chat you want\n\n   ![Click the chat you want](/manual/en/find-flow-3.webp#1280x800)\n\n4. The system opens that chat with its earlier answer\n\n   ![The system opens that chat with its earlier answer](/manual/en/find-flow-4.webp#1280x800)"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- The search looks at chat titles (which come from the first question), not at the text of the answers\n- Chats are listed with the most recently used first. If there are many, **Load more chats** loads older ones\n- While you search, every project that has a matching chat opens by itself\n- In an earlier chat, the **Ask follow-up** button below an answer takes you to the question box to ask more. The **Answer research** mode uses the results already found in that chat\n- To group chats, see [Organize chats in projects](/docs/organize-chats)"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “No matching chats”  \n  **Fix:** Try a shorter search word, or a word from the real chat title. Clear the search to see all chats\n- **Problem:** “No chats yet”  \n  **Fix:** You have not asked a question in this project. Click **New chat** to start. See [Ask a research question](/docs/ask-a-question)"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Organize chats in projects](/docs/organize-chats)\n- [Delete a chat](/docs/delete-chat)"
+    }
+   ]
+  },
+  {
+   "id": "organize-chats",
+   "file": "14-organize-chats",
+   "group": "chats",
+   "title": "Organize chats in projects",
+   "summary": "A project is a group of chats. Use projects to keep each research topic apart. A Personal project always exists. You can add more projects, then move existing chats into them, or start a new chat inside a project with New session.",
+   "sections": [
+    {
+     "heading": "What is organizing chats in projects",
+     "body": "A project is a group of chats. Use projects to keep each research topic apart. A **Personal** project always exists. You can add more projects, then move existing chats into them, or start a new chat inside a project with **New session**."
+    },
+    {
+     "heading": "How to organize chats in projects",
+     "body": "1. Click **New project**\n\n   ![Click New project](/manual/en/organize-flow-1.webp#1280x800)\n\n2. Enter the **Project name** (required)\n\n   ![Enter the Project name (required)](/manual/en/organize-flow-2.webp#1280x800)\n\n3. Click the tick button to add the project\n\n   ![Click the tick button to add the project](/manual/en/organize-flow-3.webp#1280x800)\n\n4. Click the actions button on the chat you want to move\n\n   ![Click the actions button on the chat you want to move](/manual/en/organize-flow-4.webp#1280x800)\n\n5. Choose a project name under **Move to project**\n\n   ![Choose a project name under Move to project](/manual/en/organize-flow-5.webp#1280x800)\n\n![Move a chat to a project and rename it](/manual/en/organize-video.mp4#cc \"Move a chat to a project and rename it\")"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- A new project stays empty until you move or start a chat in it. When you click a project name, the system switches to that project\n- You can create up to 30 projects\n- Rename a chat or a project from its actions menu: choose **Rename**, enter the **New name**, then click **Save**\n- Delete a project from its actions menu. The chats in a deleted project move to **Personal** and the project goes to the trash. The system asks you to confirm first\n- A file can also be moved to a project from the file menu. See [Upload and preview files](/docs/manage-files)"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “Project limit reached. Delete a project to add another.”  \n  **Fix:** Delete a project you no longer use, then create the new one"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Find and open an earlier chat](/docs/find-chats)\n- [Delete a chat](/docs/delete-chat)"
+    }
+   ]
+  },
+  {
+   "id": "delete-chat",
+   "file": "15-delete-chat",
+   "group": "chats",
+   "title": "Delete a chat",
+   "summary": "Delete a chat you no longer need from the left bar. A deleted chat does not vanish at once. It moves to the trash and stays for 7 days, and you can restore it as in Restore an item from the trash. Deleting a chat also deletes the memory of that session, so the Answer research mode can no longer use its earlier results.",
+   "sections": [
+    {
+     "heading": "What is deleting a chat",
+     "body": "Delete a chat you no longer need from the left bar. A deleted chat does not vanish at once. It moves to the trash and stays for 7 days, and you can restore it as in [Restore an item from the trash](/docs/trash). Deleting a chat also deletes the memory of that session, so the **Answer research** mode can no longer use its earlier results."
+    },
+    {
+     "heading": "How to delete a chat",
+     "body": "1. Click the actions button on the chat you want to delete\n\n   ![Click the actions button on the chat you want to delete](/manual/en/delete-flow-1.webp#1280x800)\n\n2. Choose **Delete**\n\n   ![Choose Delete](/manual/en/delete-flow-2.webp#1280x800)\n\n3. Click **Confirm** in the confirmation box\n\n   ![Click Confirm in the confirmation box](/manual/en/delete-flow-3.webp#1280x800)"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- If the chat is still working, the system stops that work when you delete it\n- After you delete, the message **Moved to trash** shows for a moment. Click **Undo** to bring the chat back at once\n- The trash works when the server is connected to the shared database. If it is not, see [Where your data is kept and sent](/docs/data-and-privacy)\n- You can delete every chat at once from the settings. See [Where your data is kept and sent](/docs/data-and-privacy)"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “Someone else changed this item. We loaded the latest version.”  \n  **Fix:** Someone else edited the same item. Check the list in the left bar, then delete again if it is still there"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Restore an item from the trash](/docs/trash)\n- [Organize chats in projects](/docs/organize-chats)"
+    }
+   ]
+  },
+  {
+   "id": "trash",
+   "file": "16-trash",
+   "group": "chats",
+   "title": "Restore an item from the trash",
+   "summary": "The Trash menu keeps deleted chats, projects and files for 7 days, then removes them for good. Use it when you deleted something by mistake and want it back, or when you want to delete it for good at once. The table shows Name, Type, Deleted and Time left.",
+   "sections": [
+    {
+     "heading": "What is restoring from the trash",
+     "body": "The **Trash** menu keeps deleted chats, projects and files for 7 days, then removes them for good. Use it when you deleted something by mistake and want it back, or when you want to delete it for good at once. The table shows **Name**, **Type**, **Deleted** and **Time left**."
+    },
+    {
+     "heading": "How to restore an item from the trash",
+     "body": "1. Go to **Trash** in the left bar\n\n   ![Go to Trash in the left bar](/manual/en/trash-flow-1.webp#1280x800)\n\n2. Look at the deleted items with their deletion date and the days left\n\n   ![Look at the deleted items with their deletion date and the days left](/manual/en/trash-flow-2.webp#1280x800)\n\n3. Click **Restore** on the row of the item you want\n\n   ![Click Restore on the row of the item you want](/manual/en/trash-flow-3.webp#1280x800)"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- The **Time left** column shows “n days left” and “Expires today”. Items that have expired are removed for good\n- Click **Delete forever** when you want to delete at once. The system asks “Delete ... forever? This cannot be undone.”. Click **Confirm** to confirm\n- The **Clear expired items** button removes the items that are past 7 days at once\n- The trash is shared with everyone who uses the same server, because the system has no sign-in. See [Where your data is kept and sent](/docs/data-and-privacy)\n- The trash works only when the server is connected to the shared database"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “Trash is available when the shared database is connected”  \n  **Fix:** This server is not connected to the shared database. Tell the server administrator\n- **Problem:** “Could not load the trash”  \n  **Fix:** Reload the page and try again\n- **Problem:** “That did not work. Try again.”  \n  **Fix:** Click the button of that item again\n- **Problem:** “Trash is empty”  \n  **Fix:** There are no deleted items. Deleted chats, projects and files will show up here"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Delete a chat](/docs/delete-chat)\n- [Upload and preview files](/docs/manage-files)"
+    }
+   ]
+  },
+  {
+   "id": "language-theme",
+   "file": "17-language-theme",
+   "group": "settings",
+   "title": "Change the language and theme",
+   "summary": "The Settings window lets you choose the language of the screen (ไทย or English) and the colour theme (Light, Dark or System, which follows the setting of your device). Use it to read the screen in another language, or to cut the glare in a dark room. The change applies at once.",
+   "sections": [
+    {
+     "heading": "What is changing the language and theme",
+     "body": "The **Settings** window lets you choose the language of the screen (**ไทย** or English) and the colour theme (**Light**, **Dark** or **System**, which follows the setting of your device). Use it to read the screen in another language, or to cut the glare in a dark room. The change applies at once."
+    },
+    {
+     "heading": "How to change the language and theme",
+     "body": "1. Click **Settings** at the bottom left\n\n   ![Click Settings at the bottom left](/manual/en/language-flow-1.webp#1280x800)\n\n2. Choose **ไทย** or English on the **Language** row\n\n   ![Choose ไทย or English on the Language row](/manual/en/language-flow-2.webp#1280x800)\n\n3. Choose **Light**, **Dark** or **System** on the **Theme** row\n\n   ![Choose Light, Dark or System on the Theme row](/manual/en/language-flow-3.webp#1280x800)\n\n4. Click the close button at the top right of the window\n\n   ![Click the close button at the top right of the window](/manual/en/language-flow-4.webp#1280x800)"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- The language of the screen is separate from the language of your question. You can ask in Thai or English whichever language the screen uses\n- A report document has its own **Document language** choice. See [Create a report document from an answer](/docs/create-report)\n- On the first page, before you enter the chat, the top bar also has buttons for the language and the theme\n- This setting is stored in the browser you use, so set it again if you change computer or browser"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "This task has no problem message of its own. If the screen looks wrong, see [Common problems and fixes](/docs/faq)"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Turn the plan review on or off](/docs/plan-setting)\n- [Where your data is kept and sent](/docs/data-and-privacy)"
+    }
+   ]
+  },
+  {
+   "id": "plan-setting",
+   "file": "18-plan-setting",
+   "group": "settings",
+   "title": "Turn the plan review on or off",
+   "summary": "The Review the plan before searching switch in the settings decides whether Deep research mode stops to let you review and edit the search plan before it really searches. It is on by default. Turn it off when you do not want to review the plan every time and want the search to start right after you send the question. General search and Answer research modes never wait.",
+   "sections": [
+    {
+     "heading": "What is the plan review setting",
+     "body": "The **Review the plan before searching** switch in the settings decides whether **Deep research** mode stops to let you review and edit the search plan before it really searches. It is on by default. Turn it off when you do not want to review the plan every time and want the search to start right after you send the question. **General search** and **Answer research** modes never wait."
+    },
+    {
+     "heading": "How to turn the plan review on or off",
+     "body": "1. Click **Settings** at the bottom left\n\n   ![Click Settings at the bottom left](/manual/en/plan-setting-flow-1.webp#1280x800)\n\n2. Turn the **Review the plan before searching** switch on or off\n\n   ![Turn the Review the plan before searching switch on or off](/manual/en/plan-setting-flow-2.webp#1280x800)"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- This setting is stored in the browser you use\n- When it is on, the review step is explained in [Review and edit the plan before searching](/docs/review-plan)\n- When it is off, you can still stop the work with **Stop** while it searches"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "This task has no problem message of its own. If nothing happens after you send a question, see [Common problems and fixes](/docs/faq)"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Review and edit the plan before searching](/docs/review-plan)\n- [Change the language and theme](/docs/language-theme)"
+    }
+   ]
+  },
+  {
+   "id": "data-and-privacy",
+   "file": "19-data-and-privacy",
+   "group": "safety",
+   "title": "Where your data is kept and sent",
+   "summary": "AI Scientist has no sign-in, so the chats, projects and files you create are not tied to a person. Where the server is connected to the shared database, all data is kept in that database, and everyone who can reach the same server sees and edits the same data. A status indicator sits at the bottom left of the sidebar.",
+   "sections": [
+    {
+     "heading": "Where your data is",
+     "body": "AI Scientist has no sign-in, so the chats, projects and files you create are not tied to a person. Where the server is connected to the shared database, all data is kept in that database, and everyone who can reach the same server sees and edits the same data. A status indicator sits at the bottom left of the sidebar.\n\n- “Online · shared database”: the data is in the shared database and synced\n- “Offline · waiting to sync n items”: the server cannot be reached, but you can keep working. Changes sync when you are back online\n- “Browser mode (no database)”: the data is kept only in this browser. The trash, usage and asking about documents do not work"
+    },
+    {
+     "heading": "What is sent off your computer",
+     "body": "- The question and the text found are sent to the server and to an outside language model provider to write the answer, so do not put personal data in a question\n- The text of an attached PDF is also sent to the model to answer\n- The analysis of a data file runs in a container with no internet and with limits on time and memory, but the column names and the text in cells are sent to the model that writes the script as context\n- The identifier check sends only the DOI, PMID or arXiv ID to Crossref, PubMed and arXiv\n- The **Usage** page is a summary of real questions and answers on the server, and it does not keep the question text"
+    },
+    {
+     "heading": "Deleting data and old data in the browser",
+     "body": "![The data section of the settings window](/manual/en/settings-data.webp#1280x800 \"The data section of the settings window\")\n\n- **Delete all chats** in the **Data** section of the settings deletes all chats and projects in the shared database. Nobody who uses this server will see them again. The items stay in the trash for 7 days before they are deleted for good. The system asks you to confirm first. Read the whole confirmation before you press it\n- An earlier version of the system kept chats in the browser. The **Earlier data in this browser** section says whether any was found. **Import to the shared database** imports it, and after the import everyone who can reach the server sees that data. You can press it again without creating duplicates\n- If the browser storage is full, the system tells you to delete old chats"
+    },
+    {
+     "heading": "Why it matters",
+     "body": "Because there is no sign-in, anyone who opens the same server can read your chats, files and trash. Do not keep confidential work or other people's personal data in this system. If you are not sure how your server is set up, ask the server administrator."
+    },
+    {
+     "heading": "Example",
+     "body": "Two people open the same server. The first asks a question and uploads a data file. The second opens **My files** and sees that file too, and can open the first person's chat."
+    }
+   ]
+  },
+  {
+   "id": "usage",
+   "file": "20-usage",
+   "group": "settings",
+   "title": "View the usage figures",
+   "summary": "The Usage page is a summary of real questions and answers on the server, without the question text, split by mode: Deep research, General search, Answer research, From documents, Search plan and Data analysis. Each card shows Runs, Median time, p95 time (the time that 95 out of 100 runs stay within), Avg tokens (in / out), Avg cost (USD) and the Succeeded rate. Use it to see about how much time and cost each mode takes.",
+   "sections": [
+    {
+     "heading": "What is viewing usage",
+     "body": "The **Usage** page is a summary of real questions and answers on the server, without the question text, split by mode: **Deep research**, **General search**, **Answer research**, **From documents**, **Search plan** and **Data analysis**. Each card shows **Runs**, **Median time**, **p95 time** (the time that 95 out of 100 runs stay within), **Avg tokens (in / out)**, **Avg cost (USD)** and the **Succeeded** rate. Use it to see about how much time and cost each mode takes."
+    },
+    {
+     "heading": "How to view the usage figures",
+     "body": "1. Click **Settings** at the bottom left\n\n   ![Click Settings at the bottom left](/manual/en/usage-flow-1.webp#1280x800)\n\n2. Click **View usage**\n\n   ![Click View usage](/manual/en/usage-flow-2.webp#1280x800)\n\n3. Choose the range **7 days** or **30 days**\n\n   ![Choose the range 7 days or 30 days](/manual/en/usage-flow-3.webp#1280x800)\n\n4. Read the figures of each mode in the cards below\n\n   ![Read the figures of each mode in the cards below](/manual/en/usage-flow-4.webp#1280x800)"
+    },
+    {
+     "heading": "Good to know",
+     "body": "- The figures are for everyone who uses the same server, not only you\n- Choose the range **7 days** or **30 days** with the toggle at the top of the page\n- A token is a unit of text that the language model reads and writes. It measures the amount of work and the cost\n- This page works when the server is connected to the shared database"
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “No runs in this period yet”  \n  **Fix:** Switch to **30 days**, or ask a question first\n- **Problem:** “Could not load usage”  \n  **Fix:** Reload the page and try again\n- **Problem:** “Usage is available when the shared database is connected”  \n  **Fix:** This server is not connected to the shared database. Tell the server administrator"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Where your data is kept and sent](/docs/data-and-privacy)\n- [Ask a research question](/docs/ask-a-question)"
+    }
+   ]
+  },
+  {
+   "id": "limits-and-safety",
+   "file": "21-limits-and-safety",
+   "group": "safety",
+   "title": "What the system covers and what you must check",
+   "summary": "AI Scientist answers only scientific research questions, in Thai and English. It writes the answer only from the papers it finds. If the evidence is not enough, the answer says plainly that it cannot conclude. It does not guess.",
+   "sections": [
+    {
+     "heading": "What the system answers",
+     "body": "AI Scientist answers only scientific research questions, in Thai and English. It writes the answer only from the papers it finds. If the evidence is not enough, the answer says plainly that it cannot conclude. It does not guess."
+    },
+    {
+     "heading": "What the system refuses",
+     "body": "When it refuses, the screen shows a short message and sample questions so you can go back to a research topic. No search starts.\n\n![A question the system does not answer](/manual/en/refused.webp#1280x800 \"A question the system does not answer\")\n\n- **This question is outside this tool's scope**: a question that is not scientific research\n- **This request tries to change the assistant's instructions, so it was not followed.**: text that tells the system to change its own rules\n- **This cannot be done here (for example writing work for you, a diagnosis, or reading files and secrets).**\n- In **Answer research** mode: if you ask something that needs a new search, or the chat has no results yet, the system tells you to switch the mode or search first\n- In file analysis: a question that is not about the data in the file, or a literature question, is turned back and you are told to ask again"
+    },
+    {
+     "heading": "What you must check yourself",
+     "body": "- The label that says the references were checked only confirms that the DOI, PMID or arXiv ID exists. It does not confirm that the paper supports the sentence it is cited for\n- The reviewer reads only the abstract, not the full text. So “Supported by the abstract” does not certify that the paper really supports it\n- A reference without a DOI, PMID or arXiv ID cannot be checked by identifier, and a reference that “could not be checked” may only mean the checking service did not answer\n- The language model can still be wrong. Open the original before you use it. See [Open the sources of an answer](/docs/read-sources)\n- If you stop the work before it ends, the answer is incomplete. The system says so in the answer\n- A file analysis comes from a script the model wrote. Check it in the **Code and run log** tab. See [Analyze a data file](/docs/analyze-data)\n- The closing statements of a report are neutral drafts. The author must change them to match the facts. See [Add the paper type, authors and closing statements](/docs/report-details)\n- The author is responsible for the content of the exported report"
+    },
+    {
+     "heading": "Limits to know",
+     "body": "- A question is at most 2000 characters\n- At most 5 search terms per question, and each search term can take up to 5 minutes\n- You can attach up to 5 PDFs, and the system reads the first 300 pages of each\n- When several people use the system, work waits in a queue\n- The system does not run code from attached documents, and file analysis has no internet"
+    }
+   ]
+  },
+  {
+   "id": "faq",
+   "file": "22-faq",
+   "group": "safety",
+   "title": "Common problems and fixes",
+   "summary": "The problem messages you meet most often when you use AI Scientist, and how to fix them. Look for the message you see on the screen in the list below. Problems that belong to one task are on the page of that task, such as Ask about PDF documents and Create a report document from an answer.",
+   "sections": [
+    {
+     "heading": "What this page collects",
+     "body": "The problem messages you meet most often when you use AI Scientist, and how to fix them. Look for the message you see on the screen in the list below. Problems that belong to one task are on the page of that task, such as [Ask about PDF documents](/docs/ask-documents) and [Create a report document from an answer](/docs/create-report)."
+    },
+    {
+     "heading": "Problems and fixes",
+     "body": "- **Problem:** “Could not reach the server”  \n  **Fix:** Check your internet connection and that the server is running, then reload the page. If it still fails, tell the server administrator\n- **Problem:** “The connection ended before the answer was complete”  \n  **Fix:** The answer is incomplete. Click **Try again** to ask again\n- **Problem:** “Received unreadable data from the server”  \n  **Fix:** Ask again. If it stays the same, tell the server administrator\n- **Problem:** “Request failed”  \n  **Fix:** Try again. If it keeps happening, tell the server administrator\n- **Problem:** “Could not start the run. Try again.”  \n  **Fix:** Send the question again\n- **Problem:** “Not sure the question reached the server. If it did, it will appear in this chat. Check before sending it again.”  \n  **Fix:** Wait a moment and look in this chat to see whether the question appears. Send it again only when you are sure it did not, so it does not search twice\n- **Problem:** “The server queues this run. Reload the page and try again.”  \n  **Fix:** Reload the page, then send the question again\n- **Problem:** “Another research run is in progress”  \n  **Fix:** Wait for that work to finish, or click **Stop** on it\n- **Problem:** “Could not stop the run. Try again.”  \n  **Fix:** Click **Stop** again\n- **Problem:** “The run was interrupted (for example by a reload). You can retry.”  \n  **Fix:** Click **Try again**\n- **Problem:** “No papers yet. Each search can take up to 5 minutes, and some external databases answer slowly or limit requests.”  \n  **Fix:** Keep waiting. The system is still working. If you do not want to wait, click **Stop**\n- **Problem:** “This question is outside this tool's scope”  \n  **Fix:** Ask a scientific research question. See [What the system covers and what you must check](/docs/limits-and-safety)\n- **Problem:** “The scope check could not be completed. Please try again.”  \n  **Fix:** Send the question again\n- **Problem:** “The question is too long. Please shorten it.”  \n  **Fix:** Shorten the question\n- **Problem:** “There are no search results in this session to answer from yet. Run a search first.”  \n  **Fix:** Change the mode to **Deep research** or **General search** and get an answer first, then use **Answer research**\n- **Problem:** “Browser storage is full. Delete old chats; new chats may not be saved.”  \n  **Fix:** Delete old chats you no longer use. See [Delete a chat](/docs/delete-chat)\n- **Problem:** “The sync queue is full, so some edits may not be saved. Try reconnecting.”  \n  **Fix:** Check the connection to the server, then reload the page and check that your latest edits are still there\n- **Problem:** “Someone else changed this item. We loaded the latest version.”  \n  **Fix:** Someone else edited the same item. Check that it is what you want, and do it again if needed\n- **Problem:** “This page failed to render. Try again; your chats stored in this browser are not affected.”  \n  **Fix:** Click **Try again** or reload the page"
+    },
+    {
+     "heading": "Related questions",
+     "body": "- [Ask a research question](/docs/ask-a-question)\n- [Where your data is kept and sent](/docs/data-and-privacy)\n- [What the system covers and what you must check](/docs/limits-and-safety)"
+    }
+   ]
+  }
+ ]
+}

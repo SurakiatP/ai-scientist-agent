@@ -21,6 +21,8 @@ The question box on the chat screen takes a research question of up to 2000 char
 
 {{steps:ask-flow}}
 
+{{clip:ask-video}}
+
 ## Good to know
 
 - Press Enter to send the question, and hold Shift while pressing Enter to start a new line

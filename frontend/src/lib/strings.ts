@@ -1317,7 +1317,6 @@ export const landing = {
     faqLabel: "คำถามที่พบบ่อย",
     footerSub: "ไม่ต้องสมัครสมาชิก เปิดแล้วถามได้เลย",
     navDocs: "คู่มือ",
-    soon: "กำลังพัฒนา",
     home: "หน้าแรก",
     other: "ผลิตภัณฑ์อื่น",
     prev: "ก่อนหน้า",
@@ -1416,7 +1415,6 @@ export const landing = {
     faqLabel: "Questions",
     footerSub: "No sign-up. Open it and ask.",
     navDocs: "Guide",
-    soon: "In development",
     home: "Home",
     other: "More of the product",
     prev: "Previous",
@@ -1437,9 +1435,11 @@ export const landing = {
 type Block = { t: string; d: string };
 type Feature = { tab: string; blurb: string; title: string; lead: string; steps: readonly Block[]; good: readonly string[]; note: string };
 type Info = { title: string; lead: string; sections: readonly { head: string; items: readonly Block[] }[]; note: string };
+// Interface strings of the in-app manual (/docs). The manual text itself comes from src/content/manual/{th,en}.json (manual/publish-docs.mjs).
+type Docs = { navLabel: string; start: string; topics: string; read: string; topicOf: (n: number, total: number) => string; onThisPage: string; pager: string; sectionsOf: string };
 export const featureSlugs = ["chat", "deep-research", "references"] as const;
 export type FeatureSlug = (typeof featureSlugs)[number];
-export const sitePages: Record<"th" | "en", { features: Record<FeatureSlug, Feature>; how: Info; faq: Info; docs: { title: string; lead: string; body: string; links: string } }> = {
+export const sitePages: Record<"th" | "en", { features: Record<FeatureSlug, Feature>; how: Info; faq: Info; docs: Docs }> = {
   th: {
     features: {
       chat: {
@@ -1512,10 +1512,9 @@ export const sitePages: Record<"th" | "en", { features: Record<FeatureSlug, Feat
       note: "ไม่พบคำตอบที่ต้องการ? ดูภาพรวมได้ที่หน้าวิธีทำงาน",
     },
     docs: {
-      title: "คู่มือการใช้งาน",
-      lead: "คู่มือกำลังพัฒนา ยังไม่เปิดให้อ่านในตอนนี้",
-      body: "เรากำลังจัดทำคู่มือที่อธิบายการใช้งานทีละขั้น ระหว่างนี้ดูภาพรวมของแอปได้จากหน้าต่อไปนี้",
-      links: "อ่านเพิ่มเติม",
+      navLabel: "หัวข้อในคู่มือ", start: "เริ่มใน 3 ขั้น", topics: "ทุกหัวข้อ", read: "อ่านหัวข้อนี้",
+      topicOf: (n, total) => `หัวข้อที่ ${n} จาก ${total}`, onThisPage: "ในหน้านี้", pager: "หัวข้อก่อนหน้าและถัดไป",
+      sectionsOf: "หมวด",
     },
   },
   en: {
@@ -1590,10 +1589,9 @@ export const sitePages: Record<"th" | "en", { features: Record<FeatureSlug, Feat
       note: "Did not find your answer? See the overview on How it works.",
     },
     docs: {
-      title: "User guide",
-      lead: "The guide is in development and is not available to read yet.",
-      body: "We are writing a step-by-step guide. Until then, the overview of the app is on these pages.",
-      links: "Read more",
+      navLabel: "Guide topics", start: "Start in 3 steps", topics: "All topics", read: "Read this topic",
+      topicOf: (n, total) => `Topic ${n} of ${total}`, onThisPage: "On this page", pager: "Previous and next topic",
+      sectionsOf: "Group",
     },
   },
 };

@@ -26,8 +26,8 @@ books:
       - { id: settings, title: { th: การตั้งค่าและสถิติ, en: Settings and usage } }
       - { id: safety, title: { th: ขอบเขตและความช่วยเหลือ, en: Limits and help } }
 document:
-  title: คู่มือการใช้งาน AI Scientist
-  client: (รอระบุ)
+  title: { th: คู่มือการใช้งาน AI Scientist, en: AI Scientist user guide }
+  client: ""
   docNumber: (รอระบุ)
   version: "1.0"
   classification: (รอระบุ)
@@ -37,13 +37,13 @@ document:
   purpose: คู่มือนี้อธิบายวิธีใช้ AI Scientist ตั้งแต่ตั้งคำถามวิจัย อ่านคำตอบพร้อมแหล่งอ้างอิง ไปจนถึงส่งออกรายงาน
   glossary: []
   logos: []
-  developer: (รอระบุ)
+  developer: ""
 outputs:
   pdf: true
   docx: false
   dir: dist
   web: true
-media: steps
+media: steps+video
 adapter:
   type: nextjs
   data: {}

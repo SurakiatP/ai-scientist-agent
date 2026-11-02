@@ -21,6 +21,8 @@ sources: [src/lib/strings.ts, src/components/chat/Composer.tsx, src/lib/packs.ts
 
 {{steps:ask-flow}}
 
+{{clip:ask-video}}
+
 ## ข้อควรทราบ
 
 - กดปุ่ม Enter เพื่อส่งคำถาม และกด Shift ค้างพร้อม Enter เพื่อขึ้นบรรทัดใหม่

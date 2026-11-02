@@ -533,3 +533,89 @@ steps:
           th: อ่านสถิติของแต่ละโหมดในการ์ดด้านล่าง
           en: Read the figures of each mode in the cards below
         highlight: 'ul[aria-label] >> nth=0'
+
+clips:
+  ask-video:
+    url: /chat
+    storage: *st
+    caption: { th: ถามคำถามและรับคำตอบ, en: Ask a question and get the answer }
+    setup:
+      - { click: '.MuiListItemButton-root:has-text("fine-tuning") >> nth=0' }
+      - { wait: 'button:has-text("เปิดรายงาน"), button:has-text("Open report")' }
+    segments:
+      - caption: { th: เลือกโหมดตอบจากผลที่ค้นแล้วจากปุ่มโหมดการวิจัย, en: Choose the Answer research mode from the research mode button }
+        actions: [{ click: '[aria-label^="โหมดการวิจัย"], [aria-label^="Research mode"]' }, { wait: "[role=menu]" }]
+        highlight: "[role=menu]"
+      - caption: { th: ระบุคำถามในช่องคำถาม, en: Enter your question in the question box }
+        actions: [{ click: '[role^="menuitem"] >> nth=2' }, { click: "#composer" }, { fill: "#composer", value: "Summarise the main limits of these studies in two sentences." }]
+        highlight: "#composer"
+      - caption: { th: คลิกปุ่มส่ง, en: Click the send button }
+        actions: []
+        highlight: '[aria-label="ถาม"], [aria-label="Ask"]'
+      - caption: { th: คำตอบปรากฏในแชต, en: The answer appears in the chat }
+        actions: [{ click: '[aria-label="ถาม"], [aria-label="Ask"]' }, { waitMs: 3000 }, { wait: '[aria-label="ถาม"], [aria-label="Ask"]' }]
+        highlight: "#composer"
+  docs-video:
+    url: /files
+    storage: *st
+    caption: { th: ถามจากเอกสาร PDF ที่อัปโหลดไว้, en: Ask about an uploaded PDF }
+    setup: [{ wait: 'li, tr' }]
+    segments:
+      - caption: { th: คลิกปุ่มจัดการที่แถวของไฟล์ PDF, en: Click the actions button on the PDF row }
+        actions: []
+        highlight: '[aria-label^="การดำเนินการของไฟล์: sample-paper.pdf"], [aria-label^="File actions: sample-paper.pdf"]'
+      - caption: { th: เลือกถามจากเอกสาร, en: Choose Ask about this document }
+        actions: [{ click: '[aria-label^="การดำเนินการของไฟล์: sample-paper.pdf"], [aria-label^="File actions: sample-paper.pdf"]' }, { wait: "[role=menu]" }]
+        highlight: '[role=menuitem]:has-text("ถามจากเอกสาร"), [role=menuitem]:has-text("Ask about this document")'
+      - caption: { th: ระบุคำถามเกี่ยวกับเอกสาร, en: Enter your question about the document }
+        actions: [{ click: '[role=menuitem]:has-text("ถามจากเอกสาร"), [role=menuitem]:has-text("Ask about this document")' }, { wait: "#composer" }, { click: "#composer" }, { fill: "#composer", value: "Which treatment had the higher mean yield?" }]
+        highlight: "#composer"
+      - caption: { th: คลิกปุ่มส่ง, en: Click the send button }
+        actions: []
+        highlight: '[aria-label="ถาม"], [aria-label="Ask"]'
+      - caption: { th: ระบบตอบจากเอกสารพร้อมเลขอ้างอิง, en: The system answers from the document with reference numbers }
+        actions: [{ click: '[aria-label="ถาม"], [aria-label="Ask"]' }, { waitMs: 25000 }, { wait: '[aria-label="ถาม"], [aria-label="Ask"]' }]
+  report-video:
+    url: /chat
+    storage: *st
+    caption: { th: เปิดตัวสร้างรายงานจากคำตอบ, en: Open the report builder from an answer }
+    setup:
+      - { click: '.MuiListItemButton-root:has-text("fine-tuning") >> nth=0' }
+      - { wait: 'button:has-text("เปิดรายงาน"), button:has-text("Open report")' }
+    segments:
+      - caption: { th: คลิกเปิดรายงานใต้คำตอบ, en: Click Open report below the answer }
+        actions: []
+        highlight: 'button:has-text("เปิดรายงาน"), button:has-text("Open report")'
+      - caption: { th: คลิกแก้ไขและสร้างเอกสาร, en: Click Edit & create document }
+        actions: [{ click: 'button:has-text("เปิดรายงาน"), button:has-text("Open report")' }, { wait: 'button:has-text("แก้ไขและสร้างเอกสาร"), button:has-text("Edit & create document")' }]
+        highlight: 'button:has-text("แก้ไขและสร้างเอกสาร"), button:has-text("Edit & create document")'
+      - caption: { th: เลือกภาษาของเอกสาร, en: Choose the document language }
+        actions: [{ click: 'button:has-text("แก้ไขและสร้างเอกสาร"), button:has-text("Edit & create document")' }, { wait: ".MuiDialog-root textarea" }]
+        highlight: '[role=combobox] >> nth=1'
+      - caption: { th: เลือกรูปแบบเอกสาร, en: Choose the document style }
+        actions: []
+        highlight: '[role=combobox] >> nth=2'
+      - caption: { th: บันทึกเป็น PDF หรือ Word, en: Save as PDF or Word }
+        actions: []
+        highlight: 'button:has-text("บันทึกเป็น PDF"), button:has-text("Save as PDF")'
+  organize-video:
+    url: /chat
+    storage: *st
+    caption: { th: ย้ายแชตไปโปรเจกต์และเปลี่ยนชื่อ, en: Move a chat to a project and rename it }
+    setup: [{ wait: "#composer" }]
+    segments:
+      - caption: { th: คลิกปุ่มจัดการที่แชตที่ต้องการย้าย, en: Click the actions button on the chat you want to move }
+        actions: [{ hover: '.MuiListItemButton-root:has-text("fine-tuning") >> nth=0' }]
+        highlight: 'button[aria-label*="fine-tuning"] >> nth=0'
+      - caption: { th: เลือกโปรเจกต์ใต้ย้ายไปโปรเจกต์, en: Choose a project under Move to project }
+        actions: [{ click: 'button[aria-label*="fine-tuning"] >> nth=0' }, { wait: "[role=menu]" }]
+        highlight: "[role=menu]"
+      - caption: { th: ชื่อแชตอยู่ภายใต้โปรเจกต์ที่เลือก, en: The chat now sits under the chosen project }
+        actions: [{ click: '[role=menuitem]:has-text("โครงการตัวอย่าง"), [role=menuitem]:has-text("Sample project") >> nth=0' }, { waitMs: 800 }]
+        highlight: '.MuiListItemButton-root:has-text("fine-tuning") >> nth=0'
+      - caption: { th: เลือกเปลี่ยนชื่อจากเมนูของแชต, en: Choose Rename from the chat menu }
+        actions: [{ hover: '.MuiListItemButton-root:has-text("fine-tuning") >> nth=0' }, { click: 'button[aria-label*="fine-tuning"] >> nth=0' }, { wait: "[role=menu]" }]
+        highlight: '[role=menuitem]:has-text("เปลี่ยนชื่อ"), [role=menuitem]:has-text("Rename")'
+      - caption: { th: ระบุชื่อใหม่, en: Enter the new name }
+        actions: [{ click: '[role=menuitem]:has-text("เปลี่ยนชื่อ"), [role=menuitem]:has-text("Rename")' }, { wait: "input:focus" }, { fill: "input:focus", value: "Fine-tuning notes" }]
+        highlight: "input:focus"

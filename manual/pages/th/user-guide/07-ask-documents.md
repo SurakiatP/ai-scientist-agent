@@ -27,6 +27,8 @@ sources: [src/lib/strings.ts, src/components/chat/Composer.tsx, src/components/f
 
 {{steps:docs-files-flow}}
 
+{{clip:docs-video}}
+
 ## ข้อควรทราบ
 
 - แนบ PDF ปนกับไฟล์ข้อมูลไม่ได้ ถ้าแนบไฟล์ข้อมูลระบบจะวิเคราะห์ข้อมูลแทน ดู [[analyze-data]]
