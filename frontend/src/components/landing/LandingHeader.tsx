@@ -90,7 +90,7 @@ export function LandingHeader({ active }: { active?: NavKey }) {
     ...featureSlugs.map((s) => ({ value: s, label: f[s].tab, href: `/features/${s}` })),
     { value: "how", label: L.navHow, href: "/how-it-works" },
     { value: "faq", label: L.navCheck, href: "/faq" },
-    { value: "docs", label: L.navDocs, href: "/docs" },
+    { value: "docs", label: L.navDocs, href: "/docs", chip: L.soon },
   ];
   return (
     <Box component="header" sx={{ position: "sticky", top: 0, zIndex: 10, px: gutter, pt: { xs: 1, md: 1.5 } }}>

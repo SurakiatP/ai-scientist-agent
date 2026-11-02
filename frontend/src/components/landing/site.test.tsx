@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { featureSlugs, sitePages } from "@/lib/strings";
+import { featureSlugs, landing, sitePages } from "@/lib/strings";
 import { usePrefs } from "@/lib/prefs";
-import { FeatureView, InfoView } from "./SitePage";
+import { DocsView, FeatureView, InfoView } from "./SitePage";
 
 vi.mock("@mui/material", async (orig) => ({ ...(await orig<typeof import("@mui/material")>()), useColorScheme: () => ({ mode: "system", setMode: vi.fn() }) }));
 beforeEach(() => usePrefs.setState({ lang: "th" }));
@@ -25,6 +25,14 @@ describe("public pages behind the header menu", () => {
     render(<InfoView kind="faq" />);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(sitePages.th.faq.title);
     expect(screen.getByText(sitePages.th.faq.sections[0].items[0].d)).toBeInTheDocument();
+  });
+
+  it("the guide says plainly that it is in development and links to what exists", () => {
+    render(<DocsView />);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(sitePages.th.docs.title);
+    expect(screen.getAllByText(landing.th.soon).length).toBeGreaterThan(0);
+    const links = screen.getByRole("heading", { name: sitePages.th.docs.links }).parentElement!;
+    expect(within(links).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual(["/how-it-works", "/faq"]);
   });
 
   it("pages follow the language, with no login and no external links", () => {

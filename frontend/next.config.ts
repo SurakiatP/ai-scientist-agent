@@ -5,9 +5,6 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   devIndicators: false,
-  async redirects() {
-    return [{ source: "/docs", destination: "/manual/index.html", permanent: false }]; // the built user manual, copied to public/manual by manual/publish-web.sh
-  },
   output: "standalone", // the production image runs .next/standalone/server.js
 };
 
