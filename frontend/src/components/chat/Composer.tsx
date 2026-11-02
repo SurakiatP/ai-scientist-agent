@@ -60,7 +60,7 @@ const aurora = (width: number, blur: number, strength: number) => ({
   "&::before, &::after": {
     content: '""', position: "absolute", inset: 0, borderRadius: "inherit", padding: `${width}px`, background: arc, filter: blur ? `blur(${blur}px)` : "none",
     mask: "linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0)", WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)", WebkitMaskComposite: "xor",
-    opacity: 0, animation: `aurora-run 1.7s ${ease} 0.35s both, aurora-fade 1.7s linear 0.35s both`,
+    opacity: 0, animation: `aurora-run 1.7s cubic-bezier(0.4, 0, 0.2, 1) 0.35s both, aurora-fade 1.7s linear 0.35s both`,
   },
   "&::after": { transform: "scaleX(-1)" },
   "@keyframes aurora-run": { from: { "--aurora": "0deg" }, to: { "--aurora": "200deg" } },
@@ -325,7 +325,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               ))}
             </Menu>
             <IconButton aria-label={mine ? t.stop : t.ask} onClick={(e) => { if (!mine) send(); else if (e.detail < 2) void stopRun(sessionId).then((ok) => setErr(ok ? "" : t.stopFailed)); }} /* a double-click on Send must not land on Stop */ disabled={!mine && !canSend}
-              sx={{ width: 44, height: 44, alignSelf: "center", flexShrink: 0, bgcolor: "primary.main", color: "primary.contrastText", transition: `background-color ${dur.quick}ms ${ease}`, "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 35%, transparent)", color: "primary.contrastText" } }}>
+              sx={{ width: 44, height: 44, alignSelf: "center", flexShrink: 0, bgcolor: "primary.main", color: "primary.contrastText", transition: `background-color ${dur.quick}ms ${ease}, transform ${dur.quick}ms ${ease}`, "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 35%, transparent)", color: "primary.contrastText" } }}>
               <Box key={mine ? "stop" : "send"} component="span" sx={{ display: "inline-flex", ...(sw.anim ? enterPop : {}) }}>{mine ? <StopRoundedIcon /> : <SendOutlinedIcon />}</Box>
             </IconButton>
           </Box>

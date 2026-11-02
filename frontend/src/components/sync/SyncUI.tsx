@@ -1,5 +1,5 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Box, Button, Snackbar, Tooltip } from "@mui/material";
 import { dismissNotice, startSync, undoDelete, useSync } from "@/lib/sync";
 import { useHydrated } from "@/lib/history";
@@ -10,7 +10,10 @@ export function SyncLayer() {
   const t = useT();
   const notice = useSync((s) => s.notice), at = useSync((s) => s.noticeAt), undo = useSync((s) => s.undo);
   useEffect(() => { void startSync(); }, []);
-  const text = notice === "conflict" ? t.noticeConflict : notice === "remote" ? t.noticeRemote : notice === "queueFull" ? t.noticeQueueFull : "";
+  const live = notice === "conflict" ? t.noticeConflict : notice === "remote" ? t.noticeRemote : notice === "queueFull" ? t.noticeQueueFull : "";
+  const [last, setLast] = useState(live); // keep the text through the exit so the closing Alert is never empty
+  if (live && live !== last) setLast(live);
+  const text = live || last;
   return (
     <>
       <Snackbar key={at} open={!!notice} autoHideDuration={notice === "queueFull" ? 10000 : 6000} onClose={(_, r) => { if (r !== "clickaway") dismissNotice(); }} anchorOrigin={{ vertical: "bottom", horizontal: "center" }} sx={{ mb: 9 }}>

@@ -82,7 +82,10 @@ export const skeletonBar = (i: number) => ({
 
 // Finished answer: children of the markdown root rise in one after another (presentational stagger, capped).
 export const revealStagger = {
-  [NO_PREF]: Object.fromEntries(Array.from({ length: 12 }, (_, k) => [`& > :nth-child(${k + 1})`, { animation: `${rise} ${dur.slow}ms ${ease} ${Math.min(k, 7) * dur.stagger}ms both` }])),
+  [NO_PREF]: {
+    ...Object.fromEntries(Array.from({ length: 12 }, (_, k) => [`& > :nth-child(${k + 1})`, { animation: `${rise} ${dur.slow}ms ${ease} ${Math.min(k, 7) * dur.stagger}ms both` }])),
+    "& > :nth-child(n+13)": { animation: `${rise} ${dur.slow}ms ${ease} ${7 * dur.stagger}ms both` },
+  },
 };
 
 // True only when the browser positively reports no-preference, so jsdom/SSR/reduce all take the instant path.
@@ -103,15 +106,15 @@ export const leaveRow = { [NO_PREF]: { animation: `${leave} ${EXIT_MS}ms ${ease}
 // MUI transition for popovers/menus/dialogs/tooltips/toasts: Fade plus a scale (and optional rise/blur) from `from`,
 // open `enter` ms, close `exit` ms to `exitTo`. The wrapper owns its timing, so MUI's own timeout prop is ignored.
 // Reduced motion is handled by the theme zeroing transition durations; the finished state is the resting state.
-type Pop = { from: number; exitTo: number; enter: number; exit: number; y?: number; blur?: number };
-export const popTransition = ({ from, exitTo, enter, exit, y = 0, blur: b = 0 }: Pop) => {
+type Pop = { from: number; exitTo: number; enter: number; exit: number; y?: number; blur?: number; easing?: string };
+export const popTransition = ({ from, exitTo, enter, exit, y = 0, blur: b = 0, easing: eas = ease }: Pop) => {
   const pre = (sc: number, yy: number, bl: number) => ({ transform: `translateY(${yy}px) scale(${sc})`, filter: bl ? `blur(${bl}px)` : "none" });
-  const tr = (ms: number) => `opacity ${ms}ms ${ease}, transform ${ms}ms ${ease}, filter ${ms}ms ${ease}`;
+  const tr = (ms: number) => `opacity ${ms}ms ${eas}, transform ${ms}ms ${eas}, filter ${ms}ms ${eas}`;
   const set = (n: HTMLElement, v: { transform: string; filter: string }) => { n.style.transform = v.transform; n.style.filter = v.filter; };
   return forwardRef<unknown, FadeProps & { children: ReactElement }>(function PopTransition({ timeout: _t, onEnter, onEntering, onExit, onExiting, ...p }, ref) {
     void _t;
     return createElement(Fade, {
-      ref, ...p, timeout: { enter, exit }, easing: ease,
+      ref, ...p, timeout: { enter, exit }, easing: eas,
       onEnter: (n: HTMLElement, a: boolean) => { set(n, pre(from, y, b)); n.style.transition = tr(enter); void n.offsetHeight; onEnter?.(n, a); },
       onEntering: (n: HTMLElement, a: boolean) => { set(n, { transform: "none", filter: "none" }); onEntering?.(n, a); },
       onExit: (n: HTMLElement) => { n.style.transition = tr(exit); onExit?.(n); },

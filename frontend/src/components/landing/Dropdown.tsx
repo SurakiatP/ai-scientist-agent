@@ -25,7 +25,6 @@ export function Dropdown({ label, ariaLabel, items, selected, onSelect, icon, sx
         {icon}{label}
       </Button>
       <Menu id={id} anchorEl={el} open={!!el} onClose={close} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}
-        transitionDuration={{ enter: dur.fast, exit: dur.quick }}
         slotProps={{
           list: { "aria-label": ariaLabel, sx: { p: 0.75, display: "grid", gap: 0.25 } },
           paper: { sx: { mt: 1, minWidth: 208, maxWidth: 320, borderRadius: "16px", border: 1, borderColor: "divider", bgcolor: "background.paper", backgroundImage: "none", boxShadow: "0 16px 40px -12px rgb(14 26 44 / 0.3), 0 2px 6px rgb(14 26 44 / 0.06)" } },

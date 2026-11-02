@@ -31,7 +31,7 @@ function Btn({ label, onClick, icon, pressed, disabled }: { label: string; onCli
           // Keep the selection in the page: the button must not steal focus from the editor.
           onMouseDown={(e) => e.preventDefault()}
           onClick={onClick}
-          sx={{ ...SIZE, flex: "none", transition: `background-color ${dur.quick}ms ${ease}, color ${dur.quick}ms ${ease}`, ...(pressed && { bgcolor: "action.selected", color: "primary.main" }) }}
+          sx={{ ...SIZE, flex: "none", transition: `background-color ${dur.quick}ms ${ease}, color ${dur.quick}ms ${ease}, transform ${dur.quick}ms ${ease}`, ...(pressed && { bgcolor: "action.selected", color: "primary.main" }) }}
         >
           {icon}
         </IconButton>
