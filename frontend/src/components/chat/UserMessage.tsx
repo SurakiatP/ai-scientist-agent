@@ -13,6 +13,7 @@ import { docsOf } from "@/lib/sources";
 import { canStart, startAnalysis, startDocs, startError, startRun, useRunState } from "@/lib/run";
 import { focusComposer, useDraft, useStartErr } from "./Composer";
 import { MAX_QUESTION } from "@/lib/strings";
+import { dur, easing } from "@/lib/motion";
 
 export const Time = ({ ts }: { ts: number }) => {
   const lang = usePrefs((s) => s.lang);
@@ -123,7 +124,7 @@ export function UserMessage({ sessionId, turn }: { sessionId: string; turn: Turn
       )}
       <Time ts={turn.createdAt} />
       {!editing && (
-        <Stack className="um-actions" role="group" aria-label={t.msgActions} direction="row" sx={{ alignItems: "center", [fine]: { opacity: 0, "@media (prefers-reduced-motion: no-preference)": { transition: "opacity 150ms ease-out" } } }}>
+        <Stack className="um-actions" role="group" aria-label={t.msgActions} direction="row" sx={{ alignItems: "center", [fine]: { opacity: 0, "@media (prefers-reduced-motion: no-preference)": { transition: `opacity ${dur.quick}ms ${easing.out}` } } }}>
           <Box role="status" sx={{ fontSize: "0.75rem", color: "text.secondary", mr: 0.5 }}>{copied === "fail" ? t.copyFailed : copied === "ok" ? t.copied : ""}</Box>
           <Tooltip title={t.copyMsg}>
             <IconButton aria-label={`${t.copyMsg}: ${name}`} onClick={copy} sx={btn}><ContentCopyRoundedIcon fontSize="small" /></IconButton>

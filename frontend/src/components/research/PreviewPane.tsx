@@ -1,7 +1,7 @@
 "use client";
 import { srOnly } from "@/lib/config";
 import { Alert, Box, Button, Link, Stack, Typography } from "@mui/material";
-import { enterFade, skeletonBar } from "@/lib/motion";
+import { dur, ease, enterFade, skeletonBar } from "@/lib/motion";
 import type { PreviewError, usePreview } from "@/lib/preview";
 import { useT } from "@/lib/prefs";
 import type { Strings } from "@/lib/strings";
@@ -30,7 +30,7 @@ export function PreviewPane({ p, issue }: { p: ReturnType<typeof usePreview>; is
       <Box sx={{ position: "relative", aspectRatio: "210 / 297", width: "100%", maxWidth: 360, mx: "auto", border: 1, borderColor: "divider", borderRadius: 1.5, overflow: "hidden", bgcolor: "surface.raised" }}>
         {p.url && (
           // No `sandbox`: Chrome refuses to show a PDF in a sandboxed frame. The document is a blob of our own renderer's PDF (plain text in, no scripts written) shown by the browser's isolated PDF viewer; the link below opens it if a browser cannot embed PDFs.
-          <Box component="iframe" key={p.url} src={p.url} title={t.pvFrame} sx={{ ...enterFade, display: "block", width: "100%", height: "100%", border: 0, bgcolor: "#fff", opacity: p.busy ? 0.45 : 1, transition: "opacity 200ms" }} />
+          <Box component="iframe" key={p.url} src={p.url} title={t.pvFrame} sx={{ ...enterFade, display: "block", width: "100%", height: "100%", border: 0, bgcolor: "#fff", opacity: p.busy ? 0.45 : 1, transition: `opacity ${dur.fast}ms ${ease}` }} />
         )}
         {!p.url && p.busy && <SkeletonPage />}
         {!p.url && !p.busy && (

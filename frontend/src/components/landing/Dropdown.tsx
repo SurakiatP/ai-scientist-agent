@@ -3,6 +3,7 @@ import { useId, useState } from "react";
 import { Box, Button, ListItemIcon, Menu, MenuItem } from "@mui/material";
 import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
+import { dur, ease } from "@/lib/motion";
 
 export type DropItem = { value: string; label: string; href?: string; lang?: string; icon?: React.ReactNode; note?: string; chip?: string };
 
@@ -24,7 +25,7 @@ export function Dropdown({ label, ariaLabel, items, selected, onSelect, icon, sx
         {icon}{label}
       </Button>
       <Menu id={id} anchorEl={el} open={!!el} onClose={close} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}
-        transitionDuration={{ enter: 220, exit: 120 }}
+        transitionDuration={{ enter: dur.fast, exit: dur.quick }}
         slotProps={{
           list: { "aria-label": ariaLabel, sx: { p: 0.75, display: "grid", gap: 0.25 } },
           paper: { sx: { mt: 1, minWidth: 208, maxWidth: 320, borderRadius: "16px", border: 1, borderColor: "divider", bgcolor: "background.paper", backgroundImage: "none", boxShadow: "0 16px 40px -12px rgb(14 26 44 / 0.3), 0 2px 6px rgb(14 26 44 / 0.06)" } },
@@ -38,11 +39,11 @@ export function Dropdown({ label, ariaLabel, items, selected, onSelect, icon, sx
               onClick={() => { onSelect?.(it.value); close(); }}
               sx={{
                 minHeight: 44, gap: 1.5, px: 1.5, py: 0.75, borderRadius: "10px", fontSize: "0.9375rem", fontWeight: on ? 600 : 500, color: on ? "primary.main" : "text.primary",
-                transition: "background-color 140ms ease-out, color 140ms ease-out",
+                transition: `background-color ${dur.quick}ms ${ease}, color ${dur.quick}ms ${ease}`,
                 "&:hover": { bgcolor: "action.hover" },
                 "&.Mui-focusVisible": { bgcolor: "action.hover", outline: "2px solid", outlineColor: "primary.main", outlineOffset: -2 },
                 "&.Mui-selected, &.Mui-selected:hover, &.Mui-selected.Mui-focusVisible": { bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.12)" },
-                "@media (prefers-reduced-motion: no-preference)": { animation: `dd-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both`, animationDelay: `${i * 35}ms`, "@keyframes dd-in": { from: { transform: "translateY(-4px)" }, to: { transform: "none" } } },
+                "@media (prefers-reduced-motion: no-preference)": { animation: `dd-in ${dur.fast}ms ${ease} both`, animationDelay: `${i * dur.stagger}ms`, "@keyframes dd-in": { from: { transform: "translateY(-4px)" }, to: { transform: "none" } } },
               }}
             >
               {it.icon && <ListItemIcon sx={{ minWidth: 0, width: 32, height: 32, justifyContent: "center", borderRadius: 2, color: "inherit", bgcolor: on ? "rgb(var(--mui-palette-primary-mainChannel) / 0.14)" : "action.hover" }}>{it.icon}</ListItemIcon>}

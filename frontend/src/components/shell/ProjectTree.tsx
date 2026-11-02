@@ -11,7 +11,7 @@ import { create } from "zustand";
 import { UI } from "@/lib/config";
 import { PERSONAL, useChatStore } from "@/lib/chat";
 import { useHydrated } from "@/lib/history";
-import { canAnimate, ease } from "@/lib/motion";
+import { canAnimate, dur, ease } from "@/lib/motion";
 import { usePrefs, useT } from "@/lib/prefs";
 import { useGoChat } from "@/lib/nav";
 import { stopRun } from "@/lib/run";
@@ -32,7 +32,7 @@ export const useTreeOpen = create<{ open: string[]; toggle: (id: string) => void
   load: () => set({ open: read() }),
 }));
 
-const MS = 180;
+const MS = dur.fast;
 // Height animates 0fr -> 1fr under no-preference only; reduced motion and jsdom open/close instantly.
 function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
   // `lingering` keeps the content mounted while the closing animation plays; everything else is derived from `open`
@@ -58,7 +58,7 @@ function Collapse({ open, children }: { open: boolean; children: ReactNode }) {
 const coarse = (fine: number, touch = 44) => ({ minHeight: touch, "@media (pointer: fine)": { minHeight: fine } });
 const reveal = {
   "@media (hover: hover)": {
-    "& .kebab": { position: "absolute", right: 0, opacity: 0 },
+    "& .kebab": { position: "absolute", right: 0, opacity: 0, transition: `opacity ${dur.quick}ms ${ease}` },
     "&:hover .kebab, &:focus-within .kebab, & .kebab:has([aria-expanded=true])": { opacity: 1 },
     "&:hover .when, &:focus-within .when": { visibility: "hidden" },
   },

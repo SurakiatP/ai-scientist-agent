@@ -17,6 +17,7 @@ import { clearAllChats, useSync } from "@/lib/sync";
 import { ImportOld } from "./ImportOld";
 import { Segmented } from "./Segmented";
 import Link from "next/link";
+import { dur, ease } from "@/lib/motion";
 
 type Health = "checking" | "ok" | "down";
 
@@ -34,14 +35,13 @@ function useHealth(open: boolean): Health {
   return h;
 }
 
-const rise = keyframes`from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; }`;
+const rise = keyframes`from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; }`;
 const pulse = keyframes`0%, 100% { opacity: 1; } 50% { opacity: .35; }`;
-const EASE = "cubic-bezier(.22,1,.36,1)";
 
 // Settings row: icon + title/description left, compact radio group (or control) right; stacks under 600px.
 function Section({ labelId, title, note, icon, below, i = 0, children }: { labelId: string; title: string; note?: string; icon?: React.ReactNode; below?: boolean; i?: number; children: React.ReactNode }) {
   return (
-    <Box component="section" sx={{ display: "flex", flexDirection: below ? "column" : { xs: "column", sm: "row" }, alignItems: below ? "stretch" : { sm: "center" }, justifyContent: "space-between", gap: { xs: 1.25, sm: 2 }, px: 2, py: 1.5, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "surface.raised", animation: `${rise} 380ms ${EASE} both`, animationDelay: `${60 + i * 55}ms`, transition: "border-color 200ms ease-out, box-shadow 200ms ease-out", "&:hover": { borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 45%, transparent)" } }}>
+    <Box component="section" sx={{ display: "flex", flexDirection: below ? "column" : { xs: "column", sm: "row" }, alignItems: below ? "stretch" : { sm: "center" }, justifyContent: "space-between", gap: { xs: 1.25, sm: 2 }, px: 2, py: 1.5, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "surface.raised", animation: `${rise} ${dur.slow}ms ${ease} both`, animationDelay: `${dur.micro + i * dur.stagger}ms`, transition: `border-color ${dur.quick}ms ${ease}, box-shadow ${dur.quick}ms ${ease}`, "&:hover": { borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 45%, transparent)" } }}>
       <Box sx={{ display: "flex", gap: 1.5, minWidth: 0, flex: 1 }}>
         {icon && <Box aria-hidden sx={{ color: "primary.main", display: "grid", placeItems: "center", width: 36, height: 36, mt: -0.25, borderRadius: 2, flexShrink: 0, bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 12%, transparent)" }}>{icon}</Box>}
         <Box sx={{ minWidth: 0 }}>
@@ -78,7 +78,7 @@ export function SettingsDialog() {
           <Typography component="span" sx={{ display: "block", fontSize: "1.375rem", fontWeight: 700, lineHeight: 1.3 }}>{t.settingsTitle}</Typography>
           <Typography component="span" sx={{ display: "block", mt: 0.5, fontSize: "0.9375rem", fontWeight: 400, color: "text.secondary" }}>{t.settingsSubtitle}</Typography>
         </Box>
-        <IconButton aria-label={t.close} onClick={close} sx={{ width: 44, height: 44, "& svg": { transition: `transform 240ms ${EASE}` }, "&:hover svg": { transform: "rotate(90deg)" } }}><CloseRoundedIcon /></IconButton>
+        <IconButton aria-label={t.close} onClick={close} sx={{ width: 44, height: 44, "& svg": { transition: `transform ${dur.fast}ms ${ease}` }, "&:hover svg": { transform: "rotate(90deg)" } }}><CloseRoundedIcon /></IconButton>
       </DialogTitle>
       <DialogContent>
         <Stack spacing={1.5} sx={{ pt: 1 }}>
@@ -103,7 +103,7 @@ export function SettingsDialog() {
             <Stack spacing={1}>
               {full && <Typography role="status" sx={{ fontSize: "0.875rem", color: "error.main" }}>{t.storageFull}</Typography>}
               {confirm ? (
-                <Stack role="group" aria-label={shared ? t.deleteAllSharedConfirm : t.deleteAllConfirm} spacing={1} sx={{ animation: `${rise} 240ms ${EASE} both` }}>
+                <Stack role="group" aria-label={shared ? t.deleteAllSharedConfirm : t.deleteAllConfirm} spacing={1} sx={{ animation: `${rise} ${dur.fast}ms ${ease} both` }}>
                   <Typography sx={{ fontSize: "0.875rem" }}>{shared ? t.deleteAllSharedConfirm : t.deleteAllConfirm}</Typography>
                   <Stack direction="row" spacing={1}>
                     <Button color="error" variant="contained" autoFocus sx={{ minHeight: 44 }} onClick={() => {
@@ -120,7 +120,7 @@ export function SettingsDialog() {
                 <Button color="error" variant="outlined" sx={{ alignSelf: "flex-start", minHeight: 44 }} onClick={() => setConfirm(true)}>{t.deleteAllChats}</Button>
               )}
               <Typography role="status" sx={{ fontSize: "0.875rem", display: "flex", alignItems: "center", gap: 1 }}>
-                <Box component="span" aria-hidden sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: health === "ok" ? "evidence.verified" : health === "down" ? "error.main" : "text.secondary", transition: "background-color 300ms", animation: health === "checking" ? `${pulse} 1.1s ease-in-out infinite` : "none" }} />
+                <Box component="span" aria-hidden sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: health === "ok" ? "evidence.verified" : health === "down" ? "error.main" : "text.secondary", transition: `background-color ${dur.fast}ms ${ease}`, animation: health === "checking" ? `${pulse} 1.1s ease-in-out infinite` : "none" }} />
                 {t.backend}: {hs}
               </Typography>
             </Stack>

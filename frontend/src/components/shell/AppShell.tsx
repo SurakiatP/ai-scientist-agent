@@ -7,7 +7,7 @@ import ViewSidebarOutlinedIcon from "@mui/icons-material/ViewSidebarOutlined";
 import { SettingsDialog } from "@/components/settings/SettingsDialog";
 import { useHydrated } from "@/lib/history";
 import { UI } from "@/lib/config";
-import { ease } from "@/lib/motion";
+import { dur, ease } from "@/lib/motion";
 import { usePrefs, useT } from "@/lib/prefs";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { Mark, Sidebar } from "./Sidebar";
@@ -28,7 +28,7 @@ export function AppShell({ children, aside, asideWide }: { children: ReactNode; 
     <Box sx={{ display: "flex", height: "100dvh", position: "relative", overflow: "hidden", bgcolor: "background.default" }}>
       <Box sx={{
         display: { xs: "none", md: "block" }, width: collapsed ? 0 : W, flexShrink: 0, overflow: "hidden", visibility: collapsed ? "hidden" : "visible",
-        ...(moved && { transition: `width 260ms ${ease}, visibility 0s linear ${collapsed ? "260ms" : "0s"}` }),
+        ...(moved && { transition: `width ${dur.fast}ms ${ease}, visibility 0s linear ${collapsed ? `${dur.fast}ms` : "0s"}` }),
       }}>
         <Box sx={{ width: W, height: "100%", borderRight: 1, borderColor: "divider" }}><Sidebar onCollapse={() => { setMoved(true); set(true); }} /></Box>
       </Box>

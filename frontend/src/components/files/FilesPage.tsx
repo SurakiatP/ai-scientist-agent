@@ -10,7 +10,7 @@ import { PERSONAL, useChatStore } from "@/lib/chat";
 import { srOnly, UI } from "@/lib/config";
 import { ANALYZABLE, downloadUrl, fetchMeta, FileApiError, presignFile, registerUpload, useAttach, useFilesStore, type FileEntry } from "@/lib/files";
 import { useHydrated } from "@/lib/history";
-import { canAnimate, enterRise, enterRow, EXIT_MS, leaveRow } from "@/lib/motion";
+import { EXIT_MS, canAnimate, dur, ease, enterRise, enterRow, leaveRow } from "@/lib/motion";
 import { usePrefs, useT } from "@/lib/prefs";
 import { UploadError, uploadFile } from "@/lib/sse";
 import { focusKebab, KebabMenu, type MenuAction } from "@/components/shell/SessionMenu";
@@ -137,7 +137,7 @@ export function FilesPage() {
   const th = { ...cell, fontSize: "0.75rem", fontWeight: 700, color: "text.secondary", whiteSpace: "nowrap", bgcolor: "action.hover" } as const;
   const hideLg = { display: { xs: "none", lg: "table-cell" } } as const;
   const rowSx = (f: FileEntry, i: number) => ({
-    ...enterRow(i), transition: "background-color 120ms",
+    ...enterRow(i), transition: `background-color ${dur.quick}ms ${ease}`,
     "&:hover, &:focus-within": { bgcolor: "action.hover" },
     ...(checks[f.id] === "missing" ? { bgcolor: "color-mix(in srgb, var(--mui-palette-error-main) 6%, transparent)" } : {}),
     ...(leaving.has(f.id) ? leaveRow : {}),

@@ -22,6 +22,7 @@ import { useGoChat } from "@/lib/nav";
 import { useT } from "@/lib/prefs";
 import { ProjectTree } from "./ProjectTree";
 import { SessionList } from "./SessionList";
+import { dur, ease } from "@/lib/motion";
 
 // Opened here, rendered by the settings dialog (T6).
 export const useSettingsOpen = create<{ open: boolean; set: (o: boolean) => void }>()((set) => ({ open: false, set: (open) => set({ open }) }));
@@ -81,7 +82,7 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
       <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", px: 0.5, minHeight: 44 }}>
         {/* the brand is a link to the landing page too (same target as the home icon) */}
         <Stack component={Link} href="/" aria-label={`${t.brand}: ${t.goHome}`} onClick={() => onPick?.()} direction="row" spacing={1}
-          sx={{ alignItems: "center", minHeight: 44, px: 0.5, mx: -0.5, borderRadius: 1.5, color: "text.primary", textDecoration: "none", "&:hover": { bgcolor: "action.hover" } }}>
+          sx={{ alignItems: "center", minHeight: 44, px: 0.5, mx: -0.5, borderRadius: 1.5, color: "text.primary", textDecoration: "none", transition: `background-color ${dur.quick}ms ${ease}`, "&:hover": { bgcolor: "action.hover" } }}>
           <Box sx={{ width: 32, height: 32, borderRadius: "9px", display: "grid", placeItems: "center", bgcolor: "primary.main", color: "primary.contrastText", "& svg": { color: "inherit", width: 22, height: 22 } }}><Mark /></Box>
           <Box sx={{ minWidth: 0 }}>
             <Typography component="span" sx={{ display: "block", fontWeight: 700, fontSize: "1rem", lineHeight: 1.3, letterSpacing: "-0.01em" }}>{t.brand}</Typography>

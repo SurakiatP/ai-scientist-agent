@@ -12,6 +12,7 @@ import { useTreeOpen } from "./ProjectTree";
 import { projectName } from "./ProjectSwitcher";
 import { SessionStatus } from "./SessionStatus";
 import { ago, focusKebab, InlineConfirm, InlineRename, SessionMenu } from "./SessionMenu";
+import { dur, ease } from "@/lib/motion";
 
 export function SessionList({ query, onPick }: { query: string; onPick?: () => void }) {
   const t = useT();
@@ -45,7 +46,7 @@ export function SessionList({ query, onPick }: { query: string; onPick?: () => v
           display: "flex", alignItems: "center", position: "relative",
           // hover devices: the kebab overlays the time and shows on hover/focus; touch keeps both in the row
           "@media (hover: hover)": {
-            "& .kebab": { position: "absolute", right: 0, opacity: 0 },
+            "& .kebab": { position: "absolute", right: 0, opacity: 0, transition: `opacity ${dur.quick}ms ${ease}` },
             "&:hover .kebab, &:focus-within .kebab, & .kebab:has([aria-expanded=true])": { opacity: 1 },
             "&:hover .when, &:focus-within .when": { visibility: "hidden" },
           },

@@ -7,7 +7,7 @@ import { useEffect } from "react";
 import { LogoMark } from "@/components/landing/Dropdown";
 import { UI } from "@/lib/config";
 import { useHydrated } from "@/lib/history";
-import { wasEmpty } from "@/lib/motion";
+import { dur, ease, wasEmpty } from "@/lib/motion";
 import { usePrefs, useT } from "@/lib/prefs";
 import { sampleHints, sampleHintsEn, sampleQuestions, sampleQuestionsEn } from "@/lib/strings";
 import { Composer, focusComposer, useDraft } from "./Composer";
@@ -28,7 +28,7 @@ export function Starters({ label, sessionId }: { label: string; sessionId: strin
             sx={{
               display: "flex", flexDirection: "column", alignItems: "flex-start", justifyContent: "flex-start", textAlign: "left", gap: 1, borderColor: "color-mix(in srgb, var(--mui-palette-divider) 70%, transparent)", borderRadius: "18px", fontWeight: 400, px: 2.25, py: 2, minHeight: 112,
               bgcolor: "color-mix(in srgb, var(--mui-palette-background-paper) 55%, transparent)",
-              transition: "background-color 200ms ease-out, border-color 200ms ease-out, box-shadow 200ms ease-out, transform 200ms ease-out",
+              transition: ["background-color", "border-color", "box-shadow", "transform"].map((p) => `${p} ${dur.quick}ms ${ease}`).join(", "),
               "&:hover": { borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 40%, transparent)", bgcolor: "background.paper", boxShadow: "0 16px 32px -20px rgb(28 78 143 / 0.4)", transform: "translateY(-1px)" },
             }}>
             <Icon aria-hidden sx={{ fontSize: 22, color: "primary.main" }} />

@@ -20,8 +20,8 @@ import { PACK_IDS } from "@/lib/packs";
 import { usePrefs } from "@/lib/prefs";
 import { usableCounts } from "@/lib/sources";
 import { landing } from "@/lib/strings";
+import { dur, ease } from "@/lib/motion";
 
-const out = "cubic-bezier(0.22, 1, 0.36, 1)";
 const line = "1px solid var(--mui-palette-divider)"; // responsive border values need the full shorthand (a bare 1 loses the colour)
 const card = { borderRadius: "24px", border: 1, borderColor: "color-mix(in srgb, var(--mui-palette-divider) 60%, transparent)", bgcolor: "background.paper", boxShadow: lift } as const;
 const label = { fontSize: "0.75rem", fontWeight: 500, letterSpacing: "0.08em", color: "text.secondary", textTransform: "uppercase" } as const;
@@ -61,13 +61,13 @@ function AnswerSheet({ L }: { L: (typeof landing)["th"] | (typeof landing)["en"]
     <Box aria-hidden="true" sx={{
       position: "relative", pt: 4, mx: { xs: 1, sm: 4, md: 0 },
       "@media (prefers-reduced-motion: no-preference)": {
-        "& .fig-line": { animation: `fig-write 900ms ${out} both`, transformOrigin: "left", animationDelay: "calc(250ms + var(--i) * 110ms)" },
-        "& .fig-cite": { animation: `fig-land 420ms ${out} both`, animationDelay: "calc(500ms + var(--i) * 110ms)" },
-        "& .fig-note": { animation: `fig-slide 700ms ${out} both`, animationDelay: "1.3s" },
+        "& .fig-line": { animation: `fig-write 900ms ${ease} both`, transformOrigin: "left", animationDelay: "calc(250ms + var(--i) * 110ms)" },
+        "& .fig-cite": { animation: `fig-land 420ms ${ease} both`, animationDelay: "calc(500ms + var(--i) * 110ms)" },
+        "& .fig-note": { animation: `fig-slide 700ms ${ease} both`, animationDelay: "1.3s" },
         "& .fig-note + .fig-note": { animationDelay: "1.55s" },
         "@keyframes fig-write": { from: { transform: "scaleX(0.04)" }, to: { transform: "none" } },
         "@keyframes fig-land": { from: { transform: "translateY(-6px) scale(0.6)" }, to: { transform: "none" } },
-        "@keyframes fig-slide": { from: { transform: "translateX(14px)", filter: "blur(4px)" }, to: { transform: "none", filter: "none" } },
+        "@keyframes fig-slide": { from: { transform: "translateX(12px)", filter: "blur(3px)" }, to: { transform: "none", filter: "none" } },
       },
     }}>
       <Typography sx={{ position: "absolute", top: 0, left: 4, ...label, fontSize: "0.6875rem" }}>{L.figLabel}</Typography>
@@ -139,7 +139,7 @@ export default function Home() {
             </Box>
             <Typography sx={{ mt: 1.5, fontSize: "0.875rem", color: "text.secondary" }}>{L.footerSub}</Typography>
             <Box component={Link} href="/chat" aria-label={`${L.example}. ${L.exampleHint}`}
-              sx={{ mt: { xs: 4, md: 6 }, display: "flex", gap: 1.5, alignItems: "flex-start", maxWidth: "36rem", p: 2, borderRadius: "16px", border: 1, borderColor: "divider", bgcolor: "color-mix(in srgb, var(--mui-palette-background-paper) 55%, transparent)", color: "text.primary", textDecoration: "none", transition: `background-color 200ms ${out}, border-color 200ms ${out}`, ...ring, "&:hover": { bgcolor: "background.paper", borderColor: "primary.main" } }}>
+              sx={{ mt: { xs: 4, md: 6 }, display: "flex", gap: 1.5, alignItems: "flex-start", maxWidth: "36rem", p: 2, borderRadius: "16px", border: 1, borderColor: "divider", bgcolor: "color-mix(in srgb, var(--mui-palette-background-paper) 55%, transparent)", color: "text.primary", textDecoration: "none", transition: `background-color ${dur.quick}ms ${ease}, border-color ${dur.quick}ms ${ease}`, ...ring, "&:hover": { bgcolor: "background.paper", borderColor: "primary.main" } }}>
               <Box>
                 <Typography sx={{ fontSize: "0.75rem", color: "text.secondary" }}>{L.exampleLabel}</Typography>
                 <Typography sx={{ mt: 0.25, fontSize: "0.9375rem", lineHeight: 1.6, textWrap: "pretty" }}>“{L.example}”</Typography>

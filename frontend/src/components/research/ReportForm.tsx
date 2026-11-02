@@ -1,7 +1,7 @@
 "use client";
 import { srOnly } from "@/lib/config";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, FormControlLabel, ListSubheader, Popover, IconButton, MenuItem, Stack, Switch, TextField, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, Fade, FormControlLabel, ListSubheader, Popover, IconButton, MenuItem, Stack, Switch, TextField, Tooltip, Typography, useMediaQuery, useTheme } from "@mui/material";
 import BookmarkAddOutlinedIcon from "@mui/icons-material/BookmarkAddOutlined";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import CodeRoundedIcon from "@mui/icons-material/CodeRounded";
@@ -173,7 +173,7 @@ export function ReportForm({ turn, onClose }: { turn: Turn; onClose: () => void 
   );
   const sheetOn = wide || !pv; // below md the preview replaces the page
   return (
-    <Dialog open={x.open} fullScreen onClose={busy ? undefined : leave} aria-labelledby="rf-title" slotProps={{ transition: { onExited: x.onExited }, paper: { sx: { display: "flex", flexDirection: "column" } } }}>
+    <Dialog open={x.open} fullScreen onClose={busy ? undefined : leave} aria-labelledby="rf-title" slots={{ transition: Fade }} slotProps={{ transition: { onExited: x.onExited }, paper: { sx: { display: "flex", flexDirection: "column" } } }}>
       <Stack direction="row" useFlexGap sx={{ alignItems: "center", gap: 1, px: 2, py: 1, flexWrap: "wrap", borderBottom: 1, borderColor: "divider" }}>
         <Typography id="rf-title" component="h2" sx={{ flex: "1 1 0", minWidth: 0, fontSize: "1.0625rem", fontWeight: 700 }}>{t.fTitle}</Typography>
         {wide ? (

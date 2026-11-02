@@ -15,7 +15,7 @@ import { create } from "zustand";
 import { useChatStore } from "@/lib/chat";
 import { useStorageFull } from "@/lib/history";
 import { isPdf, registerUpload, useAttach } from "@/lib/files";
-import { ease, enterPop } from "@/lib/motion";
+import { dur, ease, enterPop } from "@/lib/motion";
 import { API_BASE } from "@/lib/config";
 import { useT, usePrefs } from "@/lib/prefs";
 import { PACK_IDS, packName, usablePack, type PackId } from "@/lib/packs";
@@ -60,7 +60,7 @@ const aurora = (width: number, blur: number, strength: number) => ({
   "&::before, &::after": {
     content: '""', position: "absolute", inset: 0, borderRadius: "inherit", padding: `${width}px`, background: arc, filter: blur ? `blur(${blur}px)` : "none",
     mask: "linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0)", WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)", WebkitMaskComposite: "xor",
-    opacity: 0, animation: `aurora-run 1.7s cubic-bezier(0.4, 0, 0.2, 1) 0.35s both, aurora-fade 1.7s linear 0.35s both`,
+    opacity: 0, animation: `aurora-run 1.7s ${ease} 0.35s both, aurora-fade 1.7s linear 0.35s both`,
   },
   "&::after": { transform: "scaleX(-1)" },
   "@keyframes aurora-run": { from: { "--aurora": "0deg" }, to: { "--aurora": "200deg" } },
@@ -220,7 +220,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
         borderColor: large ? "color-mix(in srgb, var(--mui-palette-divider) 55%, transparent)" : "divider",
         // the home composer is the page's one object: lifted off the paper with a long, soft navy shadow
         boxShadow: large ? "0 30px 60px -30px rgb(28 78 143 / 0.4), 0 2px 10px -4px rgb(14 26 44 / 0.08)" : "none",
-        transition: `border-color 180ms ${ease}, box-shadow 180ms ${ease}`,
+        transition: `border-color ${dur.quick}ms ${ease}, box-shadow ${dur.quick}ms ${ease}`,
         "&:focus-within": large
           ? { borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 55%, transparent)", boxShadow: "0 30px 60px -28px rgb(28 78 143 / 0.5), 0 0 0 4px rgb(var(--mui-palette-primary-mainChannel) / 0.08)" }
           : { borderColor: "primary.main", boxShadow: "0 0 0 1px var(--mui-palette-primary-main), 0 0 28px color-mix(in srgb, var(--mui-palette-primary-main) 28%, transparent)" },
@@ -325,7 +325,7 @@ export function Composer({ sessionId, large = false }: { sessionId: string; larg
               ))}
             </Menu>
             <IconButton aria-label={mine ? t.stop : t.ask} onClick={(e) => { if (!mine) send(); else if (e.detail < 2) void stopRun(sessionId).then((ok) => setErr(ok ? "" : t.stopFailed)); }} /* a double-click on Send must not land on Stop */ disabled={!mine && !canSend}
-              sx={{ width: 44, height: 44, alignSelf: "center", flexShrink: 0, bgcolor: "primary.main", color: "primary.contrastText", transition: `background-color 160ms ${ease}`, "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 35%, transparent)", color: "primary.contrastText" } }}>
+              sx={{ width: 44, height: 44, alignSelf: "center", flexShrink: 0, bgcolor: "primary.main", color: "primary.contrastText", transition: `background-color ${dur.quick}ms ${ease}`, "&:hover": { bgcolor: "primary.dark" }, "&.Mui-disabled": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 35%, transparent)", color: "primary.contrastText" } }}>
               <Box key={mine ? "stop" : "send"} component="span" sx={{ display: "inline-flex", ...(sw.anim ? enterPop : {}) }}>{mine ? <StopRoundedIcon /> : <SendOutlinedIcon />}</Box>
             </IconButton>
           </Box>

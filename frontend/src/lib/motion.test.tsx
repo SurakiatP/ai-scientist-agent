@@ -69,3 +69,32 @@ describe("motion", () => {
     expect(checks(container)).toBe(2);
   });
 });
+
+describe("motion tokens", () => {
+  it("exports the transitions.dev scale and CSS custom properties", async () => {
+    const m = await import("./motion");
+    expect([m.dur.quick, m.dur.fast, m.dur.medium, m.dur.slow, m.dur.verySlow]).toEqual([150, 250, 350, 400, 500]);
+    expect(m.dur.quick).toBeLessThan(m.dur.fast); // close is faster than open
+    expect(m.motionVars["--duration-very-slow"]).toBe("500ms");
+    expect(m.motionVars["--ease-smooth-out"]).toBe("cubic-bezier(0.22, 1, 0.36, 1)");
+    expect(m.ease).toBe(m.easing.smoothOut);
+  });
+
+  it("useExitClose closes synchronously under reduced motion and defers when motion is allowed", async () => {
+    const { renderHook, act } = await import("@testing-library/react");
+    const { useExitClose } = await import("./motion");
+    const pref = (noPref: boolean) => vi.stubGlobal("matchMedia", (q: string) => ({ matches: q.includes("no-preference") ? noPref : !noPref, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false }));
+    pref(false);
+    const a = vi.fn();
+    const r = renderHook(() => useExitClose(a));
+    act(() => r.result.current.close());
+    expect(a).toHaveBeenCalledTimes(1);
+    expect(r.result.current.open).toBe(true);
+    pref(true);
+    const b = vi.fn();
+    const r2 = renderHook(() => useExitClose(b));
+    act(() => r2.result.current.close());
+    expect(b).not.toHaveBeenCalled();
+    expect(r2.result.current.open).toBe(false);
+  });
+});

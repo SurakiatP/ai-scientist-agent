@@ -14,6 +14,7 @@ import { Segmented } from "@/components/settings/Segmented";
 import { useHydrated } from "@/lib/history";
 import { usePrefs } from "@/lib/prefs";
 import { featureSlugs, landing, sitePages } from "@/lib/strings";
+import { dur, ease, easing } from "@/lib/motion";
 
 export const gutter = { xs: 2, sm: 4, lg: 6 };
 export const wrap = { maxWidth: 1320, mx: "auto", px: gutter };
@@ -24,7 +25,7 @@ export const lift = "0 24px 48px -28px rgb(28 78 143 / 0.35), 0 2px 8px -2px rgb
 export function ArrowPill({ href, children, big }: { href: string; children: React.ReactNode; big?: boolean }) {
   return (
     <Button component={Link} href={href} variant="contained"
-      endIcon={<Box component="span" aria-hidden="true" className="pill-arrow" sx={{ display: "grid", placeItems: "center", width: big ? 30 : 24, height: big ? 30 : 24, borderRadius: "50%", bgcolor: "rgb(255 255 255 / 0.16)", transition: "transform 220ms cubic-bezier(0.22, 1, 0.36, 1)" }}><NorthEastRoundedIcon sx={{ fontSize: big ? 16 : 14 }} /></Box>}
+      endIcon={<Box component="span" aria-hidden="true" className="pill-arrow" sx={{ display: "grid", placeItems: "center", width: big ? 30 : 24, height: big ? 30 : 24, borderRadius: "50%", bgcolor: "rgb(255 255 255 / 0.16)", transition: `transform ${dur.fast}ms ${ease}` }}><NorthEastRoundedIcon sx={{ fontSize: big ? 16 : 14 }} /></Box>}
       sx={{ minHeight: big ? 52 : 38, pl: big ? 3 : 2, pr: big ? 1.25 : 0.75, borderRadius: 999, fontSize: big ? "1rem" : "0.875rem", whiteSpace: "nowrap", boxShadow: "0 10px 24px -12px rgb(28 78 143 / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.18)", "& .MuiButton-endIcon": { ml: 1.25, mr: 0 }, "&:hover": { bgcolor: "primary.dark", boxShadow: "0 12px 28px -12px rgb(28 78 143 / 0.8), inset 0 1px 0 rgb(255 255 255 / 0.18)", "& .pill-arrow": { transform: "translate(2px, -2px)" } }, ...ring }}>
       {children}
     </Button>
@@ -37,7 +38,7 @@ const ICON = { light: LightModeOutlinedIcon, dark: DarkModeOutlinedIcon, system:
 const link = (on: boolean) => ({
   display: "inline-flex", alignItems: "center", gap: 0.75, minHeight: 40, px: 1.5, borderRadius: 2, textDecoration: "none", fontSize: "0.9375rem", fontWeight: 500, whiteSpace: "nowrap",
   color: on ? "primary.main" : "text.secondary", bgcolor: on ? "rgb(var(--mui-palette-primary-mainChannel) / 0.1)" : "transparent",
-  transition: "background-color 160ms ease-out, color 160ms ease-out", "&:hover": { color: "primary.main", bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.1)" }, ...ring,
+  transition: `background-color ${dur.quick}ms ${ease}, color ${dur.quick}ms ${ease}`, "&:hover": { color: "primary.main", bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.1)" }, ...ring,
 }) as const;
 
 // One press changes the theme to the next of light, dark, system. The icon turns in; nothing opens.
@@ -50,7 +51,7 @@ function ThemeButton({ L }: { L: (typeof landing)["th"] | (typeof landing)["en"]
   return (
     <IconButton onClick={() => setMode(MODES[(MODES.indexOf(m as "light") + 1) % 3])} aria-label={`${L.themeLabel}: ${name}`} title={`${L.themeLabel}: ${name} · ${L.themeNext}`}
       sx={{ width: 40, height: 40, borderRadius: 2, color: "text.primary", "&:hover": { bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.1)", color: "primary.main" }, ...ring }}>
-      <Box key={m} component="span" sx={{ display: "grid", "@media (prefers-reduced-motion: no-preference)": { animation: "theme-turn 360ms cubic-bezier(0.22, 1, 0.36, 1) both", "@keyframes theme-turn": { from: { transform: "rotate(-90deg) scale(0.6)" }, to: { transform: "none" } } } }}><Icon sx={{ fontSize: 20 }} /></Box>
+      <Box key={m} component="span" sx={{ display: "grid", "@media (prefers-reduced-motion: no-preference)": { animation: `theme-turn ${dur.fast}ms ${easing.inOut} both`, "@keyframes theme-turn": { from: { transform: "rotate(-90deg) scale(0.6)" }, to: { transform: "none" } } } }}><Icon sx={{ fontSize: 20 }} /></Box>
     </IconButton>
   );
 }
@@ -63,9 +64,9 @@ function ProductMenu({ L, on }: { L: (typeof landing)["th"] | (typeof landing)["
   return (
     <>
       <Box component="button" type="button" aria-haspopup="menu" aria-expanded={el ? "true" : undefined} onClick={(e) => setEl(e.currentTarget)} sx={{ ...link(on || !!el), border: 0, font: "inherit", fontSize: "0.9375rem", fontWeight: 500, cursor: "pointer" }}>
-        {L.navProduct}<KeyboardArrowDownRoundedIcon sx={{ fontSize: 18, transition: "transform 200ms ease-out", transform: el ? "rotate(180deg)" : "none" }} />
+        {L.navProduct}<KeyboardArrowDownRoundedIcon sx={{ fontSize: 18, transition: `transform ${dur.fast}ms ${ease}`, transform: el ? "rotate(180deg)" : "none" }} />
       </Box>
-      <Menu anchorEl={el} open={!!el} onClose={() => setEl(null)} anchorOrigin={{ vertical: "bottom", horizontal: "left" }} transformOrigin={{ vertical: "top", horizontal: "left" }} transitionDuration={{ enter: 200, exit: 120 }}
+      <Menu anchorEl={el} open={!!el} onClose={() => setEl(null)} anchorOrigin={{ vertical: "bottom", horizontal: "left" }} transformOrigin={{ vertical: "top", horizontal: "left" }} transitionDuration={{ enter: dur.fast, exit: dur.quick }}
         slotProps={{ list: { "aria-label": L.navProduct, sx: { p: 0.75, display: "grid", gap: 0.25 } }, paper: { sx: { mt: 1, width: 320, maxWidth: "calc(100vw - 32px)", borderRadius: "16px", border: 1, borderColor: "divider", bgcolor: "background.paper", backgroundImage: "none", boxShadow: "0 16px 40px -12px rgb(14 26 44 / 0.3), 0 2px 6px rgb(14 26 44 / 0.06)" } } }}>
         {featureSlugs.map((slug) => (
           <MenuItem key={slug} component={Link} href={`/features/${slug}`} onClick={() => setEl(null)} sx={{ display: "grid", gap: 0.25, py: 1.25, px: 1.5, borderRadius: "10px", whiteSpace: "normal", "&:hover": { bgcolor: "action.hover" } }}>

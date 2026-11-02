@@ -9,8 +9,9 @@ import { useHydrated } from "@/lib/history";
 import { usePrefs } from "@/lib/prefs";
 import { featureSlugs, landing, sitePages, type FeatureSlug } from "@/lib/strings";
 import { LandingHeader, ring, wrap, type NavKey } from "./LandingHeader";
+import { dur, ease } from "@/lib/motion";
 
-const rise = { "@media (prefers-reduced-motion: no-preference)": { "& .rise": { animation: "site-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both", animationDelay: "calc(var(--i, 0) * 70ms)" }, "@keyframes site-rise": { from: { transform: "translateY(10px)" }, to: { transform: "none" } } } } as const;
+const rise = { "@media (prefers-reduced-motion: no-preference)": { "& .rise": { animation: `site-rise ${dur.slow}ms ${ease} both`, animationDelay: "calc(var(--i, 0) * 40ms)" }, "@keyframes site-rise": { from: { transform: "translateY(12px)" }, to: { transform: "none" } } } } as const;
 const card = { display: "grid", alignContent: "start", gap: 0.75, p: 2.5, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "background.paper" } as const;
 
 export function useCopy() {
@@ -94,7 +95,7 @@ export function FeatureView({ slug }: { slug: FeatureSlug }) {
         <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 1.5, gridTemplateColumns: { xs: "minmax(0,1fr)", sm: "repeat(3, minmax(0,1fr))" } }}>
           {featureSlugs.map((s) => (
             <li key={s}>
-              <Box component={Link} href={`/features/${s}`} aria-current={s === slug ? "page" : undefined} sx={{ display: "grid", gap: 0.25, minHeight: 44, p: 1.75, border: 1, borderColor: s === slug ? "primary.main" : "divider", borderRadius: "16px", bgcolor: s === slug ? "rgb(var(--mui-palette-primary-mainChannel) / 0.08)" : "background.paper", color: "text.primary", textDecoration: "none", transition: "border-color 160ms ease-out, background-color 160ms ease-out", "&:hover": { borderColor: "primary.main" }, ...ring }}>
+              <Box component={Link} href={`/features/${s}`} aria-current={s === slug ? "page" : undefined} sx={{ display: "grid", gap: 0.25, minHeight: 44, p: 1.75, border: 1, borderColor: s === slug ? "primary.main" : "divider", borderRadius: "16px", bgcolor: s === slug ? "rgb(var(--mui-palette-primary-mainChannel) / 0.08)" : "background.paper", color: "text.primary", textDecoration: "none", transition: `border-color ${dur.quick}ms ${ease}, background-color ${dur.quick}ms ${ease}`, "&:hover": { borderColor: "primary.main" }, ...ring }}>
                 <Typography component="span" sx={{ fontSize: "0.9375rem", fontWeight: 600 }}>{P.features[s].tab}</Typography>
                 <Typography component="span" sx={{ fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.5 }}>{P.features[s].blurb}</Typography>
               </Box>
@@ -155,7 +156,7 @@ export function DocsView() {
         <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 1.5, gridTemplateColumns: { xs: "minmax(0,1fr)", sm: "repeat(2, minmax(0,1fr))" } }}>
           {([["/how-it-works", L.navHow, P.how.lead], ["/faq", L.navCheck, P.faq.lead]] as const).map(([href, t, n]) => (
             <li key={href}>
-              <Box component={Link} href={href} sx={{ display: "grid", gap: 0.25, minHeight: 44, p: 2, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "background.paper", color: "text.primary", textDecoration: "none", transition: "border-color 160ms ease-out", "&:hover": { borderColor: "primary.main" }, ...ring }}>
+              <Box component={Link} href={href} sx={{ display: "grid", gap: 0.25, minHeight: 44, p: 2, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "background.paper", color: "text.primary", textDecoration: "none", transition: `border-color ${dur.quick}ms ${ease}`, "&:hover": { borderColor: "primary.main" }, ...ring }}>
                 <Typography component="span" sx={{ fontWeight: 600 }}>{t}</Typography>
                 <Typography component="span" sx={{ fontSize: "0.875rem", color: "text.secondary", lineHeight: 1.6 }}>{n}</Typography>
               </Box>

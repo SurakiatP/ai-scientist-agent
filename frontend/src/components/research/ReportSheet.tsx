@@ -4,7 +4,7 @@ import { EditorContent, type Editor } from "@tiptap/react";
 import { FONTS, LIM, REF_TEXT, refLines, type FontId, type RefOut, type ReportStyle } from "@/lib/exportReport";
 import { useT } from "@/lib/prefs";
 import type { Lang } from "@/lib/strings";
-import { ease, skeletonBar } from "@/lib/motion";
+import { dur, ease, skeletonBar } from "@/lib/motion";
 
 // Mirrors STYLES in backend/src/scientist/report_render.py. 1 cm = 37.8 px, 1 pt = 1.333 px.
 const cm = (n: number) => `${(n * 37.8).toFixed(1)}px`;
@@ -74,7 +74,7 @@ export function ReportSheet({ editor, wide, style, font, lang, refs, title, subt
         )}
         <Box sx={bars ? { display: "none" } : undefined}><EditorContent editor={editor} /></Box>
         {/* Generated list, read-only: grid-rows transition fades it in and out; reduced motion is handled by the theme zeroing durations. */}
-        <Box data-testid="sheet-refs" sx={{ display: "grid", gridTemplateRows: refs?.length ? "1fr" : "0fr", opacity: refs?.length ? 1 : 0, transition: `grid-template-rows 180ms ${ease}, opacity 180ms ${ease}`, "@media (prefers-reduced-motion: reduce)": { transition: "none" } }}>
+        <Box data-testid="sheet-refs" sx={{ display: "grid", gridTemplateRows: refs?.length ? "1fr" : "0fr", opacity: refs?.length ? 1 : 0, transition: `grid-template-rows ${dur.fast}ms ${ease}, opacity ${dur.fast}ms ${ease}`, "@media (prefers-reduced-motion: reduce)": { transition: "none" } }}>
           <Box sx={{ overflow: "hidden", minHeight: 0 }}>
             {!!refs?.length && (
               <Box component="section" aria-label={t.fRefsAria} sx={{ borderTop: "1px solid #d5d7db", mt: 2, pt: 1, userSelect: "text" }}>

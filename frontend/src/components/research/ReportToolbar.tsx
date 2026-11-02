@@ -16,6 +16,7 @@ import UndoRoundedIcon from "@mui/icons-material/UndoRounded";
 import ViewColumnOutlinedIcon from "@mui/icons-material/ViewColumnOutlined";
 import ViewColumnRoundedIcon from "@mui/icons-material/ViewColumnRounded";
 import { useT } from "@/lib/prefs";
+import { dur, ease } from "@/lib/motion";
 
 const SIZE = { width: 36, height: 36, borderRadius: 1, "@media (pointer: coarse)": { width: 44, height: 44 } };
 
@@ -30,7 +31,7 @@ function Btn({ label, onClick, icon, pressed, disabled }: { label: string; onCli
           // Keep the selection in the page: the button must not steal focus from the editor.
           onMouseDown={(e) => e.preventDefault()}
           onClick={onClick}
-          sx={{ ...SIZE, flex: "none", transition: "background-color 160ms cubic-bezier(0.16,1,0.3,1)", ...(pressed && { bgcolor: "action.selected", color: "primary.main" }) }}
+          sx={{ ...SIZE, flex: "none", transition: `background-color ${dur.quick}ms ${ease}, color ${dur.quick}ms ${ease}`, ...(pressed && { bgcolor: "action.selected", color: "primary.main" }) }}
         >
           {icon}
         </IconButton>
@@ -59,7 +60,7 @@ export function ReportToolbar({ editor, extra, disabled = false }: { editor: Edi
       aria-orientation="horizontal"
       aria-disabled={disabled || undefined}
       inert={disabled}
-      sx={{ opacity: disabled ? 0.5 : 1, transition: "opacity 160ms cubic-bezier(0.16,1,0.3,1)", display: "flex", alignItems: "center", gap: 0.5, px: 1.5, py: 0.75, overflowX: "auto", borderBottom: 1, borderColor: "divider", bgcolor: "background.paper", scrollbarWidth: "thin" }}
+      sx={{ opacity: disabled ? 0.5 : 1, transition: `opacity ${dur.quick}ms ${ease}`, display: "flex", alignItems: "center", gap: 0.5, px: 1.5, py: 0.75, overflowX: "auto", borderBottom: 1, borderColor: "divider", bgcolor: "background.paper", scrollbarWidth: "thin" }}
     >
       <Btn label={t.tbUndo} icon={<UndoRoundedIcon />} disabled={!s?.undo} onClick={run((c) => c.undo())} />
       <Btn label={t.tbRedo} icon={<RedoRoundedIcon />} disabled={!s?.redo} onClick={run((c) => c.redo())} />

@@ -4,7 +4,7 @@ import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Box } from "@mui/material";
 import { useInspector } from "@/lib/inspector";
-import { revealStagger } from "@/lib/motion";
+import { dur, ease, revealStagger } from "@/lib/motion";
 import { useT } from "@/lib/prefs";
 import { citeLabel } from "@/lib/refs";
 import type { Reference } from "@/lib/sse";
@@ -62,7 +62,7 @@ export function AnswerView({ content, references = [], scope, reveal, plainLinks
         "& li": { my: 0.5 },
         "& li::marker": { color: "text.secondary" },
         "& strong": { fontWeight: 700 },
-        "& a": { color: "primary.main", textDecorationColor: "color-mix(in srgb, var(--mui-palette-primary-main) 35%, transparent)", textUnderlineOffset: "3px" },
+        "& a": { color: "primary.main", textDecorationColor: "color-mix(in srgb, var(--mui-palette-primary-main) 35%, transparent)", textUnderlineOffset: "3px", transition: `text-decoration-color ${dur.quick}ms ${ease}` },
         "& a:hover": { textDecorationColor: "primary.main" },
         "& blockquote": { m: 0, my: 2, maxWidth: "68ch", px: 2, py: 1.5, bgcolor: "surface.shell", borderRadius: 1.5, color: "text.secondary" },
         "& blockquote p": { my: 0.5 },
@@ -81,7 +81,7 @@ export function AnswerView({ content, references = [], scope, reveal, plainLinks
           position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", maxWidth: "24ch", verticalAlign: "middle",
           px: 0.9, mx: 0.25, borderRadius: 999, border: 1, borderColor: "primary.main", color: "primary.main",
           fontSize: "0.75rem", fontWeight: 600, lineHeight: 1, textDecoration: "none", minWidth: 24, height: 24, "&::after": { content: '""', position: "absolute", inset: "-4px -2px" },
-          "@media (pointer: coarse)": { "&::after": { inset: "-10px -4px" } }, // 44px tall hit area on touch; the chip itself does not grow
+          transition: `background-color ${dur.quick}ms ${ease}`, "@media (pointer: coarse)": { "&::after": { inset: "-10px -4px" } }, // 44px tall hit area on touch; the chip itself does not grow
           "&:hover": { bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 14%, transparent)" },
           "&:focus-visible": { outline: "2px solid", outlineColor: "primary.main", outlineOffset: 2 },
           "& .cite-host": { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },

@@ -5,8 +5,9 @@ import { Alert, Box, Button, LinearProgress, Stack, Typography } from "@mui/mate
 import { clearOld, importOld, readOld, summarize, type ImportResult, type OldData } from "@/lib/importOld";
 import { useT } from "@/lib/prefs";
 import { refreshNow, useSync } from "@/lib/sync";
+import { dur, ease } from "@/lib/motion";
 
-const rise = keyframes`from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; }`;
+const rise = keyframes`from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; }`;
 
 // "Earlier data in this browser": counts what the old browser-only version left in localStorage and imports it ONLY on the button.
 export function ImportOld({ open }: { open: boolean }) {
@@ -28,7 +29,7 @@ export function ImportOld({ open }: { open: boolean }) {
     setProg(null);
   };
   return (
-    <Box component="section" aria-labelledby="import-l" sx={{ px: 2, py: 1.5, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "surface.raised", animation: `${rise} 380ms cubic-bezier(.22,1,.36,1) both`, animationDelay: "280ms" }}>
+    <Box component="section" aria-labelledby="import-l" sx={{ px: 2, py: 1.5, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "surface.raised", animation: `${rise} ${dur.slow}ms ${ease} both`, animationDelay: `${dur.fast}ms` }}>
       <Typography id="import-l" component="h3" sx={{ fontSize: "0.9375rem", fontWeight: 700 }}>{t.importTitle}</Typography>
       <Typography sx={{ mt: 0.25, fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.5 }}>{t.importNote}</Typography>
       <Stack spacing={1} sx={{ mt: 1.25 }}>

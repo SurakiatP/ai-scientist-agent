@@ -8,7 +8,7 @@ import type { Turn } from "@/lib/chat";
 import { useT } from "@/lib/prefs";
 import { stopTurn, useForeign, useSending, useStoppable, useTurnLocked } from "@/lib/run";
 import type { Progress } from "@/lib/progress";
-import { ease, enterFade, enterRise, prefersReduced, stageCheckSx, stageDotSx, stageFillSx, stageRingSx, stageSettleSx } from "@/lib/motion";
+import { dur, ease, enterFade, enterRise, prefersReduced, stageCheckSx, stageDotSx, stageFillSx, stageRingSx, stageSettleSx } from "@/lib/motion";
 import { SourcesUsed } from "./SourcesUsed";
 import { PlanCard, type RowState } from "./PlanCard";
 import { ResearchScan } from "./ResearchScan";
@@ -78,7 +78,7 @@ function Stages({ p, running }: { p: Progress; running: boolean }) {
               position: "relative", width: "22px", height: "22px", borderRadius: "50%", transformOrigin: "50% 50%",
               bgcolor: state === "todo" ? "surface.raised" : "primary.main",
               border: "2px solid", borderColor: state === "todo" ? "divider" : "primary.main",
-              transition: `background-color 240ms ${ease}, border-color 240ms ${ease}`,
+              transition: `background-color ${dur.fast}ms ${ease}, border-color ${dur.fast}ms ${ease}`,
               ...(freshNode ? stageSettleSx : {}),
             }}>
               {running && state === "active" && <Box aria-hidden sx={{ position: "absolute", inset: -3, borderRadius: "50%", border: "1.5px solid", borderColor: "primary.main", ...stageRingSx }} />}
