@@ -5,3 +5,7 @@ node_modules/
 .next/
 __pycache__/
 docs/design/.impeccable/
+# the built manual (see manual/publish-web.sh)
+frontend/public/manual/
+manual/dist/
+manual/.manual-kit/

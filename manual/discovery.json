@@ -1,0 +1,676 @@
+{
+  "version": 1,
+  "project": {
+    "name": "frontend",
+    "adapter": "nextjs",
+    "packageRoots": [
+      "."
+    ],
+    "scripts": [
+      {
+        "name": "dev",
+        "source": "package.json",
+        "detail": "next dev"
+      },
+      {
+        "name": "build",
+        "source": "package.json",
+        "detail": "next build"
+      },
+      {
+        "name": "start",
+        "source": "package.json",
+        "detail": "next start"
+      },
+      {
+        "name": "lint",
+        "source": "package.json",
+        "detail": "eslint"
+      },
+      {
+        "name": "test",
+        "source": "package.json",
+        "detail": "vitest run"
+      }
+    ],
+    "runFiles": [
+      ".env.example",
+      "Dockerfile"
+    ]
+  },
+  "docs": [
+    {
+      "path": "AGENTS.md",
+      "kind": "agent-notes",
+      "title": "AGENTS.md",
+      "headings": [
+        "  This is NOT the Next.js you know"
+      ]
+    },
+    {
+      "path": "README.md",
+      "kind": "readme",
+      "title": "Research Search frontend",
+      "headings": [
+        "Research Search frontend",
+        "  Run"
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "name": "/",
+      "source": "src/app/page.tsx"
+    },
+    {
+      "name": "/ask",
+      "source": "src/app/ask/page.tsx"
+    },
+    {
+      "name": "/chat",
+      "source": "src/app/chat/page.tsx"
+    },
+    {
+      "name": "/docs",
+      "source": "src/app/docs/page.tsx"
+    },
+    {
+      "name": "/faq",
+      "source": "src/app/faq/page.tsx"
+    },
+    {
+      "name": "/features/[slug]",
+      "source": "src/app/features/[slug]/page.tsx"
+    },
+    {
+      "name": "/files",
+      "source": "src/app/files/page.tsx"
+    },
+    {
+      "name": "/how-it-works",
+      "source": "src/app/how-it-works/page.tsx"
+    },
+    {
+      "name": "/saved",
+      "source": "src/app/saved/page.tsx"
+    },
+    {
+      "name": "/trash",
+      "source": "src/app/trash/page.tsx"
+    },
+    {
+      "name": "/usage",
+      "source": "src/app/usage/page.tsx"
+    }
+  ],
+  "notes": [],
+  "sections": [],
+  "roles": [],
+  "permissions": [],
+  "states": [
+    {
+      "name": "ACTIVE",
+      "values": [
+        "queued",
+        "running"
+      ],
+      "source": "src/lib/runs.ts:37"
+    },
+    {
+      "name": "ANALYZABLE",
+      "values": [
+        "csv",
+        "xlsx",
+        "parquet",
+        "json"
+      ],
+      "source": "src/lib/files.ts:12"
+    },
+    {
+      "name": "AnalysisStep",
+      "values": [
+        "profiling",
+        "writing_script",
+        "running",
+        "repairing",
+        "storing"
+      ],
+      "source": "src/lib/sse.ts:55"
+    },
+    {
+      "name": "AskMode",
+      "values": [
+        "deep",
+        "quick",
+        "chat",
+        "docs"
+      ],
+      "source": "src/lib/sse.ts:27"
+    },
+    {
+      "name": "DIM",
+      "values": [
+        "#048090",
+        "#027C8F"
+      ],
+      "source": "src/components/research/ResearchScan.tsx:25"
+    },
+    {
+      "name": "DOCS_ERR_CODES",
+      "values": [
+        "docs_unreadable",
+        "docs_unreadable_permanent",
+        "docs_host",
+        "docs_not_found",
+        "docs_load_failed"
+      ],
+      "source": "src/lib/chat.ts:40"
+    },
+    {
+      "name": "KEY_GATED",
+      "values": [
+        "addgene",
+        "biogrid",
+        "brenda",
+        "cosmic",
+        "disgenet",
+        "drugbank",
+        "lincs-l1000",
+        "materials-project",
+        "omim"
+      ],
+      "source": "src/lib/sources.ts:91"
+    },
+    {
+      "name": "Kind",
+      "values": [
+        "session",
+        "project",
+        "file"
+      ],
+      "source": "src/components/trash/TrashPage.tsx:12"
+    },
+    {
+      "name": "LINES",
+      "values": [
+        "96%",
+        "90%",
+        "94%",
+        "72%",
+        "92%",
+        "88%",
+        "46%",
+        "86%",
+        "60%"
+      ],
+      "source": "src/components/research/PreviewPane.tsx:9"
+    },
+    {
+      "name": "MODES",
+      "values": [
+        "light",
+        "dark",
+        "system"
+      ],
+      "source": "src/components/landing/LandingHeader.tsx:36"
+    },
+    {
+      "name": "OLD_KEYS",
+      "values": [
+        "scientist-chat-v1",
+        "scientist-files-v1",
+        "scientist-history-v1"
+      ],
+      "source": "src/lib/importOld.ts:8"
+    },
+    {
+      "name": "PACK_IDS",
+      "values": [
+        "bio",
+        "chem",
+        "med",
+        "materials",
+        "ml",
+        "comm"
+      ],
+      "source": "src/lib/packs.ts:2"
+    },
+    {
+      "name": "PAPER_TYPES",
+      "values": [
+        "research",
+        "cs",
+        "review",
+        "thesis_th",
+        "proposal"
+      ],
+      "source": "src/lib/paperOutline.ts:5"
+    },
+    {
+      "name": "PreviewStage",
+      "values": [
+        "queued",
+        "preparing",
+        "layout",
+        "rendering"
+      ],
+      "source": "src/lib/sse.ts:220"
+    },
+    {
+      "name": "REFUSAL_CODES",
+      "values": [
+        "out_of_scope",
+        "injection",
+        "needs_search",
+        "use_research",
+        "empty_memory",
+        "too_long",
+        "unsafe_request",
+        "not_about_data",
+        "check_failed"
+      ],
+      "source": "src/lib/chat.ts:46"
+    },
+    {
+      "name": "RowState",
+      "values": [
+        "done",
+        "active",
+        "wait",
+        "skipped"
+      ],
+      "source": "src/components/research/PlanCard.tsx:18"
+    },
+    {
+      "name": "STATEMENT_KINDS",
+      "values": [
+        "ai",
+        "data",
+        "ethics",
+        "coi"
+      ],
+      "source": "src/lib/exportReport.ts:34"
+    },
+    {
+      "name": "STATUS",
+      "values": [
+        "queued",
+        "running",
+        "done",
+        "error",
+        "stopped",
+        "interrupted"
+      ],
+      "source": "src/lib/runs.ts:26"
+    },
+    {
+      "name": "STATUSES",
+      "values": [
+        "running",
+        "awaiting_plan",
+        "done",
+        "refused",
+        "error",
+        "stopped",
+        "interrupted"
+      ],
+      "source": "src/lib/chat.ts:56"
+    },
+    {
+      "name": "STEPS",
+      "values": [
+        "profiling",
+        "writing_script",
+        "running",
+        "repairing",
+        "storing"
+      ],
+      "source": "src/lib/chat.ts:104"
+    },
+    {
+      "name": "SUPPORT",
+      "values": [
+        "supported",
+        "partial",
+        "unsupported",
+        "no_quote"
+      ],
+      "source": "src/lib/refs.ts:54"
+    },
+    {
+      "name": "SyncStatus",
+      "values": [
+        "disabled",
+        "connecting",
+        "online",
+        "offline",
+        "conflict"
+      ],
+      "source": "src/lib/sync.ts:15"
+    },
+    {
+      "name": "TABS",
+      "values": [
+        "overview",
+        "tables",
+        "charts",
+        "findings",
+        "code"
+      ],
+      "source": "src/components/research/AnalysisArtifact.tsx:19"
+    },
+    {
+      "name": "TABULAR",
+      "values": [
+        "csv",
+        "json"
+      ],
+      "source": "src/components/files/FileDialogs.tsx:32"
+    },
+    {
+      "name": "TEX_TEMPLATES",
+      "values": [
+        "article",
+        "ieee",
+        "elsevier",
+        "springer"
+      ],
+      "source": "src/lib/exportReport.ts:18"
+    },
+    {
+      "name": "WIDTHS",
+      "values": [
+        "96%",
+        "88%",
+        "93%",
+        "72%",
+        "90%",
+        "46%"
+      ],
+      "source": "src/components/research/AnswerSkeleton.tsx:7"
+    }
+  ],
+  "forms": [],
+  "messages": [
+    {
+      "name": ") ? a.split(",
+      "source": "src/lib/bibliography.ts:11"
+    },
+    {
+      "name": "A title is required",
+      "source": "ui:A title is required"
+    },
+    {
+      "name": "AbortError",
+      "source": "ui:AbortError"
+    },
+    {
+      "name": "Clear expired items",
+      "source": "ui:Clear expired items"
+    },
+    {
+      "name": "Copy failed",
+      "source": "ui:Copy failed"
+    },
+    {
+      "name": "Could not read the file for a preview; the data format is invalid",
+      "source": "ui:Could not read the file for a preview; the data format is invalid"
+    },
+    {
+      "name": "DOIs, PMIDs and arXiv IDs are checked against Crossref, PubMed and arXiv. Anything unconfirmed carries a warning.",
+      "source": "ui:DOIs, PMIDs and arXiv IDs are checked against Crossref, PubMed and arXiv. Anything unconfirmed carries a warning."
+    },
+    {
+      "name": "Expired items cleared",
+      "source": "ui:Expired items cleared"
+    },
+    {
+      "name": "Fix the errors in the form to see a preview",
+      "source": "ui:Fix the errors in the form to see a preview"
+    },
+    {
+      "name": "Import failed. Try again; items already imported are not duplicated.",
+      "source": "ui:Import failed. Try again; items already imported are not duplicated."
+    },
+    {
+      "name": "References that cannot be confirmed carry a warning.",
+      "source": "ui:References that cannot be confirmed carry a warning."
+    },
+    {
+      "name": "References with a DOI, PMID or arXiv ID are checked that the identifier exists. Any that cannot be confirmed carry a warning.",
+      "source": "ui:References with a DOI, PMID or arXiv ID are checked that the identifier exists. Any that cannot be confirmed carry a warning."
+    },
+    {
+      "name": "Request failed",
+      "source": "ui:Request failed"
+    },
+    {
+      "name": "Something went wrong",
+      "source": "src/lib/strings.ts:874"
+    },
+    {
+      "name": "The answer arrives with references. Those with a DOI, PMID or arXiv ID are checked against Crossref, PubMed or arXiv, and any that cannot be confirmed carry a warning.",
+      "source": "ui:The answer arrives with references. Those with a DOI, PMID or arXiv ID are checked against Crossref, PubMed or arXiv, and any that cannot be confirmed carry a warning."
+    },
+    {
+      "name": "The content is invalid or over a limit. Check the title, sections and paragraphs",
+      "source": "ui:The content is invalid or over a limit. Check the title, sections and paragraphs"
+    },
+    {
+      "name": "The link expired. Try again",
+      "source": "ui:The link expired. Try again"
+    },
+    {
+      "name": "The run failed. You can retry.",
+      "source": "ui:The run failed. You can retry."
+    },
+    {
+      "name": "This page failed to render. Try again; your chats stored in this browser are not affected.",
+      "source": "ui:This page failed to render. Try again; your chats stored in this browser are not affected."
+    },
+    {
+      "name": "Warning label",
+      "source": "ui:Warning label"
+    },
+    {
+      "name": "color-mix(in srgb, var(--mui-palette-error-main) 6%, transparent)",
+      "source": "ui:color-mix(in srgb, var(--mui-palette-error-main) 6%, transparent)"
+    },
+    {
+      "name": "copyFailed",
+      "source": "ui:copyFailed"
+    },
+    {
+      "name": "empty plan",
+      "source": "src/lib/run.ts:371"
+    },
+    {
+      "name": "error",
+      "source": "ui:error"
+    },
+    {
+      "name": "error.main",
+      "source": "ui:error.main"
+    },
+    {
+      "name": "fail",
+      "source": "ui:fail"
+    },
+    {
+      "name": "failed",
+      "source": "ui:failed"
+    },
+    {
+      "name": "no file",
+      "source": "src/lib/run.ts:428"
+    },
+    {
+      "name": "no such session",
+      "source": "src/lib/run.ts:297"
+    },
+    {
+      "name": "no such turn",
+      "source": "src/lib/run.ts:375"
+    },
+    {
+      "name": "not awaiting",
+      "source": "src/lib/run.ts:376"
+    },
+    {
+      "name": "refusedCheckFailed",
+      "source": "ui:refusedCheckFailed"
+    },
+    {
+      "name": "warning",
+      "source": "ui:warning"
+    },
+    {
+      "name": "เกิดข้อผิดพลาด",
+      "source": "src/lib/strings.ts:261"
+    }
+  ],
+  "api": [],
+  "flags": [],
+  "env": [
+    {
+      "name": "NEXT_PUBLIC_API_BASE",
+      "source": "src/lib/config.ts:6"
+    },
+    {
+      "name": "NEXT_PUBLIC_SITE_URL",
+      "source": "src/lib/config.ts:10"
+    },
+    {
+      "name": "NODE_ENV",
+      "source": "src/lib/config.ts:3"
+    }
+  ],
+  "integrations": [],
+  "seed": [],
+  "uiStrings": {
+    "count": 2149,
+    "sample": [
+      "/chat",
+      "use client",
+      "disabled",
+      "lg",
+      "running",
+      "chat",
+      "docs",
+      "awaiting_plan",
+      "flex",
+      "column",
+      "auto",
+      "max(12px, env(safe-area-inset-bottom))",
+      "100dvh",
+      "grid",
+      "center",
+      "none",
+      "flex-start",
+      "10px",
+      "primary.main",
+      "primary.contrastText",
+      "1.5rem",
+      "text.secondary",
+      "wrap",
+      "system-ui, sans-serif",
+      "light dark",
+      "AI Scientist",
+      "เกิดข้อผิดพลาดบางอย่าง / Something went wrong",
+      "ลองอีกครั้ง ข้อมูลแชตในเบราว์เซอร์ไม่ได้รับผลกระทบ / Try again; your chats in this browser are not affected.",
+      "ลองอีกครั้ง / Retry",
+      "0 20px",
+      "inherit",
+      "thai",
+      "latin",
+      "swap",
+      "ตั้งคำถามวิจัยเป็นภาษาไทยหรืออังกฤษ ได้คำตอบจากงานวิชาการพร้อมอ้างอิง อ้างอิงที่มี DOI, PMID หรือ arXiv ID จะถูกตรวจว่าเลขนั้นมีอยู่จริง",
+      "AI Scientist · ผู้ช่วยค้นคว้างานวิชาการ",
+      "th_TH",
+      "en_US",
+      "website",
+      "/og",
+      "cover",
+      "(prefers-color-scheme: light)",
+      "(prefers-color-scheme: dark)",
+      "background.default",
+      "#E8EDF4",
+      "#0E1A2C",
+      "#1C4E8F",
+      "1px solid var(--mui-palette-divider)",
+      "24px",
+      "color-mix(in srgb, var(--mui-palette-divider) 60%, transparent)",
+      "background.paper",
+      "0.75rem",
+      "0.08em",
+      "uppercase",
+      "2rem",
+      "2.75rem",
+      "-0.015em",
+      "balance",
+      "0.9375rem",
+      "pretty",
+      "text.primary",
+      "0.8125rem",
+      "tabular-nums",
+      "nowrap",
+      "0.875rem",
+      "divider",
+      "absolute",
+      "14px",
+      "surface.aiSoft",
+      "surface.ai",
+      "& svg",
+      "0.6875rem",
+      "relative",
+      "@media (prefers-reduced-motion: no-preference)",
+      "& .fig-line",
+      "left",
+      "calc(250ms + var(--i) * 110ms)",
+      "& .fig-cite",
+      "calc(500ms + var(--i) * 110ms)",
+      "& .fig-note",
+      "1.3s",
+      "& .fig-note + .fig-note",
+      "1.55s",
+      "@keyframes fig-write",
+      "scaleX(0.04)",
+      "@keyframes fig-land",
+      "translateY(-6px) scale(0.6)",
+      "@keyframes fig-slide",
+      "translateX(12px)",
+      "blur(3px)",
+      "0 40px 80px -40px rgb(28 78 143 / 0.45), 0 4px 14px -6px rgb(14 26 44 / 0.12)",
+      "space-between",
+      "--i",
+      "0.625rem",
+      "16px",
+      "DOI",
+      "PMID",
+      "arXiv",
+      "inline-flex",
+      "evidence.verified",
+      "th",
+      "clip",
+      "&::before",
+      "0 0 auto 0",
+      "radial-gradient(55% 60% at 80% 18%, rgb(var(--mui-palette-primary-mainChannel) / 0.16), transparent 70%), radial-gradient(40% 45% at 8% 70%, rgb(255 255 255 / 0.5), transparent 70%)",
+      "[data-dark] &",
+      "radial-gradient(55% 60% at 80% 18%, rgb(var(--mui-palette-primary-mainChannel) / 0.14), transparent 70%)",
+      "minmax(0,1fr)",
+      "minmax(0,1.1fr) minmax(0,0.9fr)",
+      "2.375rem",
+      "3rem",
+      "3.75rem",
+      "-0.02em",
+      "anywhere",
+      "block",
+      "36rem",
+      "1rem",
+      "1.0625rem",
+      "&:hover",
+      "rgb(var(--mui-palette-primary-mainChannel) / 0.06)"
+    ]
+  },
+  "truncated": []
+}

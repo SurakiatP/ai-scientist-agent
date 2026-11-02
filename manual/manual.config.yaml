@@ -1,0 +1,71 @@
+# manual-kit config. Text fields take a string or { th: ..., en: ... }.
+projectRoot: ../frontend
+languages:
+  - th
+  - en
+books:
+  user-guide:
+    title:
+      th: คู่มือผู้ใช้
+      en: User guide
+    audience:
+      th: นักวิจัย นักศึกษา และผู้ที่ต้องการค้นคว้างานวิชาการพร้อมแหล่งอ้างอิง
+      en: Researchers, students and anyone who needs sourced academic answers
+    description:
+      th: วิธีใช้ AI Scientist ตั้งแต่ตั้งคำถามวิจัย อ่านคำตอบพร้อมแหล่งอ้างอิง
+        ไปจนถึงส่งออกรายงาน
+      en: How to use AI Scientist from asking a research question to reading
+        sourced answers and exporting a report
+    icon: ../frontend/src/app/icon.svg
+    groups:
+      - { id: start, title: { th: เริ่มต้น, en: Start } }
+      - { id: ask, title: { th: ถามและอ่านคำตอบ, en: Ask and read } }
+      - { id: files, title: { th: เอกสารและไฟล์ข้อมูล, en: Documents and data } }
+      - { id: report, title: { th: รายงาน, en: Reports } }
+      - { id: chats, title: { th: แชตและโปรเจกต์, en: Chats and projects } }
+      - { id: settings, title: { th: การตั้งค่าและสถิติ, en: Settings and usage } }
+      - { id: safety, title: { th: ขอบเขตและความช่วยเหลือ, en: Limits and help } }
+document:
+  title: คู่มือการใช้งาน AI Scientist
+  client: (รอระบุ)
+  docNumber: (รอระบุ)
+  version: "1.0"
+  classification: (รอระบุ)
+  approvers:
+    - { name: (รอระบุ), role: ผู้อนุมัติ }
+  revisions: []
+  purpose: คู่มือนี้อธิบายวิธีใช้ AI Scientist ตั้งแต่ตั้งคำถามวิจัย อ่านคำตอบพร้อมแหล่งอ้างอิง ไปจนถึงส่งออกรายงาน
+  glossary: []
+  logos: []
+  developer: (รอระบุ)
+outputs:
+  pdf: true
+  docx: false
+  dir: dist
+  web: true
+media: steps
+adapter:
+  type: nextjs
+  data: {}
+  strings:
+    files: ["src/lib/strings.ts", "src/**/*.tsx"]
+    literals: all
+capture:
+  baseUrl: http://localhost:3100
+  allowlist:
+    - localhost
+    - 127.0.0.1
+  environment: local
+wording:
+  superlatives: true
+  forbidden: []
+  allow: [arXiv, DOI, PMID, FAQ, RIS, XLSX, JSON, BibTeX, LaTeX, XeLaTeX, OpenAlex, PubMed, Crossref, Zotero, EndNote, Overleaf, IEEE, IMRaD, Elsevier, Springer, LNCS, Laksaman, Sarabun, AI, RAG, USD, HMR]
+web:
+  brand:
+    name: AI Scientist
+    colors:
+      brand: "#1C4E8F"
+discover:
+  exclude:
+    - "**/*.test.*"
+    - "**/*.test.tsx"

@@ -1,0 +1,39 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 505 >>
+stream
+BT /F1 12 Tf 50 780 Td 16 TL
+(Effect of drip and flood irrigation on tomato yield (sample data)) Tj T*
+(Authors: A. Example, B. Sample. Year: 2024. Journal of Sample Agronomy.) Tj T*
+(Abstract. We compared drip and flood irrigation in a 12 plot field trial.) Tj T*
+(Mean yield was 41.2 t/ha under drip and 36.8 t/ha under flood irrigation.) Tj T*
+(Limits: one season, one site, 12 plots. Results may not transfer to other soils.) Tj T*
+(All numbers in this file are invented for the user manual.) Tj T*
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000797 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+867
+%%EOF

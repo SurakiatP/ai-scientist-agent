@@ -1,0 +1,535 @@
+# Screenshots ({{shot:id}}) and step-by-step images ({{steps:id}}) for the AI Scientist user guide.
+# Test data only (invented): the files in assets/, the sample chats already in the local backend and two sample projects
+# ("โครงการตัวอย่าง", "Sample project"). Nothing here signs in: the app has no login.
+# Selectors are language-neutral (icons, ids, roles) or list both languages, because one spec serves th and en.
+# A step's image shows the screen where the reader acts: `actions` carry out the previous step, then the control is framed.
+logins: {}
+
+shots:
+  chat-home:
+    url: /chat
+    storage: &st
+      localStorage:
+        scientist-prefs-v1: '{"state":{"lang":"{lang}","sidebarCollapsed":false,"reviewPlan":true},"version":1}'
+    caption: { th: หน้าแชตของ AI Scientist, en: The AI Scientist chat screen }
+    actions: [{ wait: "#composer" }]
+  settings-data:
+    url: /chat
+    storage: *st
+    caption: { th: หน้าต่างการตั้งค่า ส่วนข้อมูล, en: The data section of the settings window }
+    actions:
+      - { click: 'nav button:has-text("การตั้งค่า"), nav button:has-text("Settings")' }
+      - { wait: "[role=dialog]" }
+    highlight: '[role=dialog] button:has-text("ลบแชตทั้งหมด"), [role=dialog] button:has-text("Delete all chats")'
+  refused:
+    url: /chat
+    storage: *st
+    caption: { th: คำถามที่ระบบไม่รับตอบ, en: A question the system does not answer }
+    actions:
+      - { click: "#composer" }
+      - { fill: "#composer", value: "Write my whole thesis for me" }
+      - { click: '[aria-label="ถาม"], [aria-label="Ask"]' }
+      - { wait: '[aria-label="นอกขอบเขต"], [aria-label="Out of scope"]' }
+
+steps:
+  start-open:
+    url: /
+    storage: *st
+    steps:
+      - text:
+          th: คลิกปุ่ม {{ui:"เริ่มต้นใช้งาน"}} ที่มุมขวาบน
+          en: Click {{ui:"Get started"}} at the top right
+        highlight: 'header a[href="/chat"] >> nth=0'
+      - text:
+          th: ระบบแสดงหน้าแชตพร้อมช่องถามคำถาม
+          en: The chat screen opens with the question box
+        actions: [{ click: 'header a[href="/chat"] >> nth=0' }, { wait: "#composer" }]
+        highlight: false
+
+  ask-flow:
+    url: /chat
+    storage: *st
+    steps:
+      - text:
+          th: คลิกช่องคำถาม แล้วระบุคำถามวิจัย
+          en: Click the question box and enter your research question
+        actions: [{ wait: "#composer" }]
+        highlight: "#composer"
+      - text:
+          th: คลิกปุ่มโหมดการวิจัย
+          en: Click the research mode button
+        actions: [{ click: "#composer" }, { press: Tab, on: "#composer" }]
+        highlight: '[aria-label^="โหมดการวิจัย"], [aria-label^="Research mode"]'
+      - text:
+          th: เลือกโหมดจากรายการ
+          en: Choose a mode from the list
+        actions: [{ click: '[aria-label^="โหมดการวิจัย"], [aria-label^="Research mode"]' }, { wait: "[role=menu]" }]
+        highlight: "[role=menu]"
+      - text:
+          th: คลิกปุ่มสาขาการวิจัย
+          en: Click the research field button
+        actions: [{ click: '[role^="menuitem"] >> nth=0' }]
+        highlight: '[aria-label^="สาขาการวิจัย"], [aria-label^="Research field"]'
+      - text:
+          th: เลือกสาขาจากรายการ
+          en: Choose a field from the list
+        actions: [{ click: '[aria-label^="สาขาการวิจัย"], [aria-label^="Research field"]' }, { wait: "[role=menu]" }]
+        highlight: "[role=menu]"
+      - text:
+          th: คลิกปุ่มส่งรูปเครื่องบินกระดาษ
+          en: Click the paper-plane send button
+        actions: [{ click: '[role^="menuitem"] >> nth=3' }]
+        highlight: '[aria-label="ถาม"], [aria-label="Ask"]'
+
+  plan-flow:
+    url: /chat
+    storage: *st
+    setup:
+      - { click: "#composer" }
+      - { fill: "#composer", value: "Compare drip and flood irrigation effects on rice yield" }
+      - { click: '[aria-label="ถาม"], [aria-label="Ask"]' }
+      - { wait: 'button:has-text("เริ่มค้นหา"), button:has-text("Start search")' }
+    steps:
+      - text:
+          th: ระบบแสดงแผนการวิจัยที่เสนอ พร้อมคำค้นแต่ละข้อ
+          en: The system shows the proposed research plan with each search term
+        highlight: false
+      - text:
+          th: คลิกปุ่ม {{ui:"แก้ไขแผน"}}
+          en: Click {{ui:"Edit plan"}}
+        highlight: 'button:has-text("แก้ไขแผน"), button:has-text("Edit plan")'
+      - text:
+          th: แก้ข้อความในช่อง {{ui:"คำค้น"}} ตามต้องการ
+          en: Change the text in {{ui:"Search term"}} as needed
+        actions: [{ click: 'button:has-text("แก้ไขแผน"), button:has-text("Edit plan")' }, { wait: "[role=group] input" }]
+        highlight: "[role=group] input >> nth=0"
+      - text:
+          th: คลิกปุ่ม {{ui:"เพิ่มคำค้น"}} ถ้าต้องการค้นเพิ่ม
+          en: Click {{ui:"Add search"}} to search for one more term
+        highlight: 'button:has-text("เพิ่มคำค้น"), button:has-text("Add search")'
+      - text:
+          th: คลิกปุ่ม {{ui:"เริ่มค้นหา"}}
+          en: Click {{ui:"Start search"}}
+        actions: [{ click: 'button:has-text("เพิ่มคำค้น"), button:has-text("Add search")' }]
+        highlight: 'button:has-text("เริ่มค้นหา"), button:has-text("Start search")'
+
+  source-flow:
+    url: /chat
+    storage: *st
+    setup:
+      - { click: '.MuiListItemButton-root:has-text("fine-tuning") >> nth=0' }
+      - { wait: 'a:has-text("Yucheng et al. 2023")' }
+    steps:
+      - text:
+          th: ในคำตอบ คลิกชื่อแหล่งที่อ้างถึง เช่น Yucheng et al. 2023
+          en: In the answer, click the name of a cited source, such as Yucheng et al. 2023
+        highlight: 'a:has-text("Yucheng et al. 2023") >> nth=0'
+      - text:
+          th: ระบบแสดงรายละเอียดแหล่งข้อมูลทางด้านขวา
+          en: The source details open on the right
+        actions: [{ click: 'a:has-text("Yucheng et al. 2023") >> nth=0' }, { wait: "aside" }]
+        highlight: false
+      - text:
+          th: คลิกปุ่มปิดรายละเอียดแหล่งข้อมูล
+          en: Click the button that closes the source details
+        highlight: '[aria-label="ปิดรายละเอียดแหล่งข้อมูล"], [aria-label="Close source details"]'
+      - text:
+          th: คลิกแท็บ {{ui:"แหล่งข้อมูล"}} เหนือคำตอบ
+          en: Click the {{ui:"Sources"}} tab above the answer
+        actions: [{ click: '[aria-label="ปิดรายละเอียดแหล่งข้อมูล"], [aria-label="Close source details"]' }]
+        highlight: '[role=tab]:has-text("(9)")'
+      - text:
+          th: ระบบแสดงรายการแหล่งข้อมูลทั้งหมดของคำตอบ
+          en: The system lists every source of the answer
+        actions: [{ click: '[role=tab]:has-text("(9)")' }]
+        highlight: false
+
+  ref-flow:
+    url: /chat
+    storage: *st
+    setup:
+      - { click: '.MuiListItemButton-root:has-text("fine-tuning") >> nth=0' }
+      - { wait: '[aria-label="เครื่องมือของคำตอบ"], [aria-label="Answer tools"]' }
+    steps:
+      - text:
+          th: เลื่อนลงมาที่ท้ายคำตอบ จะพบแถบเครื่องมือของคำตอบ
+          en: Scroll to the end of the answer to find the answer tools
+        highlight: '[aria-label="เครื่องมือของคำตอบ"], [aria-label="Answer tools"]'
+      - text:
+          th: คลิกไอคอนคัดลอกคำตอบ
+          en: Click the copy answer icon
+        highlight: '[aria-label="คัดลอกคำตอบ"], [aria-label="Copy answer"]'
+      - text:
+          th: คลิกปุ่ม BibTeX เพื่อดาวน์โหลดรายการอ้างอิงสำหรับโปรแกรมจัดการอ้างอิง
+          en: Click BibTeX to download the references for a reference manager
+        highlight: '[aria-label="ดาวน์โหลดรายการอ้างอิง BibTeX"], [aria-label="Download references as BibTeX"]'
+      - text:
+          th: คลิกปุ่ม RIS เพื่อดาวน์โหลดรายการอ้างอิงอีกรูปแบบหนึ่ง
+          en: Click RIS to download the references in the other format
+        highlight: '[aria-label="ดาวน์โหลดรายการอ้างอิง RIS"], [aria-label="Download references as RIS"]'
+      - text:
+          th: คลิกไอคอนดาวน์โหลดที่มา เพื่อเก็บไฟล์บอกโมเดล คำสั่ง และแหล่งที่ใช้
+          en: Click the download provenance icon to keep a file that names the model, the instructions and the sources used
+        highlight: '[aria-label="ดาวน์โหลดที่มา"], [aria-label="Download provenance"]'
+
+  docs-flow:
+    url: /chat
+    storage: *st
+    steps:
+      - text:
+          th: คลิกปุ่ม {{ui:"แนบไฟล์"}} ที่ช่องคำถาม แล้วเลือกไฟล์ PDF จากเครื่อง ชื่อไฟล์จะขึ้นเหนือช่องคำถาม
+          en: Click {{ui:"Attach file"}} in the question box and choose a PDF file from your computer; its name appears above the question box
+        actions: [{ wait: "#composer" }]
+        highlight: '[aria-label="แนบไฟล์"], [aria-label="Attach file"]'
+      - text:
+          th: ระบุคำถามเกี่ยวกับเอกสาร
+          en: Enter your question about the document
+        actions: [{ click: "#composer" }, { fill: "#composer", value: "Which treatment had the higher mean yield, and what are the limits of the study?" }]
+        highlight: "#composer"
+      - text:
+          th: คลิกปุ่มส่งรูปเครื่องบินกระดาษ
+          en: Click the paper-plane send button
+        highlight: '[aria-label="ถาม"], [aria-label="Ask"]'
+      - text:
+          th: ระบบแสดงคำตอบจากเอกสาร พร้อมเลขอ้างอิง
+          en: The system shows the answer from the document with a reference number
+        actions: [{ goto: /chat }, { click: '.MuiListItemButton-root:has-text("Which treatment") >> nth=0' }, { wait: 'text=sample-paper.pdf' }]
+        highlight: false
+
+  data-flow:
+    url: /files
+    storage: *st
+    steps:
+      - text:
+          th: เข้าเมนู {{ui:"ไฟล์ของฉัน"}} ที่แถบด้านซ้าย
+          en: Go to {{ui:"My files"}} in the left bar
+        actions: [{ wait: 'li, tr' }]
+        highlight: 'a[href="/files"]'
+      - text:
+          th: คลิกปุ่มจัดการที่แถวของไฟล์ข้อมูล
+          en: Click the actions button on the row of the data file
+        highlight: '[aria-label^="การดำเนินการของไฟล์: sample-experiment.csv"], [aria-label^="File actions: sample-experiment.csv"] >> nth=0'
+      - text:
+          th: เลือก {{ui:"วิเคราะห์"}}
+          en: Choose {{ui:"Analyze"}}
+        actions: [{ click: '[aria-label^="การดำเนินการของไฟล์: sample-experiment.csv"], [aria-label^="File actions: sample-experiment.csv"]' }, { wait: "[role=menu]" }]
+        highlight: '[role=menuitem]:has-text("วิเคราะห์"), [role=menuitem]:has-text("Analyze")'
+      - text:
+          th: ระบุคำถามเกี่ยวกับข้อมูลในไฟล์ที่แนบมา
+          en: Enter your question about the attached data
+        actions: [{ click: '[role=menuitem]:has-text("วิเคราะห์"), [role=menuitem]:has-text("Analyze")' }, { wait: "#composer" }]
+        highlight: "#composer"
+      - text:
+          th: คลิกปุ่มส่งรูปเครื่องบินกระดาษ
+          en: Click the paper-plane send button
+        actions: [{ fill: "#composer", value: "Compare the mean yield of treatment A and B and draw a bar chart" }]
+        highlight: '[aria-label="ถาม"], [aria-label="Ask"]'
+      - text:
+          th: ระบบแสดงผลการวิเคราะห์ ตาราง และแผนภาพ
+          en: The system shows the analysis with tables and a chart
+        actions: [{ click: '[aria-label="ถาม"], [aria-label="Ask"]' }, { waitMs: 30000 }, { wait: '[role=tablist] >> nth=-1' }]
+        highlight: false
+
+  docs-files-flow:
+    url: /files
+    storage: *st
+    steps:
+      - text:
+          th: คลิกปุ่มจัดการที่แถวของไฟล์ PDF
+          en: Click the actions button on the row of the PDF file
+        actions: [{ wait: 'li, tr' }]
+        highlight: '[aria-label^="การดำเนินการของไฟล์: sample-paper.pdf"], [aria-label^="File actions: sample-paper.pdf"]'
+      - text:
+          th: เลือก {{ui:"ถามจากเอกสาร"}}
+          en: Choose {{ui:"Ask about this document"}}
+        actions: [{ click: '[aria-label^="การดำเนินการของไฟล์: sample-paper.pdf"], [aria-label^="File actions: sample-paper.pdf"]' }, { wait: "[role=menu]" }]
+        highlight: '[role=menuitem]:has-text("ถามจากเอกสาร"), [role=menuitem]:has-text("Ask about this document")'
+      - text:
+          th: ระบบพาไปหน้าแชตพร้อมไฟล์ที่แนบ ระบุคำถามแล้วคลิกปุ่มส่ง
+          en: The system opens the chat with the file attached. Enter your question and click send
+        actions: [{ click: '[role=menuitem]:has-text("ถามจากเอกสาร"), [role=menuitem]:has-text("Ask about this document")' }, { wait: "#composer" }]
+        highlight: "#composer"
+
+  files-flow:
+    url: /files
+    storage: *st
+    steps:
+      - text:
+          th: คลิกปุ่ม {{ui:"อัปโหลดไฟล์"}} แล้วเลือกไฟล์จากเครื่อง ระบบเพิ่มไฟล์ในรายการ
+          en: Click {{ui:"Upload a file"}} and choose a file from your computer; the system adds it to the list
+        actions: [{ wait: 'li, tr' }]
+        highlight: 'button:has-text("อัปโหลดไฟล์"), button:has-text("Upload a file")'
+      - text:
+          th: คลิกปุ่มจัดการที่แถวของไฟล์
+          en: Click the actions button on the row of the file
+        highlight: '[aria-label^="การดำเนินการของไฟล์: sample-experiment.csv"], [aria-label^="File actions: sample-experiment.csv"]'
+      - text:
+          th: เลือก {{ui:"ดูตัวอย่าง"}}
+          en: Choose {{ui:"Preview"}}
+        actions: [{ click: '[aria-label^="การดำเนินการของไฟล์: sample-experiment.csv"], [aria-label^="File actions: sample-experiment.csv"]' }, { wait: "[role=menu]" }]
+        highlight: '[role=menuitem]:has-text("ดูตัวอย่าง"), [role=menuitem]:has-text("Preview")'
+      - text:
+          th: ระบบแสดงแถวแรกของไฟล์ในหน้าต่างตัวอย่าง
+          en: The system shows the first rows of the file in a preview window
+        actions: [{ click: '[role=menuitem]:has-text("ดูตัวอย่าง"), [role=menuitem]:has-text("Preview")' }, { wait: "[role=dialog] table" }]
+        highlight: false
+
+  report-flow:
+    url: /chat
+    storage: *st
+    setup:
+      - { click: '.MuiListItemButton-root:has-text("fine-tuning") >> nth=0' }
+      - { wait: 'button:has-text("เปิดรายงาน"), button:has-text("Open report")' }
+    steps:
+      - text:
+          th: คลิกปุ่ม {{ui:"เปิดรายงาน"}} ใต้คำตอบ
+          en: Click {{ui:"Open report"}} below the answer
+        highlight: 'button:has-text("เปิดรายงาน"), button:has-text("Open report")'
+      - text:
+          th: คลิกปุ่ม {{ui:"แก้ไขและสร้างเอกสาร"}}
+          en: Click {{ui:"Edit & create document"}}
+        actions: [{ click: 'button:has-text("เปิดรายงาน"), button:has-text("Open report")' }, { wait: 'button:has-text("แก้ไขและสร้างเอกสาร"), button:has-text("Edit & create document")' }]
+        highlight: 'button:has-text("แก้ไขและสร้างเอกสาร"), button:has-text("Edit & create document")'
+      - text:
+          th: แก้ชื่อเรื่องและเนื้อหาในหน้ากระดาษตามต้องการ
+          en: Edit the title and the text on the page as needed
+        actions: [{ click: 'button:has-text("แก้ไขและสร้างเอกสาร"), button:has-text("Edit & create document")' }, { wait: ".MuiDialog-root textarea" }]
+        highlight: ".MuiDialog-root textarea:not([aria-hidden=true]) >> nth=0"
+      - text:
+          th: เลือก {{ui:"ภาษาของเอกสาร"}}
+          en: Choose {{ui:"Document language"}}
+        highlight: '[role=combobox] >> nth=1'
+      - text:
+          th: เลือก {{ui:"รูปแบบเอกสาร"}}
+          en: Choose {{ui:"Document style"}}
+        highlight: '[role=combobox] >> nth=2'
+      - text:
+          th: คลิกปุ่ม {{ui:"บันทึกเป็น PDF"}} หรือ {{ui:"บันทึกเป็น Word"}}
+          en: Click {{ui:"Save as PDF"}} or {{ui:"Save as Word"}}
+        highlight: 'button:has-text("บันทึกเป็น PDF"), button:has-text("Save as PDF")'
+
+  details-flow:
+    url: /chat
+    storage: *st
+    setup:
+      - { click: '.MuiListItemButton-root:has-text("fine-tuning") >> nth=0' }
+      - { click: 'button:has-text("เปิดรายงาน"), button:has-text("Open report")' }
+      - { click: 'button:has-text("แก้ไขและสร้างเอกสาร"), button:has-text("Edit & create document")' }
+      - { wait: 'button:has-text("รายละเอียดบทความ"), button:has-text("Paper details")' }
+    steps:
+      - text:
+          th: คลิกปุ่ม {{ui:"รายละเอียดบทความ"}}
+          en: Click {{ui:"Paper details"}}
+        highlight: 'button:has-text("รายละเอียดบทความ"), button:has-text("Paper details")'
+      - text:
+          th: เลือก {{ui:"ประเภทบทความ"}} แล้วคลิกปุ่ม {{ui:"เพิ่มโครงเรื่อง"}}
+          en: Choose {{ui:"Paper type"}} and click {{ui:"Insert outline"}}
+        actions: [{ click: 'button:has-text("รายละเอียดบทความ"), button:has-text("Paper details")' }, { wait: '.MuiDialog-root >> nth=-1 >> textarea' }]
+        highlight: '.MuiDialog-root >> nth=-1 >> [role=combobox]'
+      - text:
+          th: ระบุ {{ui:"ผู้เขียน"}} หนึ่งคนต่อบรรทัด
+          en: Enter the {{ui:"Authors"}}, one per line
+        highlight: '.MuiDialog-root >> nth=-1 >> textarea:not([aria-hidden=true]) >> nth=0'
+      - text:
+          th: ระบุ {{ui:"คำสำคัญ"}} คั่นด้วยเครื่องหมายจุลภาค
+          en: Enter the {{ui:"Keywords"}}, separated by commas
+        actions: [{ fill: '.MuiDialog-root >> nth=-1 >> textarea:not([aria-hidden=true]) >> nth=0', value: "Somchai Tadsop, Example University" }]
+        highlight: '.MuiDialog-root >> nth=-1 >> input[type=text] >> nth=0'
+      - text:
+          th: ติ๊กเลือก {{ui:"ข้อความปิดท้าย"}} ที่ต้องการแสดง
+          en: Tick the {{ui:"Closing statements"}} you want to show
+        actions: [{ fill: '.MuiDialog-root >> nth=-1 >> input[type=text] >> nth=0', value: "irrigation, rice yield" }]
+        highlight: '.MuiDialog-root >> nth=-1 >> input[type=checkbox] >> nth=0'
+      - text:
+          th: คลิกปุ่ม {{ui:"เสร็จสิ้น"}}
+          en: Click {{ui:"Done"}}
+        actions: [{ check: '.MuiDialog-root >> nth=-1 >> input[type=checkbox] >> nth=0' }]
+        highlight: '.MuiDialog-root >> nth=-1 >> button:is(:has-text("เสร็จสิ้น"), :has-text("Done"))'
+
+  latex-flow:
+    url: /chat
+    storage: *st
+    setup:
+      - { click: '.MuiListItemButton-root:has-text("fine-tuning") >> nth=0' }
+      - { click: 'button:has-text("เปิดรายงาน"), button:has-text("Open report")' }
+      - { click: 'button:has-text("แก้ไขและสร้างเอกสาร"), button:has-text("Edit & create document")' }
+      - { wait: '[role=combobox] >> nth=2' }
+    steps:
+      - text:
+          th: คลิกช่อง {{ui:"รูปแบบเอกสาร"}}
+          en: Click the {{ui:"Document style"}} box
+        highlight: '[role=combobox] >> nth=2'
+      - text:
+          th: เลือกแบบที่อยู่ในกลุ่ม {{ui:"บทความ LaTeX (.tex)"}} เช่น IEEE Conference
+          en: Choose one in the {{ui:"LaTeX paper (.tex)"}} group, such as IEEE Conference
+        actions: [{ click: '[role=combobox] >> nth=2' }, { wait: "[role=listbox]" }]
+        highlight: "[role=listbox]"
+      - text:
+          th: คลิกปุ่ม {{ui:"ดาวน์โหลด .tex"}}
+          en: Click {{ui:"Download .tex"}}
+        actions: [{ click: '[role=option]:has-text("IEEE")' }]
+        highlight: 'button:has-text("ดาวน์โหลด .tex"), button:has-text("Download .tex")'
+      - text:
+          th: คลิกปุ่ม {{ui:"ดูโค้ด LaTeX"}} ถ้าต้องการตรวจก่อนดาวน์โหลด
+          en: Click {{ui:"Show LaTeX"}} to check the code before downloading
+        highlight: 'button:has-text("ดูโค้ด LaTeX"), button:has-text("Show LaTeX")'
+      - text:
+          th: ระบบแสดงโค้ด LaTeX ของเอกสาร
+          en: The system shows the LaTeX code of the document
+        actions: [{ click: 'button:has-text("ดูโค้ด LaTeX"), button:has-text("Show LaTeX")' }, { wait: "pre" }, { waitMs: 4000 }]
+        highlight: false
+
+  find-flow:
+    url: /chat
+    storage: *st
+    steps:
+      - text:
+          th: คลิกช่อง {{ui:"ค้นหาแชต"}} ที่แถบด้านซ้าย
+          en: Click the {{ui:"Search chats"}} box in the left bar
+        actions: [{ wait: "#composer" }]
+        highlight: 'input[type=search]'
+      - text:
+          th: ระบุคำที่อยู่ในชื่อแชต
+          en: Enter a word from the chat title
+        actions: [{ click: 'input[type=search]' }, { fill: 'input[type=search]', value: "RAG" }]
+        highlight: '.MuiListItemButton-root:has-text("fine-tuning") >> nth=0'
+      - text:
+          th: คลิกแชตที่ต้องการ
+          en: Click the chat you want
+        highlight: '.MuiListItemButton-root:has-text("fine-tuning") >> nth=0'
+      - text:
+          th: ระบบเปิดแชตนั้นพร้อมคำตอบเดิม
+          en: The system opens that chat with its earlier answer
+        actions: [{ click: '.MuiListItemButton-root:has-text("fine-tuning") >> nth=0' }, { wait: 'a:has-text("Yucheng et al. 2023")' }]
+        highlight: false
+
+  organize-flow:
+    url: /chat
+    storage: *st
+    steps:
+      - text:
+          th: คลิกปุ่ม {{ui:"โปรเจกต์ใหม่"}}
+          en: Click {{ui:"New project"}}
+        actions: [{ wait: "#composer" }]
+        highlight: '[aria-label="โปรเจกต์ใหม่"], [aria-label="New project"]'
+      - text:
+          th: ระบุ {{ui:"ชื่อโปรเจกต์"}} (จำเป็นต้องระบุ)
+          en: Enter the {{ui:"Project name"}} (required)
+        actions: [{ click: '[aria-label="โปรเจกต์ใหม่"], [aria-label="New project"]' }, { wait: 'input[maxlength="100"]' }]
+        highlight: 'input[maxlength="100"]'
+      - text:
+          th: คลิกปุ่มเครื่องหมายถูกเพื่อเพิ่มโปรเจกต์
+          en: Click the tick button to add the project
+        actions: [{ fill: 'input[maxlength="100"]', value: "Rice irrigation study" }]
+        highlight: '[aria-label="เพิ่มโปรเจกต์"], [aria-label="Add project"]'
+      - text:
+          th: คลิกปุ่มจัดการที่แชตที่ต้องการย้าย
+          en: Click the actions button on the chat you want to move
+        actions: [{ click: '[aria-label="ยกเลิก"], [aria-label="Cancel"]' }, { hover: '.MuiListItemButton-root:has-text("fine-tuning") >> nth=0' }]
+        highlight: 'button[aria-label*="fine-tuning"] >> nth=0'
+      - text:
+          th: เลือกชื่อโปรเจกต์ใต้หัวข้อ {{ui:"ย้ายไปโปรเจกต์"}}
+          en: Choose a project name under {{ui:"Move to project"}}
+        actions: [{ click: 'button[aria-label*="fine-tuning"] >> nth=0' }, { wait: "[role=menu]" }]
+        highlight: "[role=menu]"
+
+  delete-flow:
+    url: /chat
+    storage: *st
+    steps:
+      - text:
+          th: คลิกปุ่มจัดการที่แชตที่ต้องการลบ
+          en: Click the actions button on the chat you want to delete
+        actions: [{ wait: "#composer" }, { hover: '.MuiListItemButton-root:has-text("pembrolizumab") >> nth=0' }]
+        highlight: 'button[aria-label*="pembrolizumab"]'
+      - text:
+          th: เลือก {{ui:"ลบ"}}
+          en: Choose {{ui:"Delete"}}
+        actions: [{ click: 'button[aria-label*="pembrolizumab"]' }, { wait: "[role=menu]" }]
+        highlight: '[role=menuitem]:has-text("ลบ"), [role=menuitem]:has-text("Delete")'
+      - text:
+          th: คลิกปุ่ม {{ui:"ยืนยัน"}} ในกล่องถามย้ำ
+          en: Click {{ui:"Confirm"}} in the confirmation box
+        actions: [{ click: '[role=menuitem]:has-text("ลบ"), [role=menuitem]:has-text("Delete")' }, { wait: '[role=group] button:has-text("ยืนยัน"), [role=group] button:has-text("Confirm")' }]
+        highlight: '[role=group] button:has-text("ยืนยัน"), [role=group] button:has-text("Confirm")'
+
+  trash-flow:
+    url: /chat
+    storage: *st
+    steps:
+      - text:
+          th: เข้าเมนู {{ui:"ถังขยะ"}} ที่แถบด้านซ้าย
+          en: Go to {{ui:"Trash"}} in the left bar
+        actions: [{ wait: "#composer" }]
+        highlight: 'a[href="/trash"]'
+      - text:
+          th: ดูรายการที่ลบไว้ พร้อมวันที่ลบและจำนวนวันที่เหลือ
+          en: Look at the deleted items with their deletion date and the days left
+        actions: [{ click: 'a[href="/trash"]' }, { wait: "table" }]
+        highlight: false
+      - text:
+          th: คลิกปุ่ม {{ui:"กู้คืน"}} ที่แถวของรายการที่ต้องการ
+          en: Click {{ui:"Restore"}} on the row of the item you want
+        highlight: 'button:has-text("กู้คืน"), button:has-text("Restore") >> nth=0'
+
+  language-flow:
+    url: /chat
+    storage: *st
+    steps:
+      - text:
+          th: คลิก {{ui:"การตั้งค่า"}} ที่มุมล่างซ้าย
+          en: Click {{ui:"Settings"}} at the bottom left
+        actions: [{ wait: "#composer" }]
+        highlight: 'nav button:has-text("การตั้งค่า"), nav button:has-text("Settings")'
+      - text:
+          th: เลือก {{ui:"ไทย"}} หรือ English ที่แถว {{ui:"ภาษา"}}
+          en: Choose {{ui:"ไทย"}} or English on the {{ui:"Language"}} row
+        actions: [{ click: 'nav button:has-text("การตั้งค่า"), nav button:has-text("Settings")' }, { wait: "[role=dialog]" }]
+        highlight: "[role=dialog] [role=radiogroup] >> nth=0"
+      - text:
+          th: เลือก {{ui:"สว่าง"}} {{ui:"มืด"}} หรือ {{ui:"ตามระบบ"}} ที่แถว {{ui:"ธีม"}}
+          en: Choose {{ui:"Light"}}, {{ui:"Dark"}} or {{ui:"System"}} on the {{ui:"Theme"}} row
+        highlight: "[role=dialog] [role=radiogroup] >> nth=1"
+      - text:
+          th: คลิกปุ่มปิดมุมขวาบนของหน้าต่าง
+          en: Click the close button at the top right of the window
+        highlight: '[role=dialog] [aria-label="ปิด"], [role=dialog] [aria-label="Close"]'
+
+  plan-setting-flow:
+    url: /chat
+    storage: *st
+    steps:
+      - text:
+          th: คลิก {{ui:"การตั้งค่า"}} ที่มุมล่างซ้าย
+          en: Click {{ui:"Settings"}} at the bottom left
+        actions: [{ wait: "#composer" }]
+        highlight: 'nav button:has-text("การตั้งค่า"), nav button:has-text("Settings")'
+      - text:
+          th: เปิดหรือปิดสวิตช์ {{ui:"ตรวจแผนก่อนค้นหา"}}
+          en: Turn the {{ui:"Review the plan before searching"}} switch on or off
+        actions: [{ click: 'nav button:has-text("การตั้งค่า"), nav button:has-text("Settings")' }, { wait: "[role=dialog]" }]
+        highlight: '[role=dialog] input[type=checkbox]'
+
+  usage-flow:
+    url: /chat
+    storage: *st
+    steps:
+      - text:
+          th: คลิก {{ui:"การตั้งค่า"}} ที่มุมล่างซ้าย
+          en: Click {{ui:"Settings"}} at the bottom left
+        actions: [{ wait: "#composer" }]
+        highlight: 'nav button:has-text("การตั้งค่า"), nav button:has-text("Settings")'
+      - text:
+          th: คลิกปุ่ม {{ui:"ดูสถิติการใช้งาน"}}
+          en: Click {{ui:"View usage"}}
+        actions: [{ click: 'nav button:has-text("การตั้งค่า"), nav button:has-text("Settings")' }, { wait: "[role=dialog]" }]
+        highlight: '[role=dialog] :is(a,button):has-text("ดูสถิติการใช้งาน"), [role=dialog] :is(a,button):has-text("View usage")'
+      - text:
+          th: เลือกช่วงเวลา {{ui:"7 วัน"}} หรือ {{ui:"30 วัน"}}
+          en: Choose the range {{ui:"7 days"}} or {{ui:"30 days"}}
+        actions: [{ click: '[role=dialog] :is(a,button):has-text("ดูสถิติการใช้งาน"), [role=dialog] :is(a,button):has-text("View usage")' }, { wait: "ul" }]
+        highlight: '.MuiToggleButtonGroup-root'
+      - text:
+          th: อ่านสถิติของแต่ละโหมดในการ์ดด้านล่าง
+          en: Read the figures of each mode in the cards below
+        highlight: 'ul[aria-label] >> nth=0'
