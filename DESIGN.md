@@ -47,7 +47,7 @@ Source of truth is `frontend/src/theme.ts` (MUI `createTheme`, `cssVariables` wi
 
 ## Overview
 
-A chat-first workspace: a left sidebar (new chat, search, projects, recent chats, settings), a centred thread (max 820px), and a right panel at >= 1200px that shows live run progress or the source being inspected. Below 1200px the inspector is a bottom sheet; below 900px the sidebar is a drawer. Cool blue-grey paper with one soft wash of light from the top right, white sheets lifted by long, low navy-tinted shadows, one action colour (navy), and a violet mark reserved for what the AI did (agent chips, citation numbers, the "data leaves here" cell).
+A chat-first workspace: a left sidebar (new chat, search, projects, recent chats, settings), a centred thread (max 820px), and a right panel at >= 1200px that shows live run progress or the source being inspected. Below 1200px the inspector is a bottom sheet; below 900px the sidebar is a drawer. Flat cool blue-grey paper (the app desk carries no gradient wash), white sheets that read by their tone step from the desk (no outlines or resting shadows on app surfaces; only floating menus and dialogs lift), one action colour (navy), and a violet mark reserved for what the AI did (agent chips, citation numbers, the "data leaves here" cell).
 
 Thai is the default language (SSR renders Thai, the persisted language applies after hydration); English mirrors every string in `frontend/src/lib/strings.ts` (type-checked key parity), and has its own hand-written starter questions.
 
@@ -98,5 +98,5 @@ Authored moment: the landing answer sheet writes itself (lines scale in, citatio
 
 ## Don't
 
-- Don't add accent colours beyond navy and the AI violet. Gradients only as the one soft light wash on the page. Don't hide copy behind opacity on first paint.
+- Don't add accent colours beyond navy and the AI violet. No gradients on app screens; the sidebar's current-page row and primary buttons are flat fills without resting shadows. Don't hide copy behind opacity on first paint.
 - Don't claim features the backend lacks (file attach, quick chat, multi-turn context).

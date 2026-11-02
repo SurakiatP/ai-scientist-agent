@@ -19,7 +19,6 @@ export function ReportArtifact({ sessionId, turn }: { sessionId: string; turn: T
   return (
     <Box component="section" id={reportId(turn.id)} aria-label={t.reportTitle} sx={{
       mt: 2, display: "flex", alignItems: "center", gap: 1.5, flexWrap: "wrap", border: 1, borderColor: isOpen ? "primary.main" : "divider", borderRadius: "16px", bgcolor: "surface.raised", px: 2, py: 1.25,
-      boxShadow: "0 8px 24px -16px rgb(var(--mui-palette-primary-mainChannel) / 0.35)",
     }}>
       <DescriptionOutlinedIcon aria-hidden sx={{ color: "primary.main" }} />
       <Box sx={{ flex: "1 1 200px", minWidth: 0 }}>

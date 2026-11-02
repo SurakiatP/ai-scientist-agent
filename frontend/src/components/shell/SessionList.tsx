@@ -31,7 +31,7 @@ export function SessionList({ query, onPick }: { query: string; onPick?: () => v
   // Sessions already listed inside an open project group are not repeated here; the rest, newest 8 (all matches while searching).
   const all = sessions.filter((s) => match(s) && !treeOpen.includes(s.projectId)).sort((a, b) => b.updatedAt - a.updatedAt);
   const rows = q ? all : all.slice(0, 8);
-  if (!rows.length) return q && !sessions.some(match) ? <Typography sx={{ px: 1.25, fontSize: "0.8125rem", color: "text.secondary" }}>{t.noMatches}</Typography> : null;
+  if (!rows.length) return q && !sessions.some(match) ? <Typography role="status" sx={{ mx: 0.5, p: 1.5, borderRadius: "16px", bgcolor: "action.hover", fontSize: "0.8125rem", color: "text.secondary" }}>{t.noMatches}</Typography> : null;
   return (
     <>
     <List dense disablePadding aria-label={t.recents}>

@@ -4,15 +4,13 @@ import type { ReactNode } from "react";
 import { Box, Button, Typography } from "@mui/material";
 import ArrowBackRoundedIcon from "@mui/icons-material/ArrowBackRounded";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
-import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import { useHydrated } from "@/lib/history";
 import { usePrefs } from "@/lib/prefs";
 import { featureSlugs, landing, sitePages, type FeatureSlug } from "@/lib/strings";
-import { LandingHeader, ring, wrap, type NavKey } from "./LandingHeader";
+import { ArrowPill, LandingHeader, ring, wrap, type NavKey } from "./LandingHeader";
 import { dur, ease } from "@/lib/motion";
 
 const rise = { "@media (prefers-reduced-motion: no-preference)": { "& .rise": { animation: `site-rise ${dur.slow}ms ${ease} both`, animationDelay: "calc(var(--i, 0) * 40ms)" }, "@keyframes site-rise": { from: { transform: "translateY(12px)" }, to: { transform: "none" } } } } as const;
-const card = { display: "grid", alignContent: "start", gap: 0.75, p: 2.5, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "background.paper" } as const;
 
 export function useCopy() {
   const lang = usePrefs((s) => s.lang), hydrated = useHydrated();
@@ -21,37 +19,69 @@ export function useCopy() {
 }
 
 // Shell of every public page behind the header menu: header, breadcrumb, content, and a closing way in.
-export function Shell({ active, trail, wide, children }: { active: NavKey; trail: string; wide?: boolean; children: ReactNode }) {
+export function Shell({ active, trail, children }: { active: NavKey; trail: string; children: ReactNode }) {
   const { lang, L } = useCopy();
   return (
     <Box lang={lang} sx={{ ...rise, position: "relative", overflow: "clip" }}>
       <LandingHeader active={active} />
-      <Box component="main" id="content" tabIndex={-1} sx={{ ...wrap, outline: "none", maxWidth: wide ? 1320 : 960, py: { xs: 3, md: 6 }, display: "grid", gap: { xs: 4, md: 6 } }}>
+      <Box component="main" id="content" tabIndex={-1} sx={{ ...wrap, outline: "none", maxWidth: 1080, py: { xs: 3, md: 6 }, display: "grid", gap: { xs: 6, md: 10 } }}>
         <Box component="nav" aria-label="breadcrumb" sx={{ display: "flex", flexWrap: "wrap", gap: 1, fontSize: "0.875rem", color: "text.secondary" }}>
           <Box component={Link} href="/" sx={{ color: "inherit", ...ring, "&:hover": { color: "text.primary" } }}>{L.home}</Box><span aria-hidden="true">/</span>
           <Box component="span" aria-current="page" sx={{ color: "text.primary", fontWeight: 500 }}>{trail}</Box>
         </Box>
         {children}
       </Box>
-      <Box component="footer" sx={{ ...wrap, pb: { xs: 5, md: 7 } }}>
-        <Box sx={{ p: { xs: 3, md: 4 }, borderRadius: "24px", bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.1)", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 2.5 }}>
-          <Typography component="p" sx={{ m: 0, fontSize: { xs: "1.25rem", md: "1.5rem" }, fontWeight: 600, lineHeight: 1.5, textWrap: "balance" }}>{L.footer}</Typography>
-          <Button component={Link} href="/chat" variant="contained" size="large" endIcon={<ArrowForwardRoundedIcon />} sx={{ minHeight: 48, px: 3, borderRadius: 999, ...ring }}>{L.cta}</Button>
+      <Box component="footer" sx={{ ...wrap, maxWidth: 1080, pb: { xs: 5, md: 7 } }}>
+        <Box sx={{ p: { xs: 3, md: 5 }, borderRadius: "24px", bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.1)", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 3 }}>
+          <Typography component="p" sx={{ m: 0, fontSize: { xs: "1.5rem", md: "2rem" }, fontWeight: 700, lineHeight: 1.4, textWrap: "balance" }}>{L.footer}</Typography>
+          <ArrowPill href="/chat" big>{L.cta}</ArrowPill>
         </Box>
       </Box>
     </Box>
   );
 }
 
-export const h1 = { m: 0, fontSize: { xs: "1.875rem", md: "2.5rem" }, fontWeight: 700, lineHeight: 1.25, textWrap: "balance" } as const;
-export const lead = { m: 0, maxWidth: "46rem", fontSize: { xs: "1rem", md: "1.125rem" }, lineHeight: 1.8, color: "text.secondary", textWrap: "pretty" } as const;
-export const h2 = { m: 0, fontSize: { xs: "1.375rem", md: "1.625rem" }, fontWeight: 600, lineHeight: 1.5 } as const;
+export const h1 = { m: 0, fontSize: { xs: "2.25rem", md: "3.25rem" }, fontWeight: 700, lineHeight: 1.25, letterSpacing: "-0.02em", textWrap: "balance", maxWidth: "20em" } as const;
+export const lead = { m: 0, maxWidth: "40rem", fontSize: { xs: "1.0625rem", md: "1.25rem" }, lineHeight: 1.8, color: "text.secondary", textWrap: "pretty" } as const;
+export const h2 = { m: 0, fontSize: { xs: "1.5rem", md: "2rem" }, fontWeight: 700, lineHeight: 1.4, letterSpacing: "-0.01em", textWrap: "balance" } as const;
+const idx = (k: number) => ({ "--i": k }) as React.CSSProperties;
+
+// A section: its heading on the left, the content on the right at desktop; stacked on a phone. No rules, no boxes.
+function Part({ id, head, children }: { id: string; head: string; children: ReactNode }) {
+  return (
+    <Box component="section" aria-labelledby={id} sx={{ display: "grid", gap: { xs: 3, md: 6 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1fr) minmax(0,2.2fr)" }, alignItems: "start" }}>
+      <Typography id={id} component="h2" sx={{ ...h2, position: { md: "sticky" }, top: { md: 96 } }}>{head}</Typography>
+      <Box>{children}</Box>
+    </Box>
+  );
+}
+
+// Titled points as large type: the title, then what it means. `n` marks an ordered list with "Step N" in words.
+function Points({ items, n, label }: { items: readonly { t: string; d: string }[]; n?: string; label?: string }) {
+  return (
+    <Box component={n ? "ol" : "ul"} aria-label={label} sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: { xs: 4, md: 5 } }}>
+      {items.map((it, k) => (
+        <Box component="li" key={it.t} className="rise" style={idx(k)} sx={{ display: "grid", gap: 0.75 }}>
+          {n && <Typography component="span" sx={{ fontSize: "0.875rem", color: "text.secondary" }}>{n.replace("{n}", String(k + 1))}</Typography>}
+          <Typography component="h3" sx={{ m: 0, fontSize: { xs: "1.25rem", md: "1.5rem" }, fontWeight: 700, lineHeight: 1.4 }}>{it.t.replace(/^\d+\.\s*/, "")}</Typography>
+          <Typography sx={{ maxWidth: "38rem", fontSize: "1rem", lineHeight: 1.8, color: "text.secondary", textWrap: "pretty" }}>{it.d}</Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+}
 
 function Note({ children }: { children: ReactNode }) {
   return (
-    <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.25, pt: 2.5, borderTop: 1, borderColor: "divider", color: "text.secondary", fontSize: "0.9375rem", lineHeight: 1.7 }}>
-      <Box aria-hidden="true" sx={{ mt: 0.5, width: 20, height: 20, flexShrink: 0, borderRadius: "50%", display: "grid", placeItems: "center", bgcolor: "primary.main", color: "primary.contrastText" }}><CheckRoundedIcon sx={{ fontSize: 14 }} /></Box>
-      <span>{children}</span>
+    <Box sx={{ maxWidth: "38rem", color: "text.secondary", fontSize: "1rem", lineHeight: 1.8 }}>{children}</Box>
+  );
+}
+
+function Intro({ title, lead: text }: { title: string; lead: string }) {
+  return (
+    <Box sx={{ display: "grid", gap: 3 }}>
+      <Typography component="h1" className="rise" sx={h1}>{title}</Typography>
+      <Typography className="rise" style={idx(1)} sx={lead}>{text}</Typography>
     </Box>
   );
 }
@@ -63,78 +93,49 @@ export function FeatureView({ slug }: { slug: FeatureSlug }) {
   const prev = featureSlugs[i - 1], next = featureSlugs[i + 1];
   return (
     <Shell active="product" trail={page.tab}>
-      <Box sx={{ display: "grid", gap: 2 }}>
-        <Typography component="h1" className="rise" sx={h1}>{page.title}</Typography>
-        <Typography className="rise" style={{ "--i": 1 } as React.CSSProperties} sx={lead}>{page.lead}</Typography>
-      </Box>
-      <Box component="section" aria-labelledby="steps-h" sx={{ display: "grid", gap: 2 }}>
-        <Typography id="steps-h" component="h2" sx={h2}>{L.stepsHead}</Typography>
-        <Box component="ol" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0,1fr)", sm: "repeat(2, minmax(0,1fr))" } }}>
-          {page.steps.map((s, k) => (
-            <Box component="li" key={s.t} className="rise" style={{ "--i": k } as React.CSSProperties} sx={{ ...card, gridTemplateColumns: "32px minmax(0,1fr)", columnGap: 1.5 }}>
-              <Box aria-hidden="true" sx={{ width: 32, height: 32, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: "0.875rem", fontWeight: 600, color: "primary.main", bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.12)", fontVariantNumeric: "tabular-nums" }}>{k + 1}</Box>
-              <Typography component="h3" sx={{ m: 0, alignSelf: "center", fontSize: "1.0625rem", fontWeight: 600, lineHeight: 1.5 }}>{s.t}</Typography>
-              <Typography sx={{ gridColumn: 2, fontSize: "0.9375rem", lineHeight: 1.75, color: "text.secondary", textWrap: "pretty" }}>{s.d}</Typography>
-            </Box>
-          ))}
+      <Intro title={page.title} lead={page.lead} />
+      <Part id="steps-h" head={L.stepsHead}><Points items={page.steps} n={L.stepN} label={L.stepsHead} /></Part>
+      <Part id="good-h" head={L.goodHead}>
+        <Box sx={{ display: "grid", gap: 2 }}>
+          <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 2 }}>
+            {page.good.map((g) => <Box component="li" key={g}><Note>{g}</Note></Box>)}
+          </Box>
+          <Typography sx={{ maxWidth: "38rem", mt: 1, fontSize: "1.0625rem", lineHeight: 1.8, fontWeight: 600 }}>{page.note}</Typography>
         </Box>
-      </Box>
-      <Box component="section" aria-labelledby="good-h" sx={{ ...card, p: { xs: 2.5, md: 3.5 }, gap: 2 }}>
-        <Typography id="good-h" component="h2" sx={{ ...h2, fontSize: "1.25rem" }}>{L.goodHead}</Typography>
-        <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 1.25 }}>
-          {page.good.map((g) => (
-            <Box component="li" key={g} sx={{ display: "flex", gap: 1.25, fontSize: "0.9375rem", lineHeight: 1.7 }}>
-              <CheckRoundedIcon aria-hidden="true" sx={{ mt: 0.5, fontSize: 18, color: "evidence.verified", flexShrink: 0 }} /><span>{g}</span>
-            </Box>
-          ))}
-        </Box>
-        <Note>{page.note}</Note>
-      </Box>
-      <Box component="section" aria-labelledby="more-h" sx={{ display: "grid", gap: 2 }}>
-        <Typography id="more-h" component="h2" sx={{ ...h2, fontSize: "1.25rem" }}>{L.other}</Typography>
-        <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 1.5, gridTemplateColumns: { xs: "minmax(0,1fr)", sm: "repeat(3, minmax(0,1fr))" } }}>
+      </Part>
+      <Part id="more-h" head={L.other}>
+        <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 1 }}>
           {featureSlugs.map((s) => (
             <li key={s}>
-              <Box component={Link} href={`/features/${s}`} aria-current={s === slug ? "page" : undefined} sx={{ display: "grid", gap: 0.25, minHeight: 44, p: 1.75, border: 1, borderColor: s === slug ? "primary.main" : "divider", borderRadius: "16px", bgcolor: s === slug ? "rgb(var(--mui-palette-primary-mainChannel) / 0.08)" : "background.paper", color: "text.primary", textDecoration: "none", transition: `border-color ${dur.quick}ms ${ease}, background-color ${dur.quick}ms ${ease}`, "&:hover": { borderColor: "primary.main" }, ...ring }}>
-                <Typography component="span" sx={{ fontSize: "0.9375rem", fontWeight: 600 }}>{P.features[s].tab}</Typography>
-                <Typography component="span" sx={{ fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.5 }}>{P.features[s].blurb}</Typography>
+              <Box component={Link} href={`/features/${s}`} aria-current={s === slug ? "page" : undefined} sx={{ display: "grid", gap: 0.25, minHeight: 44, py: 1, color: s === slug ? "primary.main" : "text.primary", textDecoration: "none", ...ring, "&:hover .t": { color: "primary.main" } }}>
+                <Typography className="t" component="span" sx={{ fontSize: { xs: "1.25rem", md: "1.5rem" }, fontWeight: 700, lineHeight: 1.4, transition: `color ${dur.quick}ms ${ease}` }}>{P.features[s].tab}</Typography>
+                <Typography component="span" sx={{ fontSize: "0.9375rem", color: "text.secondary", lineHeight: 1.6 }}>{P.features[s].blurb}</Typography>
               </Box>
             </li>
           ))}
         </Box>
-        <Box sx={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 1.5 }}>
+        <Box sx={{ mt: 3, display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 1.5 }}>
           {prev ? <Button component={Link} href={`/features/${prev}`} color="inherit" startIcon={<ArrowBackRoundedIcon />} sx={{ minHeight: 44, ...ring }}>{L.prev}: {P.features[prev].tab}</Button> : <span />}
           {next ? <Button component={Link} href={`/features/${next}`} color="inherit" endIcon={<ArrowForwardRoundedIcon />} sx={{ minHeight: 44, ...ring }}>{L.next}: {P.features[next].tab}</Button> : <span />}
         </Box>
-      </Box>
+      </Part>
     </Shell>
   );
 }
 
-// "How it works" and "FAQ": sections of short titled points.
+// "How it works" and "FAQ": sections of short titled points. The ordered section of "how" counts its steps.
 export function InfoView({ kind }: { kind: "how" | "faq" }) {
   const { L, P } = useCopy();
   const page = P[kind];
   return (
     <Shell active={kind} trail={kind === "how" ? L.navHow : L.navCheck}>
-      <Box sx={{ display: "grid", gap: 2 }}>
-        <Typography component="h1" className="rise" sx={h1}>{page.title}</Typography>
-        <Typography className="rise" style={{ "--i": 1 } as React.CSSProperties} sx={lead}>{page.lead}</Typography>
-      </Box>
+      <Intro title={page.title} lead={page.lead} />
       {page.sections.map((sec, si) => (
-        <Box component="section" key={sec.head} aria-labelledby={`sec-${si}`} sx={{ display: "grid", gap: 2 }}>
-          <Typography id={`sec-${si}`} component="h2" sx={h2}>{sec.head}</Typography>
-          <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0,1fr)", sm: kind === "faq" ? "minmax(0,1fr)" : "repeat(2, minmax(0,1fr))" } }}>
-            {sec.items.map((it, k) => (
-              <Box component="li" key={it.t} className="rise" style={{ "--i": k } as React.CSSProperties} sx={kind === "faq" ? { display: "grid", gap: 0.75, pt: 2.5, borderTop: 1, borderColor: "divider" } : card}>
-                <Typography component="h3" sx={{ m: 0, fontSize: "1.0625rem", fontWeight: 600, lineHeight: 1.5 }}>{it.t}</Typography>
-                <Typography sx={{ fontSize: "0.9375rem", lineHeight: 1.75, color: "text.secondary", textWrap: "pretty" }}>{it.d}</Typography>
-              </Box>
-            ))}
-          </Box>
-        </Box>
+        page.sections.length === 1 ? <Points key={sec.head} items={sec.items} label={sec.head} /> : (
+          <Part key={sec.head} id={`sec-${si}`} head={sec.head}><Points items={sec.items} n={kind === "how" && si === 0 ? L.stepN : undefined} label={sec.head} /></Part>
+        )
       ))}
-      <Note>{page.note}</Note>
+      <Note>{kind === "faq" ? page.note.split(L.navHow).flatMap((x, i) => i ? [<Box key={i} component={Link} href="/how-it-works" sx={{ color: "primary.main", ...ring }}>{L.navHow}</Box>, x] : [x]) : page.note}</Note>
     </Shell>
   );
 }

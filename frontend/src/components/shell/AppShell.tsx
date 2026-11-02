@@ -30,13 +30,13 @@ export function AppShell({ children, aside, asideWide }: { children: ReactNode; 
         display: { xs: "none", md: "block" }, width: collapsed ? 0 : W, flexShrink: 0, overflow: "hidden", visibility: collapsed ? "hidden" : "visible",
         ...(moved && { transition: `width ${dur.fast}ms ${ease}, visibility 0s linear ${collapsed ? `${dur.fast}ms` : "0s"}` }),
       }}>
-        <Box sx={{ width: W, height: "100%", borderRight: 1, borderColor: "divider" }}><Sidebar onCollapse={() => { setMoved(true); set(true); }} /></Box>
+        <Box sx={{ width: W, height: "100%", "[data-dark] &": { borderRight: 1, borderColor: "divider" } }}><Sidebar onCollapse={() => { setMoved(true); set(true); }} /></Box>
       </Box>
       <Drawer open={drawer} onClose={() => setDrawer(false)} sx={{ display: { md: "none" } }} slotProps={{ paper: { sx: { width: W, maxWidth: "85vw" } } }}>
         <Sidebar onPick={() => setDrawer(false)} />
       </Drawer>
-      {/* the desk: cool paper with one soft wash of light from the top right */}
-      <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", backgroundImage: "radial-gradient(70% 55% at 85% 0%, rgb(var(--mui-palette-primary-mainChannel) / 0.12), transparent 70%), radial-gradient(50% 40% at 15% 100%, rgb(255 255 255 / 0.35), transparent 70%)", "[data-dark] &": { backgroundImage: "radial-gradient(70% 55% at 85% 0%, rgb(var(--mui-palette-primary-mainChannel) / 0.1), transparent 70%)" } }}>
+      {/* the desk: flat cool paper; the white sheets on it carry the depth */}
+      <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <Stack component="header" direction="row" sx={{ alignItems: "center", gap: 1, px: { xs: 1.5, md: 2 }, pt: { md: 1 }, minHeight: 56, borderBottom: { xs: 1, md: 0 }, borderColor: "divider" }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: "center", display: { md: "none" } }}><Box sx={{ width: 30, height: 30, borderRadius: "8px", display: "grid", placeItems: "center", bgcolor: "primary.main", color: "primary.contrastText", "& svg": { color: "inherit", width: 20, height: 20 } }}><Mark /></Box><Box component="span" sx={{ fontWeight: 600, fontSize: "1.0625rem", whiteSpace: "nowrap" }}>{t.brand}</Box></Stack>
           {collapsed && (
@@ -45,7 +45,7 @@ export function AppShell({ children, aside, asideWide }: { children: ReactNode; 
             </IconButton>
           )}
           <Box sx={{ flex: { xs: 1, md: "none" }, minWidth: 0, display: "flex", justifyContent: { xs: "flex-end", md: "flex-start" } }}><ProjectSwitcher /></Box>
-          <IconButton aria-label={t.menu} onClick={() => setDrawer(true)} sx={{ display: { md: "none" }, border: 1, borderColor: "divider", borderRadius: 1.5 }}><MenuRoundedIcon /></IconButton>
+          <IconButton aria-label={t.menu} onClick={() => setDrawer(true)} sx={{ display: { md: "none" } }}><MenuRoundedIcon /></IconButton>
         </Stack>
         <Box component="main" id="content" tabIndex={-1} sx={{ flex: 1, minHeight: 0, overflowY: "auto", outline: "none" }}>{children}</Box>
       </Box>

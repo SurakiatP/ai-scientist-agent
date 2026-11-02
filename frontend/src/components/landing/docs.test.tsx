@@ -43,7 +43,7 @@ describe("in-app manual", () => {
     expect(meta.title).toContain(th.topics.find((t) => t.id === "faq")!.title);
   });
 
-  it("the Start cards carry the real topic numbers", () => {
+  it("the Start cards link the three first-read topics in order", () => {
     render(<DocsIndexView />);
     const start = screen.getByRole("heading", { name: "เริ่มใน 3 ขั้น", level: 2 }).parentElement!;
     const nums = [...start.querySelectorAll("li a")].map((a) => th.topics.findIndex((t) => a.getAttribute("href") === `/docs/${t.id}`) + 1);

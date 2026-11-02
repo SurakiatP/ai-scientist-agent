@@ -50,24 +50,24 @@ export function UsagePage() {
       <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, mb: 2.5 }}>
         <Box sx={{ flex: 1, minWidth: 220 }}>
           <Typography component="h1" sx={{ fontSize: "1.5rem", fontWeight: 700 }}>{t.usageTitle}</Typography>
-          <Typography sx={{ mt: 0.5, color: "text.secondary", fontSize: "0.9375rem" }}>{t.usageNote}</Typography>
+          <Typography sx={{ mt: 0.5, color: "text.secondary", fontSize: "1rem" }}>{t.usageNote}</Typography>
         </Box>
         <ToggleButtonGroup exclusive size="small" value={days} aria-label={t.usageRange} onChange={(_, v) => { if (v) setDays(v); }}>
           <ToggleButton value={7} sx={{ minHeight: 44, px: 2 }}>{t.usageDays7}</ToggleButton>
           <ToggleButton value={30} sx={{ minHeight: 44, px: 2 }}>{t.usageDays30}</ToggleButton>
         </ToggleButtonGroup>
       </Box>
-      {off ? <Typography role="status" sx={{ py: 4, textAlign: "center", color: "text.secondary", border: 1, borderColor: "divider", borderStyle: "dashed", borderRadius: "16px" }}>{t.usageOff}</Typography>
+      {off ? <Typography role="status" sx={{ p: { xs: 3, md: 5 }, color: "text.secondary", bgcolor: "action.hover", borderRadius: "16px" }}>{t.usageOff}</Typography>
         : state === "error" ? <Alert severity="error" variant="outlined" action={<Button color="inherit" onClick={() => void load(days)} sx={{ minHeight: 44 }}>{t.retry}</Button>}>{t.usageError}</Alert>
         : state === "loading" || !hydrated ? (
           <Box role="status" aria-label={t.usageLoading} sx={{ display: "grid", gap: 1.5, gridTemplateColumns: { xs: "1fr", sm: "1fr 1fr" } }}>
-            {[0, 1].map((i) => <Box key={i} sx={{ border: 1, borderColor: "divider", borderRadius: "16px", p: 2, display: "grid", gap: 1.25 }}>{[70, 40, 55, 45].map((w, j) => <Box key={j} sx={{ ...skeletonBar(i + j), width: `${w}%` }} />)}</Box>)}
+            {[0, 1].map((i) => <Box key={i} sx={{ borderRadius: "16px", bgcolor: "background.paper", p: 2, display: "grid", gap: 1.25 }}>{[70, 40, 55, 45].map((w, j) => <Box key={j} sx={{ ...skeletonBar(i + j), width: `${w}%` }} />)}</Box>)}
           </Box>
-        ) : !rows?.length ? <Typography role="status" sx={{ py: 4, textAlign: "center", color: "text.secondary", border: 1, borderColor: "divider", borderStyle: "dashed", borderRadius: "16px" }}>{t.usageEmpty}</Typography>
+        ) : !rows?.length ? <Typography role="status" sx={{ p: { xs: 3, md: 5 }, color: "text.secondary", bgcolor: "action.hover", borderRadius: "16px" }}>{t.usageEmpty}</Typography>
         : (
           <Box component="ul" aria-label={t.usageTitle} sx={{ listStyle: "none", m: 0, p: 0, display: "grid", gap: 2, gridTemplateColumns: { xs: "minmax(0, 1fr)", sm: "repeat(2, minmax(0, 1fr))" } }}>
             {rows.map(([k, m]) => (
-              <Box component="li" key={k} sx={{ border: 1, borderColor: "divider", borderRadius: "16px", p: 2, bgcolor: "background.paper", display: "grid", gap: 1.25 }}>
+              <Box component="li" key={k} sx={{ borderRadius: "16px", p: 2, bgcolor: "background.paper", display: "grid", gap: 1.25 }}>
                 <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 1 }}>
                   <Typography component="h2" sx={{ fontSize: "1rem", fontWeight: 700 }}>{label(k)}</Typography>
                   <Typography sx={{ fontVariantNumeric: "tabular-nums", color: "text.secondary", fontSize: "0.875rem" }}>{`${nf(m.count, 0)} ${t.usageCount}`}</Typography>

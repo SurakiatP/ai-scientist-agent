@@ -1,7 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Box, Button, Chip, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography, useMediaQuery } from "@mui/material";
-import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import { srOnly } from "@/lib/config";
 import { useHydrated } from "@/lib/history";
 import { enterRow, skeletonBar } from "@/lib/motion";
@@ -63,13 +62,13 @@ export function TrashPage() {
   const when = (ms: number) => new Date(ms).toLocaleString(lang === "th" ? "th-TH" : "en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   const actions = (i: Item) => confirm === i.id ? (
     <Box role="group" aria-label={t.trashDeleteConfirm.replace("{name}", i.name)} sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, alignItems: "center", justifyContent: "flex-end" }}>
-      <Typography sx={{ fontSize: "0.8125rem", flexBasis: "100%", textAlign: { sm: "right" } }}>{t.trashDeleteConfirm.replace("{name}", i.name)}</Typography>
+      <Typography sx={{ fontSize: "0.875rem", flexBasis: "100%", textAlign: { sm: "right" } }}>{t.trashDeleteConfirm.replace("{name}", i.name)}</Typography>
       <Button color="error" variant="contained" autoFocus disabled={busy} onClick={() => void forever(i)} sx={{ minHeight: 44 }}>{t.confirm}</Button>
       <Button color="inherit" onClick={() => setConfirm(null)} sx={{ minHeight: 44 }}>{t.cancel}</Button>
     </Box>
   ) : (
     <Box sx={{ display: "flex", gap: 0.5, justifyContent: "flex-end", flexWrap: "wrap" }}>
-      <Button variant="outlined" disabled={busy} onClick={() => void restore(i)} sx={{ minHeight: 44, borderColor: "primary.main" }}>{t.trashRestore}</Button>
+      <Button disabled={busy} onClick={() => void restore(i)} sx={{ minHeight: 44 }}>{t.trashRestore}</Button>
       <Button color="error" disabled={busy} onClick={() => setConfirm(i.id)} sx={{ minHeight: 44 }}>{t.trashDeleteForever}</Button>
     </Box>
   );
@@ -80,36 +79,35 @@ export function TrashPage() {
       <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1.5, mb: 2.5 }}>
         <Box sx={{ flex: 1, minWidth: 220 }}>
           <Typography ref={heading} tabIndex={-1} component="h1" sx={{ fontSize: "1.5rem", fontWeight: 700, outline: 0 }}>{t.trashTitle}</Typography>
-          <Typography sx={{ mt: 0.5, color: "text.secondary", fontSize: "0.9375rem" }}>{t.trashNote}</Typography>
+          <Typography sx={{ mt: 0.5, color: "text.secondary", fontSize: "1rem" }}>{t.trashNote}</Typography>
         </Box>
         {!off && <Button variant="outlined" disabled={busy || state !== "ok"} onClick={() => void purge()} sx={{ minHeight: 44, borderRadius: 2 }}>{t.trashPurge}</Button>}
       </Box>
       <Box role="status" aria-live="polite" sx={msg ? { mb: 2 } : srOnly}>{msg && <Alert severity={msg.ok ? "success" : "error"} variant="outlined">{msg.text}</Alert>}</Box>
-      {off ? <Typography role="status" sx={{ py: 4, textAlign: "center", color: "text.secondary", border: 1, borderColor: "divider", borderStyle: "dashed", borderRadius: "16px" }}>{t.trashOff}</Typography>
+      {off ? <Typography role="status" sx={{ p: { xs: 3, md: 5 }, color: "text.secondary", bgcolor: "action.hover", borderRadius: "16px" }}>{t.trashOff}</Typography>
         : state === "error" ? (
           <Alert severity="error" variant="outlined" action={<Button color="inherit" onClick={() => { setState("loading"); void load(); }} sx={{ minHeight: 44 }}>{t.retry}</Button>}>{t.trashError}</Alert>
         ) : state === "loading" || !hydrated ? (
           <Box role="status" aria-label={t.trashLoading} sx={{ display: "grid", gap: 1.5 }}>
-            {[0, 1, 2, 3].map((i) => <Box key={i} sx={{ border: 1, borderColor: "divider", borderRadius: "16px", p: 2, display: "grid", gap: 1 }}><Box sx={{ ...skeletonBar(i), width: `${60 - i * 8}%` }} /><Box sx={{ ...skeletonBar(i + 1), width: "30%", height: 10 }} /></Box>)}
+            {[0, 1, 2, 3].map((i) => <Box key={i} sx={{ borderRadius: "16px", bgcolor: "background.paper", p: 2, display: "grid", gap: 1 }}><Box sx={{ ...skeletonBar(i), width: `${60 - i * 8}%` }} /><Box sx={{ ...skeletonBar(i + 1), width: "30%", height: 10 }} /></Box>)}
           </Box>
         ) : !items?.length ? (
-          <Box sx={{ py: 6, textAlign: "center", border: 1, borderColor: "divider", borderStyle: "dashed", borderRadius: "16px", color: "text.secondary" }}>
-            <DeleteOutlineRoundedIcon aria-hidden sx={{ fontSize: 40, opacity: 0.7 }} />
-            <Typography role="status" sx={{ mt: 1, fontWeight: 600, color: "text.primary" }}>{t.trashEmpty}</Typography>
-            <Typography sx={{ fontSize: "0.9375rem" }}>{t.trashEmptyNote}</Typography>
+          <Box role="status" sx={{ p: { xs: 3, md: 5 }, borderRadius: "16px", bgcolor: "action.hover", color: "text.secondary" }}>
+            <Typography component="h2" sx={{ fontSize: "1.25rem", fontWeight: 700, color: "text.primary" }}>{t.trashEmpty}</Typography>
+            <Typography sx={{ mt: 0.5, maxWidth: 440, lineHeight: 1.8 }}>{t.trashEmptyNote}</Typography>
           </Box>
         ) : cards ? (
           <Box component="ul" aria-label={t.trashTitle} sx={{ listStyle: "none", m: 0, p: 0, display: "grid", gap: 1 }}>
             {items.map((i, n) => (
-              <Box component="li" key={i.kind + i.id} sx={{ ...enterRow(n), p: 2, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "background.paper", display: "grid", gap: 1 }}>
+              <Box component="li" key={i.kind + i.id} sx={{ ...enterRow(n), p: 2, borderRadius: "16px", bgcolor: "background.paper", display: "grid", gap: 1 }}>
                 <Typography title={i.name} sx={{ fontWeight: 600, overflowWrap: "anywhere" }}>{i.name}</Typography>
-                <Typography sx={{ fontSize: "0.8125rem", color: "text.secondary" }}>{`${typeLabel(i.kind)} · ${when(i.deletedAt)} · ${left(i)}`}</Typography>
+                <Typography sx={{ fontSize: "0.875rem", color: "text.secondary" }}>{`${typeLabel(i.kind)} · ${when(i.deletedAt)} · ${left(i)}`}</Typography>
                 {actions(i)}
               </Box>
             ))}
           </Box>
         ) : (
-          <TableContainer sx={{ border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "background.paper" }}>
+          <TableContainer sx={{ borderRadius: "16px", bgcolor: "background.paper" }}>
             <Table aria-label={t.trashTitle}>
               <TableHead><TableRow>
                 <TableCell sx={th}>{t.trashColName}</TableCell><TableCell sx={th}>{t.trashColType}</TableCell><TableCell sx={th}>{t.trashColDeleted}</TableCell><TableCell sx={th}>{t.trashColLeft}</TableCell>
@@ -118,8 +116,8 @@ export function TrashPage() {
               <TableBody>
                 {items.map((i, n) => (
                   <TableRow key={i.kind + i.id} sx={{ ...enterRow(n), "&:last-child td": { borderBottom: 0 } }}>
-                    <TableCell sx={{ maxWidth: 280, borderColor: "divider" }}><Typography noWrap title={i.name} sx={{ fontWeight: 600, fontSize: "0.9375rem" }}>{i.name}</Typography></TableCell>
-                    <TableCell sx={{ borderColor: "divider" }}><Chip size="small" variant="outlined" label={typeLabel(i.kind)} /></TableCell>
+                    <TableCell sx={{ maxWidth: 280, borderColor: "divider" }}><Typography noWrap title={i.name} sx={{ fontWeight: 600, fontSize: "1rem" }}>{i.name}</Typography></TableCell>
+                    <TableCell sx={{ borderColor: "divider" }}><Chip size="small" label={typeLabel(i.kind)} /></TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", borderColor: "divider" }}>{when(i.deletedAt)}</TableCell>
                     <TableCell sx={{ whiteSpace: "nowrap", borderColor: "divider" }}>{left(i)}</TableCell>
                     <TableCell align="right" sx={{ borderColor: "divider", minWidth: 250 }}>{actions(i)}</TableCell>

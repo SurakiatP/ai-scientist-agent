@@ -268,7 +268,7 @@ describe("EmptyChat", () => {
     mk([turn("done", { question: "OTHER-SESSION-Q", answer: { content: "OTHER-ANSWER", references: [] } })]);
     render(<EmptyChat sessionId={mk()} />);
     expect(screen.queryByText(/OTHER-/)).toBeNull();
-    expect(screen.getByRole("heading", { level: 1, name: new RegExp(`^(${[t.greetMorning, t.greetAfternoon, t.greetEvening, t.greetPlain].join("|")})$`) })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: t.emptyTitle })).toBeInTheDocument();
     expect(screen.getByText(t.emptyHeading)).toBeInTheDocument();
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);
     expect(screen.getAllByRole("button").filter((b) => sampleQuestions.includes(b.getAttribute("aria-label") as never))).toHaveLength(2);

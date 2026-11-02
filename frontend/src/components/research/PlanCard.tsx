@@ -21,8 +21,8 @@ function Badge({ n, state }: { n: number; state?: RowState }) {
   const on = state === "done" || state === "active";
   return (
     <Box component="span" sx={{
-      flexShrink: 0, width: 28, height: 28, mt: "2px", borderRadius: "50%", border: 2, borderColor: on ? "primary.main" : "divider",
-      bgcolor: state === "done" ? "primary.main" : "transparent", color: state === "done" ? "primary.contrastText" : state === "active" ? "primary.main" : "text.secondary",
+      flexShrink: 0, width: 28, height: 28, mt: "2px", borderRadius: "50%", border: on ? 2 : 0, borderColor: "primary.main",
+      bgcolor: state === "done" ? "primary.main" : on ? "transparent" : "action.hover", color: state === "done" ? "primary.contrastText" : state === "active" ? "primary.main" : "text.secondary",
       display: "grid", placeItems: "center", fontSize: "0.75rem", fontWeight: 700, fontVariantNumeric: "tabular-nums",
     }}>{state === "done" ? <CheckRoundedIcon sx={{ fontSize: 16 }} /> : n + 1}</Box>
   );
@@ -137,7 +137,7 @@ export function PlanCard({ searches, editable, heading, rowState, rowNote, onApp
             {editable && (
               // Awaiting review: the decision is always on screen, not hidden behind "edit".
               <Stack direction="row" useFlexGap spacing={1} sx={{ justifyContent: "flex-end" }}>
-                <Button variant="outlined" onClick={() => onApprove(searches)}>{t.planStart}</Button>
+                <Button variant="contained" onClick={() => onApprove(searches)}>{t.planStart}</Button>
                 <Button color="inherit" onClick={() => onCancel()}>{t.cancel}</Button>
               </Stack>
             )}

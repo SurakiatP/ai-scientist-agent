@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { Box, Button, Dialog, DialogContent, DialogTitle, IconButton, Stack, Switch, Typography, useColorScheme } from "@mui/material";
 import { keyframes } from "@mui/material/styles";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
-import LanguageOutlinedIcon from "@mui/icons-material/LanguageOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import SettingsBrightnessOutlinedIcon from "@mui/icons-material/SettingsBrightnessOutlined";
@@ -39,14 +38,13 @@ const rise = keyframes`from { opacity: 0; transform: translateY(8px); } to { opa
 const pulse = keyframes`0%, 100% { opacity: 1; } 50% { opacity: .35; }`;
 
 // Settings row: icon + title/description left, compact radio group (or control) right; stacks under 600px.
-function Section({ labelId, title, note, icon, below, i = 0, children }: { labelId: string; title: string; note?: string; icon?: React.ReactNode; below?: boolean; i?: number; children: React.ReactNode }) {
+function Section({ labelId, title, note, below, i = 0, children }: { labelId: string; title: string; note?: string; below?: boolean; i?: number; children: React.ReactNode }) {
   return (
-    <Box component="section" sx={{ display: "flex", flexDirection: below ? "column" : { xs: "column", sm: "row" }, alignItems: below ? "stretch" : { sm: "center" }, justifyContent: "space-between", gap: { xs: 1.25, sm: 2 }, px: 2, py: 1.5, border: 1, borderColor: "divider", borderRadius: "16px", bgcolor: "surface.raised", animation: `${rise} ${dur.slow}ms ${ease} both`, animationDelay: `${dur.micro + i * dur.stagger}ms`, transition: `border-color ${dur.quick}ms ${ease}, box-shadow ${dur.quick}ms ${ease}`, "&:hover": { borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 45%, transparent)" } }}>
+    <Box component="section" sx={{ display: "flex", flexDirection: below ? "column" : { xs: "column", sm: "row" }, alignItems: below ? "stretch" : { sm: "center" }, justifyContent: "space-between", gap: { xs: 1.25, sm: 2 }, px: 2, py: 1.5, borderRadius: "16px", bgcolor: "background.paper", animation: `${rise} ${dur.slow}ms ${ease} both`, animationDelay: `${dur.micro + i * dur.stagger}ms` }}>
       <Box sx={{ display: "flex", gap: 1.5, minWidth: 0, flex: 1 }}>
-        {icon && <Box aria-hidden sx={{ color: "primary.main", display: "grid", placeItems: "center", width: 36, height: 36, mt: -0.25, borderRadius: 2, flexShrink: 0, bgcolor: "color-mix(in srgb, var(--mui-palette-primary-main) 12%, transparent)" }}>{icon}</Box>}
         <Box sx={{ minWidth: 0 }}>
-          <Typography id={labelId} component="h3" sx={{ fontSize: "0.9375rem", fontWeight: 700, lineHeight: 1.4 }}>{title}</Typography>
-          {note && <Typography sx={{ mt: 0.25, fontSize: "0.8125rem", color: "text.secondary", lineHeight: 1.5 }}>{note}</Typography>}
+          <Typography id={labelId} component="h3" sx={{ fontSize: "1rem", fontWeight: 700, lineHeight: 1.4 }}>{title}</Typography>
+          {note && <Typography sx={{ mt: 0.25, fontSize: "0.875rem", color: "text.secondary", lineHeight: 1.5 }}>{note}</Typography>}
         </Box>
       </Box>
       {children}
@@ -76,20 +74,20 @@ export function SettingsDialog() {
       <DialogTitle id="settings-title" sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", pb: 0.5 }}>
         <Box component="span">
           <Typography component="span" sx={{ display: "block", fontSize: "1.375rem", fontWeight: 700, lineHeight: 1.3 }}>{t.settingsTitle}</Typography>
-          <Typography component="span" sx={{ display: "block", mt: 0.5, fontSize: "0.9375rem", fontWeight: 400, color: "text.secondary" }}>{t.settingsSubtitle}</Typography>
+          <Typography component="span" sx={{ display: "block", mt: 0.5, fontSize: "1rem", fontWeight: 400, color: "text.secondary" }}>{t.settingsSubtitle}</Typography>
         </Box>
         <IconButton aria-label={t.close} onClick={close} sx={{ width: 44, height: 44, "& svg": { transition: `transform ${dur.fast}ms ${ease}` }, "&:hover svg": { transform: "rotate(90deg)" } }}><CloseRoundedIcon /></IconButton>
       </DialogTitle>
       <DialogContent>
         <Stack spacing={1.5} sx={{ pt: 1 }}>
-          <Section i={0} labelId="lang-l" title={t.language} note={t.langNote} icon={<LanguageOutlinedIcon />}>
+          <Section i={0} labelId="lang-l" title={t.language} note={t.langNote}>
             <Segmented label={t.language} value={curLang} onChange={setLang} options={[{ value: "th", label: "ไทย" }, { value: "en", label: "English" }]} />
           </Section>
-          <Section i={1} labelId="theme-l" title={t.themeLabel} note={t.themeNote} icon={<LightModeOutlinedIcon />}>
+          <Section i={1} labelId="theme-l" title={t.themeLabel} note={t.themeNote}>
             <Segmented label={t.themeLabel} value={curMode as "light" | "dark" | "system"} onChange={setMode} options={[
               { value: "light", label: t.themeLight, icon: <LightModeOutlinedIcon /> },
               { value: "dark", label: t.themeDark, icon: <DarkModeOutlinedIcon /> },
-              { value: "system", label: t.themeSystem, icon: <SettingsBrightnessOutlinedIcon /> },
+              { value: "system", label: t.themeSystem, icon: <Box component="span" sx={{ display: { xs: "none", sm: "inline-flex" } }}><SettingsBrightnessOutlinedIcon /></Box> },
             ]} />
           </Section>
           <Section i={2} labelId="reviewplan-l" title={t.reviewPlan} note={t.reviewPlanNote}>

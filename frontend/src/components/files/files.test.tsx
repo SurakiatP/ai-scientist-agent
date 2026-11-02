@@ -106,7 +106,7 @@ describe("My files", () => {
   it("empty state names the next action and the supported formats", () => {
     render(<FilesPage />);
     expect(screen.getByRole("heading", { level: 2, name: t.filesEmptyTitle })).toBeTruthy();
-    expect(screen.getByText(t.filesFormats)).toBeTruthy();
+    expect(screen.getByText(t.filesUseDataBody)).toBeTruthy();
     expect(screen.queryByText(t.filesCount.replace("{n}", "0"))).toBeNull();
   });
   it("long names stay on one line in the table and expose the full name", () => {

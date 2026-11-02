@@ -3,16 +3,8 @@ import Link from "next/link";
 import { Box, Button, Typography } from "@mui/material";
 import ArrowForwardRoundedIcon from "@mui/icons-material/ArrowForwardRounded";
 import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
-import ErrorOutlineRoundedIcon from "@mui/icons-material/ErrorOutlineRounded";
 import TravelExploreRoundedIcon from "@mui/icons-material/TravelExploreRounded";
 import VerifiedOutlinedIcon from "@mui/icons-material/VerifiedOutlined";
-import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
-import TerminalRoundedIcon from "@mui/icons-material/TerminalRounded";
-import KeyOutlinedIcon from "@mui/icons-material/KeyOutlined";
-import GavelRoundedIcon from "@mui/icons-material/GavelRounded";
-import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
-import IosShareRoundedIcon from "@mui/icons-material/IosShareRounded";
-import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
 import { ArrowPill, LandingHeader, lift, ring, wrap } from "@/components/landing/LandingHeader";
 import { useHydrated } from "@/lib/history";
 import { PACK_IDS } from "@/lib/packs";
@@ -21,7 +13,6 @@ import { usableCounts } from "@/lib/sources";
 import { landing } from "@/lib/strings";
 import { dur, ease } from "@/lib/motion";
 
-const line = "1px solid var(--mui-palette-divider)"; // responsive border values need the full shorthand (a bare 1 loses the colour)
 const card = { borderRadius: "24px", border: 1, borderColor: "color-mix(in srgb, var(--mui-palette-divider) 60%, transparent)", bgcolor: "background.paper", boxShadow: lift } as const;
 const h2 = { m: 0, fontSize: { xs: "2rem", md: "2.75rem" }, fontWeight: 700, lineHeight: 1.3, letterSpacing: "-0.015em", textWrap: "balance" } as const;
 const body = { fontSize: "0.9375rem", lineHeight: 1.75, color: "text.secondary", textWrap: "pretty" } as const;
@@ -94,8 +85,6 @@ export default function Home() {
   const [b1, b2] = L.titleB.split("|");
   const usable = usableCounts();
   const stats = [String(usable.all), String(PACK_IDS.length), L.langs, L.exportFormats];
-  const dataIcons = [CloudUploadOutlinedIcon, TerminalRoundedIcon, KeyOutlinedIcon, GavelRoundedIcon];
-  const moreIcons = [PictureAsPdfOutlinedIcon, IosShareRoundedIcon, HubOutlinedIcon];
   const section = { ...wrap, maxWidth: 1180, scrollMarginTop: 96 } as const;
 
   return (
@@ -134,12 +123,12 @@ export default function Home() {
           <Box sx={{ gridArea: "fig" }}><AnswerSheet L={L} /></Box>
         </Box>
 
-        {/* the numbers, all read from the code */}
-        <Box component="section" aria-label={L.stats[0].t} sx={{ borderBlock: 1, borderColor: "divider", bgcolor: "color-mix(in srgb, var(--mui-palette-background-paper) 35%, transparent)" }}>
-          <Box sx={{ ...section, display: "grid", gridTemplateColumns: { xs: "repeat(2, minmax(0,1fr))", md: "repeat(4, minmax(0,1fr))" } }}>
+        {/* the numbers, all read from the code: a tone step, no rules */}
+        <Box component="section" aria-label={L.stats[0].t} sx={{ bgcolor: "color-mix(in srgb, var(--mui-palette-background-paper) 45%, transparent)" }}>
+          <Box sx={{ ...section, py: { xs: 4, md: 6 }, display: "grid", gap: { xs: 4, md: 6 }, gridTemplateColumns: { xs: "repeat(2, minmax(0,1fr))", md: "repeat(4, minmax(0,1fr))" } }}>
             {L.stats.map((s, i) => (
-              <Box key={s.t} sx={{ py: { xs: 3, md: 4.5 }, pl: { xs: i % 2 ? 2.5 : 0, md: i ? 4 : 0 }, borderLeft: { xs: i % 2 ? line : "none", md: i ? line : "none" }, borderTop: { xs: i > 1 ? line : "none", md: "none" } }}>
-                <Typography sx={{ mt: 0, fontSize: { xs: "1.5rem", md: "2.5rem" }, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{stats[i]}</Typography>
+              <Box key={s.t}>
+                <Typography sx={{ fontSize: { xs: "1.75rem", md: "2.5rem" }, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", overflowWrap: "anywhere" }}>{stats[i]}</Typography>
                 <Typography sx={{ mt: 1, fontSize: "0.875rem", fontWeight: 600 }}>{s.t}</Typography>
                 <Typography sx={{ fontSize: "0.75rem", color: "text.secondary", lineHeight: 1.6 }}>{s.d.replace("{papers}", String(usable.papers)).replace("{dbs}", String(usable.dbs))}</Typography>
               </Box>
@@ -155,117 +144,80 @@ export default function Home() {
           <Typography sx={{ ...body, mt: 3, fontSize: "1.0625rem", maxWidth: "38rem" }}>{L.painSub}</Typography>
         </Box>
 
-        {/* capabilities: one lead card and its evidence, then the smaller tools */}
+        {/* capabilities: one lead card with the plan as a real fragment, then the other tools as a plain list in large type */}
         <Box id="why" component="section" aria-labelledby="cap-h" sx={{ ...section, pb: { xs: 9, md: 14 } }}>
           <Typography id="cap-h" component="h2" sx={{ ...h2, mb: { xs: 4, md: 6 } }}>
             {L.capTitle.split("|").map((x) => <Box key={x} component="span" sx={{ display: "block" }}>{x}</Box>)}
           </Typography>
-          <Box sx={{ display: "grid", gap: 2.5, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1.85fr) minmax(0,1fr)" } }}>
-            <Box sx={{ ...card, position: "relative", overflow: "hidden", p: { xs: 3, md: 4.5 } }}>
-              <Typography component="h3" sx={{ m: 0, fontSize: { xs: "1.375rem", md: "1.875rem" }, fontWeight: 700, lineHeight: 1.4, textWrap: "balance" }}>{L.capMain.t}</Typography>
-              <Box sx={{ mt: 2, display: "inline-flex", gap: 0.5, flexWrap: "wrap" }}>
-                {L.capMain.tabs.map((x) => <Box key={x} component="span" sx={{ px: 1.25, py: 0.25, borderRadius: 99, border: 1, borderColor: "divider", fontSize: "0.8125rem", color: "text.secondary" }}>{x}</Box>)}
-              </Box>
-              <Typography sx={{ ...body, mt: 2, maxWidth: "36rem" }}>{L.capMain.d}</Typography>
-              <Box sx={{ mt: 3.5, display: "grid", gap: 3, gridTemplateColumns: { xs: "minmax(0,1fr)", sm: "minmax(0,1.1fr) minmax(0,1fr)" }, alignItems: "end" }}>
-                <Box aria-hidden="true" sx={{ p: 2.5, borderRadius: "16px", border: 1, borderColor: "divider", bgcolor: "background.paper", boxShadow: lift }}>
-                  <Typography sx={{ fontSize: "0.6875rem", fontWeight: 600, color: "surface.ai" }}>{L.capMain.plan}</Typography>
-                  <Box sx={{ mt: 1.5, pl: 1.75, borderLeft: 1, borderColor: "surface.ai", display: "grid", gap: 1.25 }}>
-                    {["retrieval-augmented generation clinical QA", "LLM fine-tuning medical question answering", "RAG versus fine-tuning benchmark"].map((q) => (
-                      <Typography key={q} sx={{ fontSize: "0.8125rem", lineHeight: 1.5 }}>{q}</Typography>
-                    ))}
-                  </Box>
-                </Box>
-                <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 1.5 }}>
-                  {L.capMain.bullets.map((x) => (
-                    <Box component="li" key={x} sx={{ display: "flex", gap: 1.25, fontSize: "0.875rem", lineHeight: 1.6, color: "text.secondary" }}>
-                      <Box aria-hidden="true" sx={{ mt: "0.8em", width: 12, flexShrink: 0, borderTop: 1, borderColor: "surface.ai" }} />{x}
-                    </Box>
-                  ))}
-                </Box>
+          <Box sx={{ ...card, p: { xs: 3, md: 5 }, display: "grid", gap: { xs: 4, md: 6 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1.1fr) minmax(0,1fr)" }, alignItems: "center" }}>
+            <Box>
+              <Typography component="h3" sx={{ m: 0, fontSize: { xs: "1.5rem", md: "2rem" }, fontWeight: 700, lineHeight: 1.4, textWrap: "balance" }}>{L.capMain.t}</Typography>
+              <Typography sx={{ mt: 1.5, fontSize: "0.875rem", color: "text.secondary" }}>{L.capMain.tabs.join(" · ")}</Typography>
+              <Typography sx={{ ...body, mt: 2, fontSize: "1rem", maxWidth: "36rem" }}>{L.capMain.d}</Typography>
+              <Box component="ul" sx={{ m: 0, mt: 3, p: 0, listStyle: "none", display: "grid", gap: 1.5 }}>
+                {L.capMain.bullets.map((x) => <Box component="li" key={x} sx={{ ...body, fontSize: "0.9375rem" }}>{x}</Box>)}
               </Box>
             </Box>
-            <Box sx={{ display: "grid", gap: 2.5 }}>
-              <Box sx={{ ...card, p: { xs: 3, md: 3.5 } }}>
-                <Typography component="h3" sx={{ m: 0, fontSize: "1.1875rem", fontWeight: 700, lineHeight: 1.5 }}>{L.capCheck.t}</Typography>
-                <Box aria-hidden="true" sx={{ my: 2, display: "grid", gap: 1 }}>
-                  {[["DOI", "82%", true], ["PMID", "66%", true], ["ID", "54%", false]].map(([k, w, ok]) => (
-                    <Box key={k as string} sx={{ display: "grid", gridTemplateColumns: "44px minmax(0,1fr) auto", alignItems: "center", gap: 1.25 }}>
-                      <Typography sx={{ fontSize: "0.6875rem", color: "text.secondary" }}>{k}</Typography>
-                      <Box sx={bar(w as string, 0.9)} />
-                      <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.5, fontSize: "0.6875rem", fontWeight: 600, color: ok ? "evidence.verified" : "evidence.unverified" }}>
-                        {ok ? <CheckCircleRoundedIcon sx={{ fontSize: 14 }} /> : <ErrorOutlineRoundedIcon sx={{ fontSize: 14 }} />}{ok ? L.capCheck.ok : L.capCheck.warn}
-                      </Box>
-                    </Box>
-                  ))}
-                </Box>
-                <Typography sx={{ ...body, fontSize: "0.875rem" }}>{L.capCheck.d}</Typography>
-              </Box>
-              <Box sx={{ ...card, p: { xs: 3, md: 3.5 } }}>
-                <Typography component="h3" sx={{ m: 0, fontSize: "1.1875rem", fontWeight: 700, lineHeight: 1.5 }}>{L.capData.t}</Typography>
-                <Box aria-hidden="true" sx={{ my: 2, height: 64, px: 2, pb: 1.25, display: "flex", alignItems: "flex-end", gap: 1, borderRadius: "12px", border: 1, borderColor: "divider" }}>
-                  {[38, 62, 48, 80, 70, 92, 58].map((h, i) => <Box key={i} sx={{ flex: 1, height: `${h}%`, borderRadius: "4px 4px 0 0", bgcolor: i === 5 ? "primary.main" : "color-mix(in srgb, var(--mui-palette-primary-main) 22%, transparent)" }} />)}
-                </Box>
-                <Typography sx={{ ...body, fontSize: "0.875rem" }}>{L.capData.d}</Typography>
+            <Box aria-hidden="true" sx={{ p: 2.5, borderRadius: "16px", bgcolor: "surface.shell" }}>
+              <Typography sx={{ fontSize: "0.75rem", fontWeight: 600, color: "surface.ai" }}>{L.capMain.plan}</Typography>
+              <Box sx={{ mt: 1.5, pl: 1.75, borderLeft: 1, borderColor: "surface.ai", display: "grid", gap: 1.5 }}>
+                {["retrieval-augmented generation clinical QA", "LLM fine-tuning medical question answering", "RAG versus fine-tuning benchmark"].map((q) => (
+                  <Typography key={q} sx={{ fontSize: "0.875rem", lineHeight: 1.5 }}>{q}</Typography>
+                ))}
               </Box>
             </Box>
           </Box>
-          <Box sx={{ mt: { xs: 4, md: 5 }, display: "grid", gap: { xs: 3, md: 4 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "repeat(3, minmax(0,1fr))" } }}>
-            {L.capMore.map((c, i) => {
-              const Icon = moreIcons[i];
-              return (
-                <Box key={c.t} sx={{ pt: 2.5, borderTop: 1, borderColor: "divider" }}>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    <Icon aria-hidden sx={{ fontSize: 20, color: "primary.main" }} />
-                    <Typography component="h3" sx={{ m: 0, fontSize: "1.0625rem", fontWeight: 700, lineHeight: 1.5 }}>{c.t}</Typography>
-                  </Box>
-                  <Typography sx={{ ...body, mt: 0.75, fontSize: "0.875rem" }}>{c.d}</Typography>
-                </Box>
-              );
-            })}
-          </Box>
-        </Box>
-
-        {/* how it works: three steps on one rule */}
-        <Box id="how" component="section" aria-labelledby="how-h" sx={{ ...section, pb: { xs: 9, md: 14 } }}>
-          <Typography id="how-h" component="h2" sx={{ ...h2, mb: { xs: 4, md: 6 } }}>{L.howTitle}</Typography>
-          <Box component="ol" aria-label={L.howTitle} sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: { xs: 3, md: 0 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "repeat(3, minmax(0,1fr))" }, borderTop: { md: line } }}>
-            {L.steps.map((s, i) => (
-              <Box component="li" key={s.t} sx={{ position: "relative", pt: { md: 3.5 }, pr: { md: 5 } }}>
-                <Box aria-hidden="true" sx={{ display: { xs: "none", md: "block" }, position: "absolute", top: -6, left: 0, width: 11, height: 11, borderRadius: "50%", bgcolor: "primary.main", boxShadow: "0 0 0 4px var(--mui-palette-background-default)" }} />
-                <Typography sx={{ fontSize: "0.875rem", color: "text.secondary" }}>{L.stepN.replace("{n}", String(i + 1))}</Typography>
-                <Typography component="h3" sx={{ m: 0, mt: 0.5, fontSize: "1.375rem", fontWeight: 700, lineHeight: 1.4 }}>{s.t}</Typography>
-                <Typography sx={{ ...body, mt: 1 }}>{s.d}</Typography>
+          <Box component="ul" sx={{ m: 0, mt: { xs: 5, md: 8 }, p: 0, listStyle: "none", display: "grid", columnGap: 8, rowGap: { xs: 4, md: 5 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "repeat(2, minmax(0,1fr))" } }}>
+            {[L.capCheck, L.capData, ...L.capMore].map((c) => (
+              <Box component="li" key={c.t}>
+                <Typography component="h3" sx={{ m: 0, fontSize: { xs: "1.25rem", md: "1.5rem" }, fontWeight: 700, lineHeight: 1.4 }}>{c.t}</Typography>
+                <Typography sx={{ ...body, mt: 1, fontSize: "1rem", maxWidth: "34rem" }}>{c.d}</Typography>
               </Box>
             ))}
           </Box>
         </Box>
 
-        {/* where the data goes: a 2x2 ledger, the one external hop tinted */}
+        {/* how it works: three steps, "Step N" in words */}
+        <Box id="how" component="section" aria-labelledby="how-h" sx={{ ...section, pb: { xs: 9, md: 14 } }}>
+          <Typography id="how-h" component="h2" sx={{ ...h2, mb: { xs: 4, md: 6 } }}>{L.howTitle}</Typography>
+          <Box component="ol" aria-label={L.howTitle} sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: { xs: 4, md: 8 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "repeat(3, minmax(0,1fr))" } }}>
+            {L.steps.map((s, i) => (
+              <Box component="li" key={s.t}>
+                <Typography sx={{ fontSize: "0.875rem", color: "text.secondary" }}>{L.stepN.replace("{n}", String(i + 1))}</Typography>
+                <Typography component="h3" sx={{ m: 0, mt: 0.5, fontSize: { xs: "1.5rem", md: "2rem" }, fontWeight: 700, lineHeight: 1.4 }}>{s.t}</Typography>
+                <Typography sx={{ ...body, mt: 1.5, fontSize: "1rem" }}>{s.d}</Typography>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+
+        {/* where the data goes: the one external hop as the tinted lead, the other three as a plain list */}
         <Box component="section" aria-labelledby="data-h" sx={{ ...section, pb: { xs: 9, md: 14 } }}>
           <Typography id="data-h" component="h2" sx={{ ...h2, mb: { xs: 4, md: 6 } }}>{L.dataTitle}</Typography>
-          <Box sx={{ borderRadius: "24px", border: line, overflow: "hidden", display: "grid", gridTemplateColumns: { xs: "minmax(0,1fr)", md: "repeat(2, minmax(0,1fr))" } }}>
-            {L.data.map((c, i) => {
-              const Icon = dataIcons[i];
-              return (
-                <Box key={c.t} sx={{ p: { xs: 3, md: 4 }, borderTop: { xs: i ? line : "none", md: i > 1 ? line : "none" }, borderLeft: { xs: "none", md: i % 2 ? line : "none" }, bgcolor: i === 0 ? "surface.aiSoft" : "transparent" }}>
-                  <Icon aria-hidden sx={{ fontSize: 22, color: i === 0 ? "surface.ai" : "primary.main" }} />
-                  <Typography component="h3" sx={{ m: 0, mt: 1.5, fontSize: "1.0625rem", fontWeight: 700, lineHeight: 1.5 }}>{c.t}</Typography>
-                  <Typography sx={{ ...body, mt: 0.75, fontSize: "0.875rem", maxWidth: "34rem", color: i === 0 ? "text.primary" : "text.secondary" }}>{c.d}</Typography>
+          <Box sx={{ display: "grid", gap: { xs: 4, md: 8 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "minmax(0,1fr) minmax(0,1fr)" }, alignItems: "start" }}>
+            <Box sx={{ p: { xs: 3, md: 5 }, borderRadius: "24px", bgcolor: "surface.aiSoft" }}>
+              <Typography component="h3" sx={{ m: 0, fontSize: { xs: "1.375rem", md: "1.75rem" }, fontWeight: 700, lineHeight: 1.4 }}>{L.data[0].t}</Typography>
+              <Typography sx={{ ...body, mt: 1.5, fontSize: "1rem", color: "text.primary" }}>{L.data[0].d}</Typography>
+            </Box>
+            <Box component="ul" sx={{ m: 0, p: 0, listStyle: "none", display: "grid", gap: 4 }}>
+              {L.data.slice(1).map((c) => (
+                <Box component="li" key={c.t}>
+                  <Typography component="h3" sx={{ m: 0, fontSize: { xs: "1.125rem", md: "1.25rem" }, fontWeight: 700, lineHeight: 1.5 }}>{c.t}</Typography>
+                  <Typography sx={{ ...body, mt: 0.75, fontSize: "1rem", maxWidth: "34rem" }}>{c.d}</Typography>
                 </Box>
-              );
-            })}
+              ))}
+            </Box>
           </Box>
-          <Typography sx={{ ...body, mt: 2.5, fontSize: "0.8125rem" }}>{L.scope}</Typography>
+          <Typography sx={{ ...body, mt: 4, fontSize: "0.875rem" }}>{L.scope}</Typography>
         </Box>
 
         <Box id="faq" component="section" aria-labelledby="faq-h" sx={{ ...section, pb: { xs: 9, md: 14 } }}>
           <Typography id="faq-h" component="h2" sx={{ ...h2, mb: { xs: 4, md: 6 } }}>{L.faqTitle}</Typography>
           <Box sx={{ display: "grid", gap: { xs: 3, md: 6 }, gridTemplateColumns: { xs: "minmax(0,1fr)", md: "repeat(2, minmax(0,1fr))" } }}>
             {[[L.checkTitle, L.checkBody], [L.scopeQ, L.scope]].map(([q, a]) => (
-              <Box key={q} sx={{ pt: 2.5, borderTop: 1, borderColor: "divider" }}>
-                <Typography component="h3" sx={{ m: 0, fontSize: "1.125rem", fontWeight: 700, lineHeight: 1.6 }}>{q}</Typography>
-                <Typography sx={{ ...body, mt: 1 }}>{a}</Typography>
+              <Box key={q}>
+                <Typography component="h3" sx={{ m: 0, fontSize: { xs: "1.25rem", md: "1.5rem" }, fontWeight: 700, lineHeight: 1.5 }}>{q}</Typography>
+                <Typography sx={{ ...body, mt: 1.5, fontSize: "1rem" }}>{a}</Typography>
               </Box>
             ))}
           </Box>
@@ -274,7 +226,7 @@ export default function Home() {
       </Box>
 
       <Box component="footer" sx={{ position: "relative", px: { xs: 2, sm: 4 }, pb: { xs: 4, md: 6 } }}>
-        <Box sx={{ ...card, maxWidth: 1180, mx: "auto", px: { xs: 3, md: 6 }, py: { xs: 5, md: 7 }, display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, alignItems: { md: "center" }, justifyContent: "space-between", position: "relative", overflow: "hidden", }}>
+        <Box sx={{ maxWidth: 1180, mx: "auto", px: { xs: 3, md: 6 }, py: { xs: 5, md: 7 }, borderRadius: "24px", bgcolor: "rgb(var(--mui-palette-primary-mainChannel) / 0.1)", display: "flex", flexDirection: { xs: "column", md: "row" }, gap: 3, alignItems: { md: "center" }, justifyContent: "space-between" }}>
           <Box>
             <Typography sx={{ fontSize: { xs: "1.5rem", md: "2rem" }, fontWeight: 700, lineHeight: 1.4, textWrap: "balance" }}>{L.footer}</Typography>
             <Typography sx={{ ...body, mt: 0.75 }}>{L.footerSub}</Typography>

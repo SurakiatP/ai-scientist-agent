@@ -38,7 +38,7 @@ export const Mark = () => (
 const rowSx = { justifyContent: "flex-start", gap: 1.5, ...UI.row, px: 1.25, borderRadius: "12px", fontWeight: 400, fontSize: "0.875rem", minWidth: 0, "& .MuiSvgIcon-root": { fontSize: 20 } } as const;
 // The current page is a filled navy row (the one solid shape in the sidebar), the rest stay ink on paper.
 const pageRow = (on: boolean) => ({ ...rowSx, fontWeight: on ? 600 : 400, ...(on
-  ? { bgcolor: "primary.main", color: "primary.contrastText", boxShadow: "0 8px 18px -10px rgb(28 78 143 / 0.8)", "&:hover": { bgcolor: "primary.dark" } }
+  ? { bgcolor: "primary.main", color: "primary.contrastText", "&:hover": { bgcolor: "primary.dark" } }
   : { bgcolor: "transparent", color: "text.primary", "& .MuiSvgIcon-root": { fontSize: 20, color: "text.secondary" } }) });
 
 // How busy the server is: one quiet line. The shared poller runs only while this is mounted and the tab is visible;
@@ -98,7 +98,7 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
       </Stack>
       <Button id="new-chat" color="inherit" onClick={newChat}
         startIcon={<Box component="span" sx={{ display: "grid", placeItems: "center", width: 28, height: 28, borderRadius: "50%", bgcolor: "primary.main", color: "primary.contrastText", "& svg": { fontSize: 16 } }}><EditSquareIcon /></Box>}
-        sx={{ justifyContent: "flex-start", gap: 0.25, pl: 1, pr: 1.5, minHeight: 48, borderRadius: "14px", fontSize: "0.875rem", fontWeight: 600, color: "text.primary", bgcolor: "background.paper", border: 1, borderColor: "color-mix(in srgb, var(--mui-palette-divider) 70%, transparent)", boxShadow: "0 6px 16px -12px rgb(14 26 44 / 0.35)", "&:hover": { bgcolor: "background.paper", borderColor: "color-mix(in srgb, var(--mui-palette-primary-main) 40%, transparent)" } }}>
+        sx={{ justifyContent: "flex-start", gap: 0.25, pl: 1, pr: 1.5, minHeight: 48, borderRadius: "14px", fontSize: "0.875rem", fontWeight: 600, color: "text.primary", bgcolor: "background.paper", "&:hover": { backgroundImage: "linear-gradient(var(--mui-palette-action-hover), var(--mui-palette-action-hover))" } }}>
         {t.newChat}
       </Button>
       {/* one scroll area for projects and chats: the header, New chat and the footer stay pinned */}
@@ -112,7 +112,7 @@ export function Sidebar({ onPick, onCollapse }: { onPick?: () => void; onCollaps
         <SessionList query={query} onPick={() => { onPick?.(); goChat(); }} />
       </Box>
       </Box>
-      <Stack sx={{ borderTop: 1, borderColor: "divider", pt: 1, flexShrink: 0 }}>
+      <Stack sx={{ pt: 1, flexShrink: 0 }}>
         <SyncChip />
         <ServerLoad />
         <Button component={Link} href="/files" color="inherit" startIcon={<FolderCopyOutlinedIcon />} onClick={() => onPick?.()} aria-current={onFiles ? "page" : undefined}
