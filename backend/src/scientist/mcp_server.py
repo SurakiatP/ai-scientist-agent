@@ -116,7 +116,7 @@ def build(app: FastAPI):
     async def get_run(run_id: str) -> dict[str, Any]:
         """Status, progress and the answer of a run: {run_id, status (queued|running|done|refused|error|stopped|interrupted), answer, progress, error, ...}. The answer is null until done."""
         with tool_errors():
-            return await api.run_shape(svc(), api.check_rid(run_id))
+            return await api.run_shape(svc(), api.check_rid(run_id), _key.get())
 
     @m.tool()
     async def wait_run(run_id: str, timeout_seconds: Annotated[int, Field(description="Seconds to wait, clamped to 1..600; keep it below your client's request timeout.")] = WAIT_DEFAULT) -> dict[str, Any]:
@@ -124,7 +124,7 @@ def build(app: FastAPI):
         end = time.monotonic() + clamp(timeout_seconds)
         with tool_errors():
             rid = api.check_rid(run_id)
-            while (row := await api.own(svc(), rid))["status"] not in TERMINAL and time.monotonic() < end:  # cheap poll; the full shape is built once
+            while (row := await api.own(svc(), rid, _key.get()))["status"] not in TERMINAL and time.monotonic() < end:  # cheap poll; the full shape is built once
                 await asyncio.sleep(min(POLL_SECONDS, max(0.0, end - time.monotonic())))
             return api.shape(row, await api.turn_of(svc(), row))
 
@@ -132,7 +132,7 @@ def build(app: FastAPI):
     async def get_artifact(run_id: str, kind: Literal["provenance", "bibtex", "ris"]) -> str:
         """An export of a finished run as text: bibtex or ris of its references, or provenance (JSON: the answer, references and how it was produced)."""
         with tool_errors():
-            out = await api.artifact_of(svc(), api.check_rid(run_id), kind)
+            out = await api.artifact_of(svc(), api.check_rid(run_id), kind, _key.get())
         return json.dumps(out, ensure_ascii=False) if isinstance(out, dict) else out
 
     @m.tool()

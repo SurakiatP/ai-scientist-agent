@@ -1,6 +1,6 @@
 """/v1/api: the public research API for programs (API key, JSON only). It drives the same RunService as the browser, with
 its own client id per key (`key:<id>`), so keys and browsers cannot cancel or crowd out each other. Runs live in the shared
-store (project "API"); any key may read any key's run, only the creating key may cancel it."""
+store (project "API"); a key reads, follows and cancels only the runs it started."""
 import json
 import re
 import uuid
@@ -127,10 +127,10 @@ def iso(d: datetime) -> str:  # as JS toISOString
     return d.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-async def own(svc: RunService, rid: str) -> dict:
-    """The run row if it was created with an API key; browser runs are not part of this API."""
+async def own(svc: RunService, rid: str, key: ApiKey) -> dict:
+    """The run row if it was created with this API key; browser runs and other keys' runs are not part of its API."""
     row = await svc.get(rid)
-    if row is None or not row["client_id"].startswith("key:"):
+    if row is None or row["client_id"] != key.client_id:
         raise HTTPException(404, "run not found")
     return row
 
@@ -239,35 +239,33 @@ async def packs():
     return [{"id": k, "th": p.name_th, "en": p.name_en} for k, p in PACKS.items()]
 
 
-async def run_shape(svc: RunService, rid: str) -> dict:
-    row = await own(svc, rid)
+async def run_shape(svc: RunService, rid: str, key: ApiKey) -> dict:
+    row = await own(svc, rid, key)
     return shape(row, await turn_of(svc, row))
 
 
 async def cancel_run(svc: RunService, rid: str, key: ApiKey) -> dict:
-    await own(svc, rid)
-    try:
-        row = await svc.cancel(rid, key.client_id)
-    except PermissionError:
-        raise HTTPException(403, "only the API key that started this run can cancel it") from None
+    await own(svc, rid, key)  # 404 unless this key started it
+    row = await svc.cancel(rid, key.client_id)
     return shape(row, await turn_of(svc, row))
 
 
 @router.get("/runs/{run_id}", response_model=RunOut, summary="Status, progress and the answer of a run", responses=GONE)
-async def get_run(run_id: Rid, svc: RunService = Depends(service)):
-    return await run_shape(svc, run_id)
+async def get_run(run_id: Rid, key: ApiKey = Depends(require_key), svc: RunService = Depends(service)):
+    return await run_shape(svc, run_id, key)
 
 
 @router.get("/runs/{run_id}/events", summary="Server-sent events of a run (resume with Last-Event-ID or ?after=)",
             responses={200: {"content": {"text/event-stream": {}}}, **GONE})
 async def events(run_id: Rid, request: Request, after: Annotated[int | None, Query(ge=0)] = None,
-                 last_event_id: Annotated[str | None, Header()] = None, svc: RunService = Depends(service)):
-    await own(svc, run_id)
+                 last_event_id: Annotated[str | None, Header()] = None, key: ApiKey = Depends(require_key),
+                 svc: RunService = Depends(service)):
+    await own(svc, run_id, key)
     return await routes_runs.events(run_id, request, after, last_event_id, svc)
 
 
 @router.post("/runs/{run_id}/cancel", response_model=RunOut, summary="Stop a run (only the key that started it)",
-             responses={**GONE, **errs(c403="The run was started by another key")})
+             responses=GONE)
 async def cancel(run_id: Rid, key: ApiKey = Depends(require_key), svc: RunService = Depends(service)):
     return await cancel_run(svc, run_id, key)
 
@@ -284,9 +282,9 @@ def provenance_file(turn: dict, answer: dict) -> dict:
             "analysis": None, "provenance": answer["provenance"]}
 
 
-async def artifact_of(svc: RunService, rid: str, kind: str) -> dict | str:
+async def artifact_of(svc: RunService, rid: str, kind: str, key: ApiKey) -> dict | str:
     """The provenance file (dict) or the bibtex / ris text of a finished run (REST and MCP)."""
-    row = await own(svc, rid)
+    row = await own(svc, rid, key)
     if row["status"] in ("queued", "running"):
         raise HTTPException(409, "the run has not finished")
     turn = await turn_of(svc, row)
@@ -302,8 +300,9 @@ async def artifact_of(svc: RunService, rid: str, kind: str) -> dict | str:
 @router.get("/runs/{run_id}/artifacts/{kind}", summary="provenance (JSON), bibtex or ris of a finished run",
             responses={200: {"content": {"application/json": {}, "application/x-bibtex": {}, "application/x-research-info-systems": {}}},
                        **GONE, **errs(c409="The run has not finished")})
-async def artifact(run_id: Rid, kind: Literal["provenance", "bibtex", "ris"], svc: RunService = Depends(service)):
-    out = await artifact_of(svc, run_id, kind)
+async def artifact(run_id: Rid, kind: Literal["provenance", "bibtex", "ris"], key: ApiKey = Depends(require_key),
+                   svc: RunService = Depends(service)):
+    out = await artifact_of(svc, run_id, kind, key)
     if isinstance(out, dict):
         return out
     return Response(out, media_type="application/x-bibtex; charset=utf-8" if kind == "bibtex" else "application/x-research-info-systems; charset=utf-8")
@@ -316,6 +315,6 @@ async def openapi(request: Request):
         st.api_openapi = get_openapi(
             title="AI Scientist public API", version=st.settings.app_version or "1", openapi_version="3.1.0", routes=router.routes,
             description="Research runs over the same pipeline as the app. Send `Authorization: Bearer sci_...`. "
-                        "Runs share the app's store: any key can read any API run, only its creator can cancel it.",
+                        "Runs share the app's store; a key can only read, follow or cancel the runs it started.",
             tags=[{"name": "public", "description": "Authenticated with an operator-issued API key."}])
     return st.api_openapi

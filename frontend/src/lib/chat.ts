@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { DEFER_HYDRATION, gate } from "./config";
-import { dataStorage, isItem, newId, safeStorage, storageFull, useHistoryStore } from "./history";
+import { cut, dataStorage, isItem, newId, safeStorage, storageFull, useHistoryStore } from "./history";
 import type { Progress } from "./progress";
 import { cleanDocs, usableProvenance, usableRecords, usableUsage } from "./sources";
 import { cleanEvidence } from "./refs";
@@ -229,13 +229,13 @@ export const isSession = (v: unknown): v is Session => {
 };
 export const isProject = (v: unknown): v is Project => {
   const p = v as Project | null;
-  return !!p && isStr(p.id, 100) && isStr(p.name, 100) && isNum(p.createdAt);
+  return !!p && isStr(p.id, 100) && isStr(p.name, 120) && isNum(p.createdAt);
 };
 
 // Newest activity first; the oldest sessions past the cap are dropped.
 // With the shared database (gate.writes false) the store is a cache and the server pages: a local cap there would be mirrored as a delete.
 export const capSessions = (s: Session[]) => { const r = [...s].sort((a, b) => b.updatedAt - a.updatedAt); return gate.writes ? r.slice(0, MAX_SESSIONS) : r; };
-const title = (q: string) => q.trim().slice(0, 60);
+const title = (q: string) => cut(q.trim(), 60);
 
 type State = {
   projects: Project[]; sessions: Session[]; activeId: string | null; activeProjectId: string; legacyImported: boolean;
@@ -286,11 +286,11 @@ export const useChatStore = create<State>()(
       addProject: (name) => {
         if (get().projects.length >= MAX_PROJECTS) return ""; // at the cap: no project made, "" is never a valid id
         const id = newId();
-        set((s) => ({ projects: [...s.projects, { id, name: name.trim().slice(0, 100), createdAt: Date.now() }] }));
+        set((s) => ({ projects: [...s.projects, { id, name: cut(name.trim(), 120), createdAt: Date.now() }] }));
         return id;
       },
       renameProject: (id, name) =>
-        set((s) => (id === PERSONAL ? {} : { projects: s.projects.map((p) => (p.id === id ? { ...p, name: name.trim().slice(0, 100) || p.name } : p)) })),
+        set((s) => (id === PERSONAL ? {} : { projects: s.projects.map((p) => (p.id === id ? { ...p, name: cut(name.trim(), 120) || p.name } : p)) })),
       deleteProject: (id) =>
         set((s) => id === PERSONAL ? {} : {
           projects: s.projects.filter((p) => p.id !== id),

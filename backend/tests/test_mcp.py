@@ -151,7 +151,9 @@ async def test_cancel_by_another_key_and_browser_run_ids(serve, fake_complete):
         async with mcp(c, a) as sa, mcp(c, b) as sb:
             _, j = await call(sa, "start_research", question=Q)
             err, msg = await call(sb, "cancel_run", run_id=j["run_id"])
-            assert err and "only the API key that started this run" in msg
+            assert err and "run not found" in msg
+            err, msg = await call(sb, "get_run", run_id=j["run_id"])
+            assert err and "run not found" in msg
             sid, cid = u(), u()
             await c.put(f"/v1/store/sessions/{sid}", json={"title": "t"})
             r = await c.post("/v1/runs", json={"session_id": sid, "turn_id": u(), "kind": "ask", "question": Q, "mode": "deep"}, headers={"x-client-id": cid})

@@ -349,6 +349,34 @@ async def test_sse_emits_changed_per_write_and_unsubscribes(api):
     assert api.app.state.data.bus.subs == set()
 
 
+async def test_a_stalled_listener_is_told_to_resync_not_silently_dropped(api):
+    bus = api.app.state.data.bus
+    async with bus.subscribe() as q:
+        for i in range(q.maxsize):
+            bus.send({"type": "changed", "n": i})
+        bus.send({"type": "changed", "n": "overflow"})
+        assert q.qsize() == 1 and q.get_nowait() == {"type": "resync"}
+
+
+async def test_sse_busy_is_429_up_front_and_a_never_read_stream_leaks_no_subscriber(api):
+    bus = api.app.state.data.bus
+    from scientist.routes_store import events
+    from starlette.requests import Request
+    req = Request({"type": "http", "app": api.app, "headers": [], "method": "GET"})
+    resp = await events(req, api.app.state.data)  # the generator is never iterated, like a client that hung up first
+    assert bus.subs == set()
+    bus.subs.update(asyncio.Queue() for _ in range(bus.MAX_LISTENERS))
+    assert (await api.get("/v1/store/events")).status_code == 429
+
+
+async def test_snapshot_pages_past_store_max_sessions(api):
+    api.app.state.data.settings.store_max_sessions = 2
+    api.app.state.data.settings.store_snapshot_max_sessions = 1000
+    for _ in range(3):
+        await mk_session(api)
+    assert len((await api.get("/v1/store/snapshot?limit_sessions=1000")).json()["sessions"]) == 3
+
+
 async def test_sse_heartbeat(monkeypatch, newdb):
     command.upgrade(_alembic(), "head")
     monkeypatch.setenv("SSE_PING_SECONDS", "0.05")

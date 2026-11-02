@@ -1,8 +1,8 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { API_BASE, DEFER_HYDRATION } from "./config";
+import { API_BASE, DEFER_HYDRATION, gate } from "./config";
 import { PERSONAL } from "./chat";
-import { dataStorage } from "./history";
+import { cut, dataStorage } from "./history";
 
 // The file LIST lives in this browser (there is no login, so no server-side owner); the server only serves a file to
 // whoever knows its unguessable id. An entry is a pointer, never the bytes.
@@ -22,8 +22,9 @@ export const isFileEntry = (v: unknown): v is FileEntry => {
 
 export const kindOf = (name: string) => (name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "");
 // Write side: clamp to the read limits so a persisted entry always reloads.
-const clamp = (e: FileEntry): FileEntry => ({ ...e, name: e.name.slice(0, NAME_MAX), kind: e.kind.slice(0, 10), projectId: e.projectId.slice(0, 100) });
-const cap = (l: FileEntry[]) => [...l].sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_FILES);
+const clamp = (e: FileEntry): FileEntry => ({ ...e, name: cut(e.name, NAME_MAX), kind: e.kind.slice(0, 10), projectId: e.projectId.slice(0, 100) });
+// With the shared database (gate.writes false) the store is a cache: a local cap there would be mirrored as server deletes.
+const cap = (l: FileEntry[]) => { const r = [...l].sort((a, b) => b.createdAt - a.createdAt); return gate.writes ? r.slice(0, MAX_FILES) : r; };
 
 type State = {
   files: FileEntry[];

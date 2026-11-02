@@ -13,7 +13,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from starlette.datastructures import UploadFile
 
-from scientist.routes_store import require_json
+from scientist.routes_store import check_origin, rate_limit, require_json
 from scientist.object_store import ObjectMissing, presign_policy
 
 router = APIRouter()
@@ -38,6 +38,9 @@ def _key(file_id: str) -> str:
 @router.post("/v1/files", status_code=201)
 async def upload(request: Request):
     st, s = _store(request), request.app.state.settings
+    check_origin(request)  # a multipart POST is a "simple" cross-site request: no preflight, so check the Origin here
+    if (data := getattr(request.app.state, "data", None)) is not None:  # the same per-IP minute as store writes
+        rate_limit(data, request.client.host if request.client else "?")
     try:
         length = int(request.headers.get("content-length") or 0)
     except ValueError:
@@ -74,11 +77,11 @@ async def upload(request: Request):
     await f.seek(0)
     fid = uuid.uuid4().hex
     try:
-        await st.put(fid, f.file, content_type=f.content_type or "application/octet-stream",
+        await st.put(fid, f.file, content_type=presign_policy(name)[0],  # server-derived, never the client's
                      metadata={"name": quote(name)})
     except Exception:
         raise HTTPException(503, "file storage unavailable")
-    return {"id": fid, "name": name, "size": size, "content_type": f.content_type}
+    return {"id": fid, "name": name, "size": size, "content_type": presign_policy(name)[0]}
 
 
 @router.get("/v1/files/{file_id}")
@@ -91,7 +94,7 @@ async def download(file_id: str, request: Request):
     except Exception:
         raise HTTPException(503, "file storage unavailable")
     name = unquote(meta.get("name", "file"))
-    return Response(data, media_type=meta["content_type"],
+    return Response(data, media_type="application/octet-stream",  # never echo the client-supplied type
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}",
                              "X-Content-Type-Options": "nosniff"})
 

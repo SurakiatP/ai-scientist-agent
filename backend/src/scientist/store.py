@@ -158,8 +158,10 @@ class Bus:
         for q in self.subs:
             try:
                 q.put_nowait(msg)
-            except asyncio.QueueFull:  # a stalled listener loses messages; it refetches the snapshot on reconnect
-                pass
+            except asyncio.QueueFull:  # a stalled listener is told to refetch the snapshot instead of silently missing changes
+                while not q.empty():
+                    q.get_nowait()
+                q.put_nowait({"type": "resync"})
 
     @asynccontextmanager
     async def subscribe(self):
@@ -416,7 +418,7 @@ class Store:
 
     # --- reads ---------------------------------------------------------------------------------------------------------
     async def snapshot(self, limit_sessions: int) -> dict:
-        limit = max(1, min(limit_sessions, self.settings.store_max_sessions))
+        limit = max(1, min(limit_sessions, self.settings.store_snapshot_max_sessions))  # client loadMore pages up to this
         async with self.db.session() as s:
             alive = lambda t: t.c.deleted_at.is_(None)  # noqa: E731
             projects = [_row(r) for r in await s.execute(sa.select(m.projects).where(alive(m.projects)).order_by(m.projects.c.created_at).limit(MAX_PROJECTS))]

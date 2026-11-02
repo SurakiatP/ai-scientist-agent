@@ -28,7 +28,7 @@ uv run --project backend python -m scientist.apikeys revoke sci_AbCdEfGh
 | `POST /v1/api/plan` | the strategy plan `{reasoning, searches}`; no run is started |
 | `GET /v1/api/runs/{run_id}` | status, progress and the answer |
 | `GET /v1/api/runs/{run_id}/events` | server-sent events (resume with `Last-Event-ID` or `?after=<seq>`) |
-| `POST /v1/api/runs/{run_id}/cancel` | stop a run (only the key that started it; others get 403) |
+| `POST /v1/api/runs/{run_id}/cancel` | stop a run (only the key that started it; others get 404) |
 | `GET /v1/api/runs/{run_id}/artifacts/{kind}` | `provenance` (JSON), `bibtex`, `ris` of a finished run |
 | `GET /v1/api/packs` | the research packs `[{id, th, en}]` |
 

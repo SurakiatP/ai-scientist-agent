@@ -25,13 +25,17 @@ def data(request: Request) -> Store:
     return st
 
 
+def check_origin(request: Request) -> None:
+    allowed = getattr(request.app.state.settings, "allowed_origins", [])
+    if allowed and (o := request.headers.get("origin")) and o not in allowed:
+        raise HTTPException(403, "origin not allowed")
+
+
 def require_json(request: Request) -> None:
     """CSRF guard: a cross-site page can only send "simple" requests (text/plain, form types) without a preflight."""
     if not request.headers.get("content-type", "").lower().startswith("application/json"):
         raise HTTPException(415, "Content-Type must be application/json")
-    allowed = getattr(request.app.state.settings, "allowed_origins", [])
-    if allowed and (o := request.headers.get("origin")) and o not in allowed:
-        raise HTTPException(403, "origin not allowed")
+    check_origin(request)
 
 
 def write_guard(request: Request, st: Store = Depends(data)) -> None:
@@ -186,13 +190,16 @@ async def import_old(request: Request, st: Store = Depends(data)):
 @router.get("/store/events")
 async def events(request: Request, st: Store = Depends(data)):
     ping = st.settings.sse_ping_seconds
-    cm = st.bus.subscribe()
-    try:
-        q = await cm.__aenter__()
-    except Busy:
-        raise HTTPException(429, "too many listeners") from None
+    if len(st.bus.subs) >= st.bus.MAX_LISTENERS:
+        raise HTTPException(429, "too many listeners")
 
     async def gen():
+        try:
+            cm = st.bus.subscribe()  # entered inside the generator: a client gone before the first iteration leaks nothing
+            q = await cm.__aenter__()
+        except Busy:  # filled up between the check above and the first iteration
+            yield "retry: 30000\n\n"  # a 200 with an empty stream would make EventSource reconnect at once
+            return
         try:
             yield ": ok\n\n"
             while True:

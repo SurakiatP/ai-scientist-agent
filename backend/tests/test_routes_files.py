@@ -139,7 +139,7 @@ async def _id(c, name, data, ctype="text/plain"):
 async def test_meta(c):
     fid = await _id(c, "a b.CSV", b"a,b\n1,2")
     j = (await c.get(f"/v1/files/{fid}/meta")).json()
-    assert j == {"id": fid, "name": "a b.CSV", "size": 7, "content_type": "text/plain", "kind": "csv",
+    assert j == {"id": fid, "name": "a b.CSV", "size": 7, "content_type": "text/csv; charset=utf-8", "kind": "csv",
                  "created_at": "2026-10-25T01:02:03+00:00"}
     assert (await c.get("/v1/files/" + "a" * 32 + "/meta")).status_code == 404
     assert (await c.get("/v1/files/BAD/meta")).status_code == 404
@@ -148,7 +148,7 @@ async def test_meta(c):
 async def test_rename(c):
     fid = await _id(c, "a.csv", b"a,b\n1,2")
     r = await c.patch(f"/v1/files/{fid}", json={"name": "../x/new name.csv"})
-    assert r.status_code == 200 and r.json()["name"] == "new name.csv" and r.json()["content_type"] == "text/plain"
+    assert r.status_code == 200 and r.json()["name"] == "new name.csv" and r.json()["content_type"] == "text/csv; charset=utf-8"
     assert "new%20name.csv" in (await c.get(f"/v1/files/{fid}")).headers["content-disposition"]
     assert (await c.patch(f"/v1/files/{fid}", json={"name": "NEW.CSV"})).status_code == 200
 
@@ -267,3 +267,38 @@ async def test_presign_ttl_setting_and_disabled(env, store, monkeypatch):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(store=store)), base_url="http://t") as c:
         fid = (await up(c, "a.csv", b"a")).json()["id"]
         assert (await c.post(f"/v1/files/{fid}/presign", json={})).status_code == 501
+
+
+async def test_download_never_echoes_the_uploaded_content_type(c):
+    fid = await _id(c, "a.csv", b"a,b\n1,2", "text/html")
+    g = await c.get(f"/v1/files/{fid}")
+    assert g.headers["content-type"] == "application/octet-stream" and g.headers["x-content-type-options"] == "nosniff"
+    assert g.headers["content-disposition"].startswith("attachment")
+
+
+async def test_upload_stores_a_server_derived_content_type(c):
+    fid = await _id(c, "a.csv", b"a,b\n1,2", "text/html")
+    assert (await c.get(f"/v1/files/{fid}/meta")).json()["content_type"] == "text/csv; charset=utf-8"
+    fid = await _id(c, "a.xlsx", b"PK\x03\x04x", "text/html")
+    assert (await c.get(f"/v1/files/{fid}/meta")).json()["content_type"] == "application/octet-stream"
+
+
+async def test_upload_origin_checked_only_when_configured(c):
+    h = {"origin": "https://evil.example"}
+    assert (await c.post("/v1/files", files={"file": ("a.csv", b"a,b", "text/plain")}, headers=h)).status_code == 201  # default: no check
+    c._transport.app.state.settings.allowed_origins = ["https://ok.example"]
+    assert (await c.post("/v1/files", files={"file": ("a.csv", b"a,b", "text/plain")}, headers=h)).status_code == 403
+    ok = {"origin": "https://ok.example"}
+    assert (await c.post("/v1/files", files={"file": ("a.csv", b"a,b", "text/plain")}, headers=ok)).status_code == 201
+    assert (await up(c, "a.csv", b"a,b")).status_code == 201  # no Origin header
+
+
+class _Data:  # just what rate_limit reads
+    def __init__(self, cap):
+        from collections import defaultdict, deque
+        self.settings, self.writes = type("S", (), {"store_write_rate_per_min": cap})(), defaultdict(deque)
+
+
+async def test_upload_is_rate_limited_per_ip(c):
+    c._transport.app.state.data = _Data(2)
+    assert [(await up(c, "a.csv", b"a,b")).status_code for _ in range(3)] == [201, 201, 429]

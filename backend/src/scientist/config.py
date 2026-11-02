@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     # Shared data store (/v1/store). No login: caps below are the only guard on what one caller can do.
     trash_days: int = Field(7, ge=1)
     store_max_sessions: int = Field(200, ge=1)
+    store_snapshot_max_sessions: int = Field(1000, ge=1)  # hard ceiling for a client paging past store_max_sessions
     store_write_rate_per_min: int = Field(600, ge=0)  # per client IP; 0 = unlimited
     store_max_body_bytes: int = 1_000_000  # every store route except import
     import_max_bytes: int = 10_000_000

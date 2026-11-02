@@ -4,7 +4,7 @@ import { MAX_SESSIONS, MAX_TURNS, PERSONAL, useChatStore } from "./chat";
 import { gate } from "./config";
 import { useFilesStore } from "./files";
 import { emptyProgress } from "./progress";
-import { __queue, __resetSync, recordServerTurn, settleSession, startSync, toTurn, turnBody, TURN_GAP_MS, useSync } from "./sync";
+import { __queue, __resetSync, __versions, clearAllChats, reprobeSync, recordServerTurn, settleSession, startSync, toTurn, turnBody, TURN_GAP_MS, useSync } from "./sync";
 
 const run = vi.hoisted(() => ({ turn: null as string | null, att: null as string | null }));
 vi.mock("./run", () => ({ runningTurnIds: () => (run.turn ? [run.turn] : []), isRunningHere: (id: string) => id === run.turn, isAttached: (id: string) => id === run.att, attachRunning: vi.fn(), useRunState: () => ({ sessionId: null, turnId: null }), stopRun: vi.fn() }));
@@ -436,5 +436,109 @@ describe("pack on server rows", () => {
     expect(t).not.toHaveProperty("pack");
     expect(toTurn(row(null))).not.toHaveProperty("pack");
     expect(turnBody({ ...toTurn(row("med"))! }, 0).pack).toBe("med");
+  });
+});
+
+describe("sync data-loss guards", () => {
+  const seed = (n: number) => ({ ...emptySnap(), sessions: Array.from({ length: n }, (_, i) => row(U(100 + i), { title: "t" + i, turns: [] })), files: Array.from({ length: n }, (_, i) => row(F(i), { name: "f" + i, kind: "csv", size: 1, added_at: "2026-01-01T00:00:00Z" })) });
+  const F = (i: number) => "a".repeat(31) + i.toString(16); // 32 hex chars: the only file id isFileEntry accepts
+  const dels = () => calls.filter((c) => c.method === "DELETE");
+
+  it("does not turn a persist rehydrate into server deletes, and reprobe is single-flight", async () => {
+    snapshot = seed(6);
+    let healths = 0;
+    routes.push((c) => (c.url.startsWith("/v1/health") ? (++healths === 1 ? { body: { db: "disabled" } } : { body: { db: "ok" } }) : undefined));
+    await startSync();
+    expect(useSync.getState().status).toBe("disabled");
+    await Promise.all([reprobeSync(), reprobeSync(), reprobeSync()]);
+    expect(healths).toBe(2);
+    await vi.waitFor(() => expect(useSync.getState().status).toBe("online"));
+    await useChatStore.persist.rehydrate();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(dels()).toHaveLength(0);
+  });
+
+  it("refuses to enqueue a mass delete unless it is the explicit delete-all", async () => {
+    snapshot = seed(6);
+    await online();
+    useChatStore.setState({ sessions: [] }); useFilesStore.setState({ files: [] });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(dels()).toHaveLength(0);
+    useChatStore.setState({ sessions: Array.from({ length: 6 }, (_, i) => ({ id: U(100 + i), projectId: PERSONAL, title: "t" + i, createdAt: 1, updatedAt: 1, turns: [] })) });
+    await done();
+    useFilesStore.setState({ files: Array.from({ length: 6 }, (_, i) => ({ id: F(i), name: "f" + i, size: 1, kind: "csv", createdAt: 1, projectId: PERSONAL })) });
+    await done();
+    expect(useFilesStore.getState().files).toHaveLength(6); // the files really are in the store, so the guard is what held them back
+    useFilesStore.setState({ files: [] });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(dels()).toHaveLength(0);
+    clearAllChats();
+    await vi.waitFor(() => expect(dels().length).toBe(6));
+  });
+
+  it("a blocked mass delete asks for a fresh snapshot to restore the UI", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    snapshot = seed(6);
+    await startSync();
+    await vi.advanceTimersByTimeAsync(0);
+    const n = () => calls.filter((c) => c.url.startsWith("/v1/store/snapshot")).length;
+    const before = n();
+    useChatStore.setState({ sessions: [] });
+    await vi.advanceTimersByTimeAsync(2100);
+    expect(n()).toBeGreaterThan(before);
+    expect(useChatStore.getState().sessions).toHaveLength(6);
+  });
+
+  it("does not rehydrate persisted stores once the mirror is live", async () => {
+    await online();
+    const spy = vi.spyOn(useChatStore.persist, "rehydrate");
+    routes.unshift((c) => (c.url.startsWith("/v1/health") ? { body: { db: "disabled" } } : undefined));
+    useSync.setState({ status: "disabled" });
+    await reprobeSync();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("pagehide pushes the queue when online but nothing once sync is disabled", async () => {
+    await online();
+    __queue().push({ k: "session", id: U(1), a: "put" });
+    useSync.setState({ status: "disabled" });
+    calls.length = 0;
+    window.dispatchEvent(new Event("pagehide"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toHaveLength(0);
+    useSync.setState({ status: "online" });
+    window.dispatchEvent(new Event("pagehide"));
+    await vi.waitFor(() => expect(calls.length).toBeGreaterThan(0));
+  });
+
+  it("turnBody cuts a long question to 4000 characters", () => {
+    expect(turnBody(turn(U(1), { question: "x".repeat(5000) }) as never, 0).question.length).toBeLessThanOrEqual(4000);
+  });
+
+  it("adopts a LOWER server version on 409 so the next write is not an endless conflict", async () => {
+    snapshot = { ...emptySnap(), sessions: [row(U(2), { title: "Mine", version: 9, turns: [] })] };
+    await online();
+    routes.push((c) => (c.method === "PUT" ? { status: 409, body: { detail: "version conflict", current: row(U(2), { title: "Theirs", version: 2 }) } } : undefined));
+    useChatStore.getState().renameSession(U(2), "Edited here");
+    await vi.waitFor(() => expect(useSync.getState().notice).toBe("conflict"));
+    expect(__versions().get(`session:${U(2)}`)).toBe(2);
+  });
+
+  it("does not delete server files when the local list is capped", async () => {
+    await online();
+    useFilesStore.setState({ files: Array.from({ length: 500 }, (_, i) => ({ id: "b".repeat(28) + i.toString(16).padStart(4, "0"), name: "f", size: 1, kind: "csv", createdAt: i, projectId: PERSONAL })) });
+    useFilesStore.getState().add({ id: "c".repeat(32), name: "n", size: 1, kind: "csv", createdAt: 1, projectId: PERSONAL });
+    expect(useFilesStore.getState().files.length).toBeGreaterThan(500);
+    await done();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(0);
+  });
+
+  it("versions only move forward", async () => {
+    snapshot = { ...emptySnap(), sessions: [row(U(1), { version: 5, title: "a", turns: [] })] };
+    await online();
+    recordServerTurn(U(1), row(U(2), { idx: 0, version: 2 }));
+    recordServerTurn(U(1), row(U(2), { idx: 0, version: 1 }));
+    expect([...__versions().entries()].find(([k]) => k.includes(U(2)))?.[1]).toBe(2);
   });
 });

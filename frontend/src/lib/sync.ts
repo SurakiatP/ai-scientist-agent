@@ -4,7 +4,7 @@ import { ERR_CODES, capSessions, isProject, isSession, isTurn, MAX_SESSIONS, PER
 import { cleanDocs } from "./sources";
 import { usablePack } from "./packs";
 import { isFileEntry, useFilesStore, type FileEntry } from "./files";
-import { safeStorage } from "./history";
+import { cut, safeStorage } from "./history";
 import { emptyProgress } from "./progress";
 import { attachRunning, isAttached, isRunningHere, runningTurnIds } from "./run";
 
@@ -94,14 +94,16 @@ export const toTurn = (r: Row): Turn | null => {
   return isTurn(t) ? t : null;
 };
 export const turnBody = (t: Turn, idx: number) => ({
-  idx, question: t.question.slice(0, 4000), mode: t.kind === "analysis" ? "analysis" : t.mode ?? null, status: t.status,
+  idx, question: cut(t.question, 4000), mode: t.kind === "analysis" ? "analysis" : t.mode ?? null, status: t.status,
   answer: t.answer ?? null, progress: { ...t.progress, ...(t.refusedCode ? { _code: t.refusedCode } : {}), ...(t.docs?.length ? { _docs: t.docs } : {}) }, pack: t.pack ?? null, plan: t.plan ?? null, analysis: t.analysis ?? null,
   refused: t.refused ?? null, error: t.error ?? null,
 });
+// Versions only move forward: a stale snapshot must not make the next write conflict.
+const bump = (k: string, v: number) => { if (Number.isFinite(v)) versions.set(k, Math.max(versions.get(k) ?? 0, v)); };
 const toSession = (r: Row, local?: Session): Session => {
   const id = str(r.id);
   const rows = (Array.isArray(r.turns) ? (r.turns as Row[]) : []).filter((x) => !tombstones.has(str(x.id))).sort((a, b) => Number(a.idx) - Number(b.idx));
-  rows.forEach((x) => { idxOf.set(str(x.id), Number(x.idx)); maxIdx.set(id, Math.max(maxIdx.get(id) ?? -1, Number(x.idx))); versions.set(vkey("turn", str(x.id)), Number(x.version)); });
+  rows.forEach((x) => { idxOf.set(str(x.id), Number(x.idx)); maxIdx.set(id, Math.max(maxIdx.get(id) ?? -1, Number(x.idx))); bump(vkey("turn", str(x.id)), Number(x.version)); });
   const turns = rows.map((x) => {
     const mine = local?.turns.find((t) => t.id === x.id);
     return mine && (isAttached(mine.id) || isRunningHere(mine.id) || queue.some((o) => o.k === "turn" && o.id === mine.id)) ? mine : toTurn(x);
@@ -116,9 +118,15 @@ const toSession = (r: Row, local?: Session): Session => {
 };
 const toProject = (r: Row): Project => ({ id: str(r.id), name: str(r.name), createdAt: ms(r.created_at) });
 const toFile = (r: Row): FileEntry => ({ id: str(r.id), name: str(r.name), size: Number(r.size) || 0, kind: str(r.kind).slice(0, 10), createdAt: ms(r.added_at), projectId: typeof r.project_id === "string" ? r.project_id : PERSONAL });
-const remember = (k: Kind, r: Row) => { if (typeof r.id === "string" && typeof r.version === "number") versions.set(vkey(k, r.id), r.version); };
+const remember = (k: Kind, r: Row) => { if (typeof r.id === "string" && typeof r.version === "number") bump(vkey(k, r.id), r.version); };
 
 // Store changes that come from the server must not echo back as writes.
+// Deleting all or most of what the server holds in one change is never an edit: only "delete all" may do it.
+let clearing = false;
+export function clearAllChats() { clearing = true; try { useChatStore.getState().clearAll(); } finally { clearing = false; } }
+const massDelete = (dels: number, existing: number) => !clearing && dels > 3 && dels >= existing * 0.8;
+let warnedMass = false;
+const blocked = () => { snapSoon(); if (!warnedMass && process.env.NODE_ENV !== "production") { warnedMass = true; console.warn("sync: refused a mass delete; restoring from the server"); } };
 function quiet(f: () => void) { applying = true; try { f(); } finally { applying = false; } }
 const pendingFor = (k: Kind, id: string) => queue.some((o) => o.k === k && o.id === id && o.a !== "restore");
 
@@ -183,7 +191,7 @@ function build(o: Op): unknown | null {
 }
 
 function adopt(o: Op, current: Row) { // 409: someone else saved first. Keep their version, say so calmly.
-  remember(o.k, current);
+  if (typeof current.id === "string" && typeof current.version === "number") versions.set(vkey(o.k, current.id), current.version); // exact, not max: a restored DB may hold a lower version
   quiet(() => {
     if (o.k === "session") { const n = toSession(current, useChatStore.getState().sessions.find((x) => x.id === o.id)); useChatStore.setState((s) => ({ sessions: s.sessions.map((x) => (x.id === o.id ? { ...n, turns: x.turns } : x)) })); }
     else if (o.k === "project") useChatStore.setState((s) => ({ projects: s.projects.map((x) => (x.id === o.id ? toProject(current) : x)) }));
@@ -334,6 +342,7 @@ function mirrorChat(s: ReturnType<typeof useChatStore.getState>, p: ReturnType<t
     for (const t of x.turns) if (ot.get(t.id) !== t && !t.runId) { if (!queue.some((q) => q.k === "session" && q.id === x.id) && !versions.has(vkey("session", x.id))) enqueue({ k: "session", id: x.id, a: "put" }); enqueue({ k: "turn", id: t.id, sid: x.id, a: "put" }); }
   }
   for (const x of p.sessions) if (!sIds.has(x.id) && (x.title || x.turns.length)) removed.push({ k: "session", id: x.id, a: "del" });
+  if (massDelete(removed.length, p.projects.length - 1 + p.sessions.length)) return blocked(); // a fresh snapshot brings them back
   removed.forEach(enqueue);
   if (removed.length === 1) set({ undo: { kind: removed[0].k, id: removed[0].id, at: Date.now() } });
 }
@@ -342,6 +351,7 @@ function mirrorFiles(s: { files: FileEntry[] }, p: { files: FileEntry[] }) {
   const pf = new Map(p.files.map((x) => [x.id, x]));
   for (const f of s.files) { const o = pf.get(f.id); if (o !== f && (!o || o.name !== f.name || o.projectId !== f.projectId || o.size !== f.size)) enqueue({ k: "file", id: f.id, a: "put" }); }
   const now = new Set(s.files.map((x) => x.id));
+  if (massDelete(p.files.filter((f) => !now.has(f.id)).length, p.files.length)) return blocked();
   for (const f of p.files) if (!now.has(f.id)) { enqueue({ k: "file", id: f.id, a: "del" }); set({ undo: { kind: "file", id: f.id, at: Date.now() } }); }
 }
 
@@ -355,6 +365,7 @@ export async function undoDelete() {
 
 // Best effort on tab close: push what is still queued, and mark this tab's live run as interrupted.
 function flush() {
+  if (useSync.getState().status === "disabled") return;
   for (const run of runningTurnIds()) {
     const s = useChatStore.getState().sessions.find((x) => x.turns.some((t) => t.id === run));
     const t = s?.turns.find((x) => x.id === run);
@@ -375,7 +386,7 @@ export async function startSync(): Promise<void> {
   if (!db) { // browser-only: exactly the old behaviour
     gate.writes = true;
     set({ status: "disabled", ready: true });
-    void useChatStore.persist.rehydrate(); void useFilesStore.persist.rehydrate();
+    if (!releases.length) quiet(() => { void useChatStore.persist.rehydrate(); void useFilesStore.persist.rehydrate(); }); // never once the mirror is live: it would read the reload as deletes
     return;
   }
   gate.writes = false; // localStorage keeps the old browser data untouched until it is imported or cleared
@@ -422,10 +433,11 @@ export function recordServerTurn(sid: string, r: Row) {
 }
 
 // A 409 use_runs means the server has the shared database although the first health probe said otherwise: ask again.
-export async function reprobeSync(): Promise<void> {
-  if (useSync.getState().status !== "disabled") return;
+let reprobing: Promise<void> | null = null;
+export function reprobeSync(): Promise<void> {
+  if (reprobing || useSync.getState().status !== "disabled") return reprobing ?? Promise.resolve();
   started = false;
-  await startSync();
+  return (reprobing = startSync().finally(() => { reprobing = null; }));
 }
 
 // Test seam: forget everything.

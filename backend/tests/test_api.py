@@ -261,8 +261,10 @@ async def test_cancel_only_by_the_creating_key(serve, fake_complete):
         _, b = await key(c, "b")
         rid = (await start(c, a))["run_id"]
         await until(c, a, rid, "running")
-        assert (await c.post(f"{API}/runs/{rid}/cancel", headers=b)).status_code == 403
-        assert (await c.get(f"{API}/runs/{rid}", headers=b)).json()["status"] == "running"  # runs are readable by any key
+        for path in ("", "/events", "/artifacts/bibtex"):  # another key sees no trace of the run
+            assert (await c.get(f"{API}/runs/{rid}{path}", headers=b)).status_code == 404
+        assert (await c.post(f"{API}/runs/{rid}/cancel", headers=b)).status_code == 404
+        assert (await c.get(f"{API}/runs/{rid}", headers=a)).json()["status"] == "running"
         r = await c.post(f"{API}/runs/{rid}/cancel", headers=a)
         assert r.status_code == 200 and r.json()["status"] == "stopped" and "answer" in r.json()
         assert (await c.post(f"{API}/runs/{rid}/cancel", headers=a)).json()["status"] == "stopped"  # idempotent
@@ -350,5 +352,5 @@ async def test_openapi_documents_the_error_responses(serve, fake_complete):
         assert has("/research", "post", 429) and has("/plan", "post", 429) and has("/plan", "post", 502) and has("/plan", "post", 422)
         assert "code" in doc_schemas(await c.get(f"{API}/openapi.json"))["RunOut"]["properties"]
         assert has("/runs/{run_id}", "get", 404) and has("/runs/{run_id}/events", "get", 404)
-        assert has("/runs/{run_id}/cancel", "post", 403) and has("/runs/{run_id}/cancel", "post", 404)
+        assert has("/runs/{run_id}/cancel", "post", 404) and not has("/runs/{run_id}/cancel", "post", 403) and has("/runs/{run_id}/cancel", "post", 404)
         assert has("/runs/{run_id}/artifacts/{kind}", "get", 409) and has("/runs/{run_id}/artifacts/{kind}", "get", 404)

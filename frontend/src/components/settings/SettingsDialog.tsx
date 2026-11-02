@@ -8,13 +8,12 @@ import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import SettingsBrightnessOutlinedIcon from "@mui/icons-material/SettingsBrightnessOutlined";
 import { API_BASE } from "@/lib/config";
-import { useChatStore } from "@/lib/chat";
 import { useHistoryStore, useHydrated, useStorageFull } from "@/lib/history";
 import { usePrefs, useT } from "@/lib/prefs";
 import { stopAllRuns } from "@/lib/run";
 import { useUnread } from "@/lib/unread";
 import { useSettingsOpen } from "@/components/shell/Sidebar";
-import { useSync } from "@/lib/sync";
+import { clearAllChats, useSync } from "@/lib/sync";
 import { ImportOld } from "./ImportOld";
 import { Segmented } from "./Segmented";
 import Link from "next/link";
@@ -109,7 +108,7 @@ export function SettingsDialog() {
                   <Stack direction="row" spacing={1}>
                     <Button color="error" variant="contained" autoFocus sx={{ minHeight: 44 }} onClick={() => {
                       stopAllRuns(); // a live run would otherwise keep writing into a store that no longer has its chat
-                      useChatStore.getState().clearAll();
+                      clearAllChats();
                       useUnread.setState({ unread: {} }); // and the unread marks that pointed at those chats
                       useHistoryStore.getState().clear(); // old /ask history is browser data too
                       setConfirm(false);

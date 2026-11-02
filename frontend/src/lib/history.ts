@@ -15,6 +15,9 @@ export type HistoryItem = {
 
 export const MAX_ITEMS = 200;
 
+// Cut to n UTF-16 units (the server counts the same way) without leaving half of a surrogate pair behind.
+export const cut = (s: string, n: number) => { const r = s.slice(0, n); return r.length === n && /[\uD800-\uDBFF]/.test(r[n - 1] ?? "") && s.length > n ? r.slice(0, -1) : r; };
+
 const isStr = (v: unknown, max = Infinity): v is string => typeof v === "string" && v.length <= max;
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const optStr = (v: unknown) => v === null || isStr(v, 2048);

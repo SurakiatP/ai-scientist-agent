@@ -384,3 +384,15 @@ describe("newSession blank reuse", () => {
     expect(s.getState().sessions.find((x) => x.id === id)?.turns[0].answer?.content).toBe("kept");
   });
 });
+
+describe("surrogate-safe cuts", () => {
+  it("never splits a pair in chat titles or project names", async () => {
+    const { cut } = await import("./history");
+    const s = "a".repeat(59) + "😀";
+    expect(cut(s, 60)).toBe("a".repeat(59));
+    expect(cut("abc", 60)).toBe("abc");
+    const store = await load();
+    const id = store.getState().addProject(s + "x".repeat(100));
+    expect(store.getState().projects.find((p) => p.id === id)?.name.length).toBeLessThanOrEqual(120);
+  });
+});
